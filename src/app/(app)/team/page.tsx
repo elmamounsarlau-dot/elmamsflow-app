@@ -5,6 +5,9 @@ import { CLIENT_ROLES, STAFF_ROLES, roleLabel } from '@/lib/roles';
 import { fmtDate } from '@/lib/format';
 import { Arrow } from '@/components/ui';
 import { CopyLink, Submit } from '@/components/client';
+import { PendingLink } from '@/components/access';
+import type { AccessLink } from '@/lib/invite';
+import { Fragment } from 'react';
 import { memberLink } from '../clients/actions';
 import { changeRole, inviteMember, removeMember, teamScope, toggleMember } from './actions';
 
@@ -35,6 +38,9 @@ export default async function Team({ searchParams }: { searchParams: Promise<Rec
   const sp = await searchParams;
   const { data } = await supabaseAdmin().from('memberships').select('user_id, role, status, created_at, profile:profiles(full_name, email)').eq('org_id', s.orgId).order('created_at');
   const members = data ?? [];
+  const showLinks = s.staff && (ctx.staffRole === 'owner' || ctx.staffRole === 'manager');
+  const { data: links } = showLinks ? await supabaseAdmin().from('access_links').select('*').eq('org_id', s.orgId) : { data: [] as AccessLink[] };
+  const linkFor = new Map(((links ?? []) as AccessLink[]).map((l) => [l.user_id, l]));
   const roleDefs = s.staff ? STAFF_ROLES : CLIENT_ROLES;
   const matrix = s.staff ? CAN.staff : CAN.client;
   return (
@@ -57,8 +63,10 @@ export default async function Team({ searchParams }: { searchParams: Promise<Rec
                   const p = m.profile as unknown as { full_name: string; email: string } | null;
                   const me = m.user_id === ctx.userId;
                   const locked = me || (m.role === 'owner' && ctx.staffRole !== 'owner');
+                  const kept = m.status === 'invited' ? linkFor.get(m.user_id) : undefined;
                   return (
-                    <tr key={m.user_id}>
+                    <Fragment key={m.user_id}>
+                    <tr className={kept ? 'ep-row--nb' : ''}>
                       <td><b>{p?.full_name || p?.email}{me && <span className="ep-tag">You</span>}</b><small>{p?.email}</small></td>
                       <td>
                         {locked ? roleLabel(m.role) : (
@@ -82,6 +90,8 @@ export default async function Team({ searchParams }: { searchParams: Promise<Rec
                         )}
                       </td>
                     </tr>
+                    {kept && <tr><td colSpan={5}><PendingLink link={kept} /></td></tr>}
+                    </Fragment>
                   );
                 })}
               </tbody>

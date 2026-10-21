@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { supabaseServer } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { logActivity } from '@/lib/log';
+import { forgetLink } from '@/lib/invite';
 
 export async function setPassword(fd: FormData) {
   const p1 = String(fd.get('pass1') ?? '');
@@ -21,5 +22,6 @@ export async function setPassword(fd: FormData) {
   const admin = supabaseAdmin();
   const { data: invited } = await admin.from('memberships').update({ status: 'active' }).eq('user_id', user.id).eq('status', 'invited').select('org_id');
   for (const m of invited ?? []) await logActivity(admin, user.id, m.org_id, 'password_set', user.email ?? '');
+  await forgetLink(user.id);
   redirect('/?welcome=1');
 }

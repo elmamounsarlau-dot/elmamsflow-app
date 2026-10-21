@@ -25,7 +25,7 @@ export async function createClient(fd: FormData) {
   const inv = await inviteToOrg({ email, name, orgId: org.id, role: 'admin', invitedBy: ctx.userId });
   await logActivity(admin, ctx.userId, org.id, 'client_created', `${company} (${email})`);
   if (!inv.ok) redirect(withMsg(`/clients/${org.id}`, `${company} is created and ${email} is added as admin, but ${inv.error}.`, 'warn'));
-  redirect(withMsg(`/clients/${org.id}`, inv.emailed ? `${company} is created. We emailed ${email} a private link to choose their password.` : `${company} is created. ${email} already had an account and was added straight away.`));
+  redirect(withMsg(`/clients/${org.id}`, inv.emailed ? `${company} is created. We emailed ${email} their invitation — you can also copy their private link below.` : `${company} is created. ${email} already had an account and was added straight away.`));
 }
 
 /** Add (or re-add) a person to a client workspace from the client page. */
@@ -37,7 +37,7 @@ export async function inviteClientMember(fd: FormData) {
   const role = ['admin', 'operations', 'support', 'finance'].includes(str(fd, 'role')) ? str(fd, 'role') : 'admin';
   const inv = await inviteToOrg({ email, name: str(fd, 'name'), orgId, role, invitedBy: ctx.userId });
   await logActivity(supabaseAdmin(), ctx.userId, orgId, 'member_invited', `${email} as ${role}`);
-  redirect(withMsg(`/clients/${orgId}`, inv.ok ? (inv.emailed ? `Invitation emailed to ${email}.` : `${email} now has access.`) : `${email} is added, but ${inv.error}.`, inv.ok ? 'ok' : 'warn'));
+  redirect(withMsg(`/clients/${orgId}`, inv.ok ? (inv.emailed ? `Invitation emailed to ${email}. Their private link is also below to copy.` : `${email} now has access.`) : `${email} is added, but ${inv.error}.`, inv.ok ? 'ok' : 'warn'));
 }
 
 export async function updateClient(fd: FormData) {
@@ -75,12 +75,12 @@ export async function memberLink(fd: FormData) {
   const { data: p } = await admin.from('profiles').select('email').eq('id', userId).single();
   if (!p?.email) redirect(withMsg(back, 'No email for this person.', 'err'));
   if (str(fd, 'mode') === 'copy') {
-    const r = await copyableSignInLink(p.email);
+    const r = await copyableSignInLink(userId, p.email, orgId, ctx.userId);
     await logActivity(admin, ctx.userId, orgId, 'link_copied', p.email);
     if (!r.ok) redirect(withMsg(back, r.error ?? 'Could not create link', 'err'));
     redirect(`${back}${back.includes('?') ? '&' : '?'}link=${encodeURIComponent(r.link!)}&for=${encodeURIComponent(p.email)}`);
   }
-  const r = await emailSignInLink(p.email);
+  const r = await emailSignInLink(userId, p.email, orgId, ctx.userId);
   await logActivity(admin, ctx.userId, orgId, 'link_emailed', p.email);
-  redirect(withMsg(back, r.ok ? `A new private link was emailed to ${p.email}. Older links stop working.` : `Email failed: ${r.error}`, r.ok ? 'ok' : 'err'));
+  redirect(withMsg(back, r.ok ? `A new link was emailed to ${p.email}.` : `Email failed: ${r.error}`, r.ok ? 'ok' : 'warn'));
 }

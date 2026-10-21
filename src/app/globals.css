@@ -368,3 +368,12 @@ body { background: #F7F9FC; }
 .ep-kpi--alert { border-color: #F7C78A; background: linear-gradient(180deg, #FFF8EF, #fff); }
 .ep-kpi--alert b { color: #8A4B00; }
 .ep-kpi b.ep-warn { color: #B4570B; }
+
+/* Kept invitation links */
+.ep-pending { display: grid; gap: .5rem; padding: .8rem 1rem; margin-top: .3rem; border-radius: 12px; background: var(--mist); border: 1px dashed var(--line); }
+.ep-pending > p { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0 !important; }
+.ep-pending.is-old { opacity: .75; }
+.ep-pending .ep-copy input { background: #fff; }
+.ep-pending-list { display: grid; gap: 1rem; }
+.ep-pending-list > div > b { display: block; margin-bottom: .2rem; }
+.ep-row--nb td { border-bottom: 0 !important; }

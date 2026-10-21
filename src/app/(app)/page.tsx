@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { PendingLink } from '@/components/access';
+import type { AccessLink } from '@/lib/invite';
 import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
 import { available, getProducts, orgNames } from '@/lib/data';
@@ -67,6 +69,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const inQuarantine = products.filter((p) => p.quarantined > 0);
   const quarantinedUnits = inQuarantine.reduce((a, p) => a + p.quarantined, 0);
   const orders = (latest.data ?? []) as { id: string; number: string; customer: string; city: string | null; country: string; created_at: string; status: string; org_id: string; carrier: string | null }[];
+  const ownerView = ctx.backOffice && (ctx.staffRole === 'owner' || ctx.staffRole === 'manager');
+  const { data: pendingLinks } = ownerView ? await sb.from('access_links').select('*').order('created_at', { ascending: false }).limit(10) : { data: [] as AccessLink[] };
+  const pending = (pendingLinks ?? []) as AccessLink[];
   const who = ctx.backOffice ? 'Elmamsflow back office' : ctx.org?.name;
   const dateLine = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ }).format(new Date());
 
@@ -142,6 +147,20 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           </Link>
         ))}
       </div>
+
+      {pending.length > 0 && (
+        <section className="ep-card ep-card--hl">
+          <div className="ep-card-head"><h2>Waiting to sign in</h2><span className="ep-muted ep-small">Invitation links only you and managers can see</span></div>
+          <div className="ep-pending-list">
+            {pending.map((l) => (
+              <div key={l.user_id}>
+                <b>{l.email}{l.org_id && names[l.org_id] ? <> · <Link href={`/clients/${l.org_id}`}>{names[l.org_id]}</Link></> : ' · your team'}</b>
+                <PendingLink link={l} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="ep-card">
         <div className="ep-card-head"><h2>Recent stock movements</h2><Link href="/inventory">Inventory</Link></div>
