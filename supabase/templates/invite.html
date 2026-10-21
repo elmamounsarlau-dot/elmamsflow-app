@@ -1,0 +1,12 @@
+<div style="background:#F5F8FC;padding:32px 16px;font-family:Arial,Helvetica,sans-serif;color:#3A4A63">
+  <div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #E3EAF3;border-radius:16px;overflow:hidden">
+    <div style="background:#0B1B33;padding:22px 28px;color:#ffffff;font-size:20px;letter-spacing:-0.02em">Elmamsflow</div>
+    <div style="padding:28px">
+      <h1 style="margin:0 0 12px;font-size:22px;font-weight:600;color:#0B1B33">Your Elmamsflow workspace is ready</h1>
+      <p style="margin:0 0 20px;font-size:15px;line-height:1.6">You’ve been invited to Elmamsflow: orders, stock, inbounds and support in one place. Click the button to choose your password.</p>
+      <p style="margin:0 0 24px"><a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite&next=/set-password" style="display:inline-block;background:#F7941D;color:#0B1B33;text-decoration:none;padding:13px 22px;border-radius:10px;font-size:15px">Choose my password &rarr;</a></p>
+      <p style="margin:0 0 20px;font-size:13px;color:#66768C">This private link is only for you and works once. After that, sign in any time at {{ .SiteURL }}/login</p>
+      <p style="margin:0;font-size:14px">The Elmamsflow team</p>
+    </div>
+  </div>
+</div>
