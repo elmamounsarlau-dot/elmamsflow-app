@@ -59,7 +59,7 @@ export function Submit({ children, className = 'ep-btn', confirm }: { children: 
   );
 }
 
-export function CopyLink({ value }: { value: string }) {
+export function CopyLink({ value, label = 'Copy link' }: { value: string; label?: string }) {
   const [done, setDone] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
   return (
@@ -79,7 +79,7 @@ export function CopyLink({ value }: { value: string }) {
           setTimeout(() => setDone(false), 2000);
         }}
       >
-        {done ? 'Copied' : 'Copy link'}
+        {done ? 'Copied' : label}
       </button>
     </div>
   );
@@ -183,4 +183,17 @@ export function NavCloser() {
     document.body.classList.remove('ep-nav-open');
   }, [path]);
   return null;
+}
+
+/** Opens the print dialog (Save as PDF) once the invoice has rendered. */
+export function PrintNow() {
+  useEffect(() => {
+    const t = setTimeout(() => window.print(), 400);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <button type="button" className="ep-btn ep-noprint" onClick={() => window.print()}>
+      Print or save as PDF
+    </button>
+  );
 }

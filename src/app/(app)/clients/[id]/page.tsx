@@ -5,6 +5,8 @@ import { COUNTRIES, fmtDate } from '@/lib/format';
 import { ACTIVITY_LABELS } from '@/lib/log';
 import { roleLabel } from '@/lib/roles';
 import { getOrgRoles } from '@/lib/roles-db';
+import { computeCharges, CURRENCIES, getRateCard, lastMonth, money, monthBounds, RATE_FIELDS, ymOf } from '@/lib/billing';
+import { createInvoice, saveRateCard } from '../../invoices/actions';
 import { Arrow, Back, Empty, Kpi, TeamOnly } from '@/components/ui';
 import { CopyLink, Submit } from '@/components/client';
 import { PendingLink } from '@/components/access';
@@ -28,6 +30,10 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
   ]);
   const manage = ctx.can('clients.manage');
   const { roles: defs } = await getOrgRoles(id, false);
+  const billingOn = !!ctx.staffRole && ctx.can('billing.manage');
+  const rates = billingOn ? await getRateCard(id) : null;
+  const running = rates ? await computeCharges(id, rates, monthBounds(ymOf(new Date())).start, new Date()) : null;
+  const groups = [...new Set(RATE_FIELDS.map((f) => f.group))];
   const linkFor = new Map(((links ?? []) as AccessLink[]).map((l) => [l.user_id, l]));
   const back = `/clients/${id}`;
   return (
@@ -81,6 +87,45 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
               </tbody>
             </table>
           </section>
+          {billingOn && (
+            <section className="ep-card ep-card--team" id="prices">
+              <div className="ep-card-head">
+                <h2>Price list</h2>
+                {running && <span className="ep-muted ep-small">This month so far: <b>{money(running.total, rates!.currency)}</b></span>}
+              </div>
+              <TeamOnly />
+              {!rates && <p className="ep-note ep-note--warn" style={{ margin: '.6rem 0 1rem' }}>No prices yet. Set them so this client’s invoices are calculated automatically every month.</p>}
+              <form action={saveRateCard} className="ep-form">
+                <input type="hidden" name="org" value={org.id} />
+                <div className="ep-row4">
+                  <label>Currency<select name="currency" defaultValue={rates?.currency ?? 'USD'}>{CURRENCIES.map((c) => <option key={c}>{c}</option>)}</select></label>
+                  <label>Pay within (days)<input type="number" name="payment_terms_days" min={0} max={90} defaultValue={rates?.payment_terms_days ?? 14} /></label>
+                </div>
+                {groups.map((g) => (
+                  <fieldset key={g} className="ep-rates">
+                    <legend>{g}</legend>
+                    <div className="ep-row4">
+                      {RATE_FIELDS.filter((f) => f.group === g).map((f) => (
+                        <label key={f.key}>{f.label}<input type="number" min={0} step={f.step} name={f.key} defaultValue={rates ? Number(rates[f.key]) : ''} placeholder="0.00" /><small>{f.unit}</small></label>
+                      ))}
+                    </div>
+                  </fieldset>
+                ))}
+                <div className="ep-form-foot" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span className="ep-small ep-muted">Storage is charged per unit per day (monthly price ÷ 30). Shipping weight uses the parcel weight, or product weights if none was recorded.</span>
+                  <Submit>Save prices</Submit>
+                </div>
+              </form>
+              {rates && (
+                <form action={createInvoice} className="ep-inline" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px dashed var(--line)', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <input type="hidden" name="org" value={org.id} />
+                  <input type="hidden" name="month" value={lastMonth()} />
+                  <span className="ep-small">Invoices are drafted automatically on the 1st. Need it now?</span>
+                  <Submit className="ep-btn ep-btn--ghost">Create {monthBounds(lastMonth()).label} invoice</Submit>
+                </form>
+              )}
+            </section>
+          )}
           <section className="ep-card">
             <h2>Activity</h2>
             {(log ?? []).length === 0 ? <Empty title="Nothing yet" text="Everything this client and your team do shows here." /> : (

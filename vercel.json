@@ -5,5 +5,11 @@
   "installCommand": "npm install",
   "regions": [
     "bom1"
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/invoices",
+      "schedule": "0 1 1 * *"
+    }
   ]
 }

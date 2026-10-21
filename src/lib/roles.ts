@@ -16,7 +16,8 @@ export type Perm =
   | 'inbounds.receive'
   | 'support.reply'
   | 'activity.view'
-  | 'invoices.view';
+  | 'invoices.view'
+  | 'billing.manage';
 
 /** Every permission, in the order shown. `staffOnly` ones can only be given to Elmamsflow team roles. */
 export const PERMS: { key: Perm; label: string; staffOnly?: boolean }[] = [
@@ -32,7 +33,8 @@ export const PERMS: { key: Perm; label: string; staffOnly?: boolean }[] = [
   { key: 'stock.adjust', label: 'Correct stock, quarantine, import counts', staffOnly: true },
   { key: 'support.reply', label: 'Support tickets' },
   { key: 'activity.view', label: 'Activity log' },
-  { key: 'invoices.view', label: 'Invoices and billing' },
+  { key: 'invoices.view', label: 'See invoices and pay them' },
+  { key: 'billing.manage', label: 'Price lists, create invoices, record payments', staffOnly: true },
 ];
 
 export const permsFor = (staff: boolean) => PERMS.filter((p) => staff || !p.staffOnly);
@@ -45,7 +47,7 @@ export const DEFAULT_STAFF_ROLES: RoleDef[] = [
   { key: 'manager', label: 'Manager', about: 'Runs clients, orders, stock and the team (except owners).', perms: ALL, locked: false, system: true, position: 2 },
   { key: 'warehouse', label: 'Warehouse', about: 'Receives stock, packs and ships orders, adjusts counts.', perms: ['orders.warehouse', 'orders.hold', 'stock.adjust', 'inbounds.receive', 'products.edit'], locked: false, system: true, position: 3 },
   { key: 'support', label: 'Customer service', about: 'Answers tickets, puts orders on hold or releases them.', perms: ['clients.view', 'orders.hold', 'support.reply', 'orders.create', 'products.edit', 'inbounds.create'], locked: false, system: true, position: 4 },
-  { key: 'finance', label: 'Finance', about: 'Sees clients and orders; billing when it arrives.', perms: ['clients.view', 'activity.view', 'invoices.view'], locked: false, system: true, position: 5 },
+  { key: 'finance', label: 'Finance', about: 'Sees clients and orders; billing when it arrives.', perms: ['clients.view', 'activity.view', 'invoices.view', 'billing.manage'], locked: false, system: true, position: 5 },
 ];
 export const DEFAULT_CLIENT_ROLES: RoleDef[] = [
   { key: 'admin', label: 'Admin', about: 'Everything in the workspace, including the team.', perms: permsFor(false).map((p) => p.key), locked: true, system: true, position: 1 },
