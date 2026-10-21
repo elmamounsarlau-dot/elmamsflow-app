@@ -47,7 +47,7 @@ export function siteUrl() {
 export function withMsg(path: string, msg: string, type: 'ok' | 'err' | 'warn' = 'ok') {
   const u = new URL(path, 'http://x');
   u.searchParams.set(type === 'ok' ? 'ok' : type === 'warn' ? 'warn' : 'err', msg);
-  return u.pathname + u.search;
+  return u.pathname + u.search + u.hash;
 }
 
 export function str(fd: FormData, k: string) {

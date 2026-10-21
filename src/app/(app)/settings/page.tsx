@@ -1,6 +1,5 @@
 import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
-import { roleLabel } from '@/lib/roles';
 import { PasswordField, Submit } from '@/components/client';
 import { changePassword, saveProfile } from './actions';
 
@@ -20,7 +19,7 @@ export default async function Settings() {
             <label>Name<input name="name" defaultValue={p?.full_name ?? ''} /></label>
             <label>Email<input defaultValue={ctx.email} disabled /></label>
             <label>Phone<input name="phone" defaultValue={p?.phone ?? ''} /></label>
-            <label>Role<input defaultValue={`${ctx.staffRole ? 'Elmamsflow · ' : `${ctx.org?.name} · `}${roleLabel(ctx.staffRole ?? ctx.clientRole ?? '')}`} disabled /></label>
+            <label>Role<input defaultValue={`${ctx.staffRole ? 'Elmamsflow · ' : `${ctx.org?.name} · `}${ctx.roleName}`} disabled /></label>
             <div><Submit>Save profile</Submit></div>
           </form>
         </section>

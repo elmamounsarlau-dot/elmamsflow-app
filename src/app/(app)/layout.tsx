@@ -2,7 +2,6 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { requireCtx } from '@/lib/session';
-import { roleLabel } from '@/lib/roles';
 import { Burger, ClickableRows, Flash, NavCloser } from '@/components/client';
 import { Arrow } from '@/components/ui';
 import { NavLinks, type NavItem } from './nav';
@@ -15,7 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     items.push({ href: '/', label: 'Overview', icon: 'home' });
     if (ctx.can('clients.view')) items.push({ href: '/clients', label: 'Clients', icon: 'clients' });
     items.push({ href: '/orders', label: 'Orders', icon: 'orders' }, { href: '/inventory', label: 'Inventory', icon: 'inventory' }, { href: '/inbounds', label: 'Stock inbounds', icon: 'inbounds' }, { href: '/tracking', label: 'Tracking', icon: 'tracking' });
-    if (ctx.staffRole !== 'warehouse') items.push({ href: '/support', label: 'Support', icon: 'support' });
+    if (ctx.can('support.reply')) items.push({ href: '/support', label: 'Support', icon: 'support' });
     if (ctx.can('team.manage')) items.push({ href: '/team', label: 'Team', icon: 'team' });
     if (ctx.can('activity.view')) items.push({ href: '/activity', label: 'Activity', icon: 'activity' });
   } else {
@@ -26,7 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
   if (!ctx.viewingAs) items.push({ href: '/settings', label: 'Settings', icon: 'settings' });
 
-  const role = ctx.staffRole ? `Elmamsflow · ${roleLabel(ctx.staffRole)}` : `${roleLabel(ctx.clientRole ?? '')}`;
+  const role = ctx.staffRole ? `Elmamsflow · ${ctx.roleName}` : ctx.roleName;
 
   return (
     <div className="ep-app">

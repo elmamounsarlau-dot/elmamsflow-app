@@ -377,3 +377,18 @@ body { background: #F7F9FC; }
 .ep-pending-list { display: grid; gap: 1rem; }
 .ep-pending-list > div > b { display: block; margin-bottom: .2rem; }
 .ep-row--nb td { border-bottom: 0 !important; }
+
+/* Adjustable roles */
+.ep-tablewrap { overflow-x: auto; }
+.ep-rolecards { display: grid; gap: .6rem; margin-bottom: .6rem; }
+.ep-rolecard { border: 1px solid var(--line); border-radius: 14px; padding: .85rem 1rem; background: #fff; }
+.ep-rolecard[open] { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(30,136,229,.08); }
+.ep-rolecard summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .8rem; cursor: pointer; list-style: none; }
+.ep-rolecard summary::-webkit-details-marker { display: none; }
+.ep-rolecard summary b { color: var(--navy); font-size: .95rem; }
+.ep-rolecard summary span { color: var(--muted); font-size: .8rem; }
+.ep-rolecard > form { margin-top: 1rem; }
+.ep-rolecard--new { border-style: dashed; }
+.ep-permgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .45rem .9rem; }
+.ep-check { display: flex !important; flex-direction: row !important; align-items: center; gap: .55rem; font-weight: 500 !important; font-size: .86rem; color: var(--ink, #1d2a3a); cursor: pointer; }
+.ep-check input { width: 16px; height: 16px; accent-color: var(--blue); }

@@ -4,6 +4,7 @@ import { supabaseServer } from '@/lib/supabase/server';
 import { COUNTRIES, fmtDate } from '@/lib/format';
 import { ACTIVITY_LABELS } from '@/lib/log';
 import { roleLabel } from '@/lib/roles';
+import { getOrgRoles } from '@/lib/roles-db';
 import { Arrow, Back, Empty, Kpi, TeamOnly } from '@/components/ui';
 import { CopyLink, Submit } from '@/components/client';
 import { PendingLink } from '@/components/access';
@@ -26,6 +27,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
     ...['products', 'orders', 'inbounds', 'tickets'].map((t) => sb.from(t).select('id', { count: 'exact', head: true }).eq('org_id', id)),
   ]);
   const manage = ctx.can('clients.manage');
+  const { roles: defs } = await getOrgRoles(id, false);
   const linkFor = new Map(((links ?? []) as AccessLink[]).map((l) => [l.user_id, l]));
   const back = `/clients/${id}`;
   return (
@@ -61,7 +63,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
                     <Fragment key={m.user_id}>
                     <tr className={kept ? 'ep-row--nb' : ''}>
                       <td><b>{p?.full_name || p?.email}</b><small>{p?.email}</small></td>
-                      <td>{roleLabel(m.role)}</td>
+                      <td>{roleLabel(m.role, defs)}</td>
                       <td>{m.status === 'invited' ? <span className="ep-st ep-st--warn">Link not used yet</span> : m.status === 'paused' ? <span className="ep-st ep-st--mute">Paused</span> : <span className="ep-st ep-st--ok">Active</span>}</td>
                       {manage && (
                         <td className="ep-right">
@@ -96,7 +98,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
                 <input type="hidden" name="org" value={org.id} />
                 <label>Name<input name="name" /></label>
                 <label>Email<input type="email" name="email" required /></label>
-                <label>Role<select name="role" defaultValue="admin"><option value="admin">Admin</option><option value="operations">Operations</option><option value="support">Customer support</option><option value="finance">Finance</option></select></label>
+                <label>Role<select name="role" defaultValue="admin">{defs.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select></label>
                 <Submit className="ep-btn ep-btn--full">Send invitation <Arrow /></Submit>
               </form>
             </section>

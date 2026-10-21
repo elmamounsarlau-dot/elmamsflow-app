@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { requireCtx } from '@/lib/session';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { CLIENT_ROLES, STAFF_ROLES, roleLabel } from '@/lib/roles';
+import { permsFor, roleCan, roleLabel, type Perm } from '@/lib/roles';
 import { fmtDate } from '@/lib/format';
 import { Arrow } from '@/components/ui';
 import { CopyLink, Submit } from '@/components/client';
@@ -9,27 +9,10 @@ import { PendingLink } from '@/components/access';
 import type { AccessLink } from '@/lib/invite';
 import { Fragment } from 'react';
 import { memberLink } from '../clients/actions';
-import { changeRole, inviteMember, removeMember, teamScope, toggleMember } from './actions';
+import { changeRole, createRole, deleteRole, inviteMember, removeMember, saveRole, teamScope, toggleMember } from './actions';
 
 export const metadata = { title: 'Team' };
 
-const CAN = {
-  staff: [
-    ['Clients and their access', ['owner', 'manager']],
-    ['Your team and roles', ['owner', 'manager']],
-    ['Ship orders, receive stock, adjust counts', ['owner', 'manager', 'warehouse']],
-    ['Hold or release orders', ['owner', 'manager', 'warehouse', 'support']],
-    ['Answer support tickets', ['owner', 'manager', 'support']],
-    ['Activity log and billing', ['owner', 'manager', 'finance']],
-  ],
-  client: [
-    ['Team and roles', ['admin']],
-    ['Create orders, products and inbounds', ['admin', 'operations']],
-    ['See orders, stock and tracking', ['admin', 'operations', 'support', 'finance']],
-    ['Support tickets', ['admin', 'operations', 'support']],
-    ['Invoices and activity', ['admin', 'finance']],
-  ],
-} as const;
 
 export default async function Team({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const ctx = await requireCtx();
@@ -41,8 +24,9 @@ export default async function Team({ searchParams }: { searchParams: Promise<Rec
   const showLinks = s.staff && (ctx.staffRole === 'owner' || ctx.staffRole === 'manager');
   const { data: links } = showLinks ? await supabaseAdmin().from('access_links').select('*').eq('org_id', s.orgId) : { data: [] as AccessLink[] };
   const linkFor = new Map(((links ?? []) as AccessLink[]).map((l) => [l.user_id, l]));
-  const roleDefs = s.staff ? STAFF_ROLES : CLIENT_ROLES;
-  const matrix = s.staff ? CAN.staff : CAN.client;
+  const defs = s.defs;
+  const perms = permsFor(s.staff);
+  const used = (key: string) => members.filter((m) => m.role === key).length;
   return (
     <>
       <h1 className="ep-page-title">{s.staff ? 'Your team' : `${s.orgName} team`}</h1>
@@ -72,7 +56,7 @@ export default async function Team({ searchParams }: { searchParams: Promise<Rec
                         {locked ? roleLabel(m.role) : (
                           <form action={changeRole} className="ep-member-actions" style={{ justifyContent: 'flex-start' }}>
                             <input type="hidden" name="user" value={m.user_id} />
-                            <select name="role" defaultValue={m.role}>{s.roles.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}</select>
+                            <select name="role" defaultValue={m.role}>{s.roles.map((r) => <option key={r} value={r}>{roleLabel(r, defs)}</option>)}</select>
                             <Submit className="ep-link">Save</Submit>
                           </form>
                         )}
@@ -97,17 +81,77 @@ export default async function Team({ searchParams }: { searchParams: Promise<Rec
               </tbody>
             </table>
           </section>
-          <section className="ep-card">
-            <h2>What each role can do</h2>
-            <table className="ep-table ep-matrix">
-              <thead><tr><th></th>{Object.keys(roleDefs).map((r) => <th key={r}>{roleLabel(r)}</th>)}</tr></thead>
-              <tbody>
-                {matrix.map(([label, who]) => (
-                  <tr key={label}><td>{label}</td>{Object.keys(roleDefs).map((r) => <td key={r}>{(who as readonly string[]).includes(r) ? <span className="ep-yes">✓</span> : <span className="ep-no">—</span>}</td>)}</tr>
-                ))}
-              </tbody>
-            </table>
+          <section className="ep-card" id="roles">
+            <div className="ep-card-head">
+              <h2>What each role can do</h2>
+              <span className="ep-muted ep-small">{s.canEditRoles ? 'Tick or untick to adjust a role, or add your own below.' : s.staff ? 'Only the owner can adjust roles.' : 'Run the roles update in Supabase to adjust roles.'}</span>
+            </div>
+            <div className="ep-tablewrap">
+              <table className="ep-table ep-matrix">
+                <thead><tr><th></th>{defs.map((r) => <th key={r.key}>{r.label}</th>)}</tr></thead>
+                <tbody>
+                  {perms.map((p) => (
+                    <tr key={p.key}><td>{p.label}</td>{defs.map((r) => <td key={r.key}>{roleCan(r, p.key as Perm, s.staff) ? <span className="ep-yes">✓</span> : <span className="ep-no">—</span>}</td>)}</tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </section>
+          {s.canEditRoles && (
+            <section className="ep-card">
+              <h2>Adjust roles</h2>
+              <div className="ep-rolecards">
+                {defs.map((r) => (
+                  <details key={r.key} className="ep-rolecard">
+                    <summary>
+                      <b>{r.label}</b>
+                      <span>{r.locked ? 'Always everything' : `${perms.filter((p) => r.perms.includes(p.key)).length} of ${perms.length} permissions`} · {used(r.key)} {used(r.key) === 1 ? 'person' : 'people'}{r.system ? '' : ' · your role'}</span>
+                    </summary>
+                    <form action={saveRole} className="ep-form">
+                      <input type="hidden" name="key" value={r.key} />
+                      <div className="ep-row2">
+                        <label>Name<input name="label" defaultValue={r.label} maxLength={40} required /></label>
+                        <label>Short description<input name="about" defaultValue={r.about ?? ''} maxLength={160} /></label>
+                      </div>
+                      {r.locked ? (
+                        <p className="ep-small ep-muted">{r.label} can always do everything, so nobody can lock themselves out.</p>
+                      ) : (
+                        <div className="ep-permgrid">
+                          {perms.map((p) => (
+                            <label key={p.key} className="ep-check"><input type="checkbox" name="perm" value={p.key} defaultChecked={r.perms.includes(p.key)} />{p.label}</label>
+                          ))}
+                        </div>
+                      )}
+                      <div className="ep-member-actions" style={{ justifyContent: 'flex-start' }}>
+                        <Submit className="ep-btn">Save role</Submit>
+                      </div>
+                    </form>
+                    {!r.system && (
+                      <form action={deleteRole} style={{ marginTop: '.6rem' }}>
+                        <input type="hidden" name="key" value={r.key} />
+                        <Submit className="ep-link" confirm={`Delete the role “${r.label}”?`}>Delete this role</Submit>
+                      </form>
+                    )}
+                  </details>
+                ))}
+              </div>
+              <details className="ep-rolecard ep-rolecard--new">
+                <summary><b>+ Add a role</b><span>e.g. Packer, Team lead, Accountant</span></summary>
+                <form action={createRole} className="ep-form">
+                  <div className="ep-row2">
+                    <label>Name<input name="label" maxLength={40} required placeholder="e.g. Team lead" /></label>
+                    <label>Start from<select name="copy" defaultValue=""><option value="">Nothing ticked</option>{defs.map((r) => <option key={r.key} value={r.key}>Same as {r.label}</option>)}</select></label>
+                  </div>
+                  <label>Short description<input name="about" maxLength={160} placeholder="What this person does" /></label>
+                  <p className="ep-small ep-muted">Tick what this role can do (or leave all empty and pick “Start from”).</p>
+                  <div className="ep-permgrid">
+                    {perms.map((p) => <label key={p.key} className="ep-check"><input type="checkbox" name="perm" value={p.key} />{p.label}</label>)}
+                  </div>
+                  <Submit className="ep-btn">Add role <Arrow /></Submit>
+                </form>
+              </details>
+            </section>
+          )}
         </div>
         <section className="ep-card ep-card--side">
           <h2>Invite someone</h2>
@@ -119,8 +163,8 @@ export default async function Team({ searchParams }: { searchParams: Promise<Rec
               {s.roles.map((r, i) => (
                 <label key={r} className="ep-role">
                   <input type="radio" name="role" value={r} defaultChecked={i === (s.staff ? 1 : 1)} />
-                  <b>{roleLabel(r)}</b>
-                  <span>{(roleDefs as Record<string, { about: string }>)[r].about}</span>
+                  <b>{roleLabel(r, defs)}</b>
+                  <span>{defs.find((d) => d.key === r)?.about}</span>
                 </label>
               ))}
             </div>

@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 import { getCtx } from '@/lib/session';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { getOrgRoles } from '@/lib/roles-db';
 import { copyableSignInLink, emailSignInLink, inviteToOrg } from '@/lib/invite';
 import { logActivity } from '@/lib/log';
 import { str, withMsg } from '@/lib/format';
@@ -34,7 +35,8 @@ export async function inviteClientMember(fd: FormData) {
   const orgId = str(fd, 'org');
   const email = str(fd, 'email').toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(email)) redirect(withMsg(`/clients/${orgId}`, 'Add a valid email.', 'err'));
-  const role = ['admin', 'operations', 'support', 'finance'].includes(str(fd, 'role')) ? str(fd, 'role') : 'admin';
+  const { roles } = await getOrgRoles(orgId, false);
+  const role = roles.some((r) => r.key === str(fd, 'role')) ? str(fd, 'role') : 'admin';
   const inv = await inviteToOrg({ email, name: str(fd, 'name'), orgId, role, invitedBy: ctx.userId });
   await logActivity(supabaseAdmin(), ctx.userId, orgId, 'member_invited', `${email} as ${role}`);
   redirect(withMsg(`/clients/${orgId}`, inv.ok ? (inv.emailed ? `Invitation emailed to ${email}. Their private link is also below to copy.` : `${email} now has access.`) : `${email} is added, but ${inv.error}.`, inv.ok ? 'ok' : 'warn'));
