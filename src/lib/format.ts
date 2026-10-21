@@ -11,6 +11,7 @@ export const INBOUND_STATUS: Record<string, [string, string]> = {
   announced: ['Booked', 'mute'],
   in_transit: ['Picked up', 'go'],
   receiving: ['Receiving', 'pk'],
+  counted: ['Counted', 'warn'],
   received: ['Available', 'ok'],
 };
 

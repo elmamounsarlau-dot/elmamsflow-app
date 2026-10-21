@@ -127,10 +127,11 @@ export function CsvImport({ canCount, canProducts, fixedOrg, clients, products }
     <div className="ep-split">
       <div className="ep-card--grow">
         <section className="ep-card">
-          <div className="ep-pills" style={{ marginBottom: '1rem' }}>
+          {canCount && canProducts ? <div className="ep-pills" style={{ marginBottom: '1.2rem' }}>
             {canCount && <button type="button" className={kind === 'stock_count' ? 'is-on' : ''} onClick={() => { setKind('stock_count'); setResult(null); }}>Warehouse stock count</button>}
             {canProducts && <button type="button" className={kind === 'products' ? 'is-on' : ''} onClick={() => { setKind('products'); setResult(null); }}>Products</button>}
-          </div>
+          </div> : <h2 style={{ marginBottom: '.3rem' }}>{kind === 'stock_count' ? 'Upload a stock count' : 'Add products from a file'}</h2>}
+          {!(canCount && canProducts) && <p className="ep-small ep-muted" style={{ marginBottom: '1.2rem' }}>{kind === 'stock_count' ? 'Each row sets the counted quantity for one SKU.' : 'Upload your product list. You see a preview of every row before anything is saved.'}</p>}
           <form className="ep-form" onSubmit={(e) => e.preventDefault()}>
             {kind === 'products' && !fixedOrg && (
               <label>Client<select value={orgId} onChange={(e) => setOrgId(e.target.value)} required><option value="">Choose a client…</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
@@ -141,8 +142,7 @@ export function CsvImport({ canCount, canProducts, fixedOrg, clients, products }
                 <label>Confirmed by<input value={confirmedBy} onChange={(e) => setConfirmedBy(e.target.value)} placeholder="Who sent the count" /></label>
               </div>
             )}
-            <label>
-              CSV file
+            <label className={`ep-drop${file ? ' has-file' : ''}`}>
               <input
                 type="file"
                 accept=".csv,text/csv"
@@ -154,6 +154,11 @@ export function CsvImport({ canCount, canProducts, fixedOrg, clients, products }
                   setFile({ name: f.name, text, hash: await sha256(`${kind}\n${text}`) });
                 }}
               />
+              <span className="ep-drop-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></svg>
+              </span>
+              <b>{file ? file.name : 'Choose a CSV file'}</b>
+              <small>{file ? 'Click to choose another file' : 'or drop it here · Excel: File → Save as → CSV'}</small>
             </label>
           </form>
           {result && <p className={`ep-note ep-note--${result.ok ? 'ok' : 'err'}`} style={{ marginTop: '1rem' }}>{result.message}</p>}
@@ -220,27 +225,49 @@ export function CsvImport({ canCount, canProducts, fixedOrg, clients, products }
 
       <section className="ep-card ep-card--side">
         <h2>{kind === 'stock_count' ? 'Stock count file' : 'Products file'}</h2>
-        {kind === 'stock_count' ? (
-          <>
-            <p className="ep-small ep-muted" style={{ marginBottom: '.8rem' }}>Use this when the warehouse sends a count (for example on WeChat). Each row sets the counted quantity on hand for one SKU; the difference is recorded as a correction from this file.</p>
-            <pre className="ep-code">{fixedOrg ? 'sku,counted,note\nLEMON-LIME,480,\nBERRY,120,2 boxes crushed' : 'client_code,sku,counted,note\nEMF-1001,LEMON-LIME,480,\nEMF-1001,BERRY,120,2 boxes crushed'}</pre>
-            <ul className="ep-ticks ep-small">
+        <p className="ep-small ep-muted" style={{ margin: '.4rem 0 1rem' }}>
+          {kind === 'stock_count'
+            ? 'Use this when the warehouse sends a count (for example on WeChat). Each row sets the quantity on hand for one SKU; the difference is recorded as a correction.'
+            : 'Add many products at once instead of one by one. SKUs you already have are skipped, never overwritten.'}
+        </p>
+        <p className="ep-eyebrow" style={{ marginBottom: '.5rem' }}><i />Columns</p>
+        <ul className="ep-cols">
+          {(kind === 'stock_count' ? COUNT_COLS(!!fixedOrg) : PRODUCT_COLS).map(([c, req, ex]) => (
+            <li key={c}><code>{c}</code>{req && <span className="ep-req">Required</span>}<small>{ex}</small></li>
+          ))}
+        </ul>
+        <a className="ep-btn ep-btn--ghost ep-btn--full" download={kind === 'stock_count' ? 'stock-count-template.csv' : 'products-template.csv'} href={`data:text/csv;charset=utf-8,${encodeURIComponent(kind === 'stock_count' ? (fixedOrg ? 'sku,counted,note\nLEMON-LIME,480,\nBERRY,120,2 boxes crushed\n' : 'client_code,sku,counted,note\nEMF-1001,LEMON-LIME,480,\nEMF-1001,BERRY,120,2 boxes crushed\n') : 'sku,name,weight_g,hs_code,customs_value,barcode,low_stock\nLEMON-LIME,Hydration mix - Lemon lime,200,2106.90,4.50,,20\n')}`}>Download the template</a>
+        <ul className="ep-ticks ep-small" style={{ marginTop: '1rem' }}>
+          {kind === 'stock_count' ? (
+            <>
               <li>The same file can never be applied twice.</li>
               <li>All rows apply together, or none do.</li>
-              <li>Rows are marked as “CSV import” in each product’s history, with the date and who confirmed.</li>
-            </ul>
-          </>
-        ) : (
-          <>
-            <p className="ep-small ep-muted" style={{ marginBottom: '.8rem' }}>Add many products at once. Existing SKUs are skipped, never overwritten.</p>
-            <pre className="ep-code">sku,name,weight_g,hs_code,customs_value,barcode,low_stock{'\n'}LEMON-LIME,Hydration mix · Lemon lime,200,2106.90,4.50,,20</pre>
-            <ul className="ep-ticks ep-small">
-              <li>Only sku and name are required.</li>
-              <li>Add HS code and customs value so orders don’t go on hold.</li>
-            </ul>
-          </>
-        )}
+              <li>Each change shows as “CSV import” in the product’s history.</li>
+            </>
+          ) : (
+            <>
+              <li>Nothing is saved until you check the preview and confirm.</li>
+              <li>Add the HS code and customs value so orders don’t go on hold at customs.</li>
+            </>
+          )}
+        </ul>
       </section>
     </div>
   );
 }
+
+const PRODUCT_COLS: [string, boolean, string][] = [
+  ['sku', true, 'Your product code, e.g. LEMON-LIME'],
+  ['name', true, 'Product name'],
+  ['weight_g', false, 'Weight in grams, e.g. 200'],
+  ['hs_code', false, 'Customs code, e.g. 2106.90'],
+  ['customs_value', false, 'Value per unit in USD, e.g. 4.50'],
+  ['barcode', false, 'EAN / UPC if you have one'],
+  ['low_stock', false, 'Alert me below this many units'],
+];
+const COUNT_COLS = (own: boolean): [string, boolean, string][] => [
+  ...(own ? [] : [['client_code', true, 'e.g. EMF-1001'] as [string, boolean, string]]),
+  ['sku', true, 'Product code'],
+  ['counted', true, 'Units physically on the shelf'],
+  ['note', false, 'e.g. 2 boxes crushed'],
+];

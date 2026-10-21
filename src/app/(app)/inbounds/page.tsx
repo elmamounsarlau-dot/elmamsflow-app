@@ -22,7 +22,7 @@ export default async function Inbounds() {
         <div className="ep-inbounds">
           {list.map((b) => {
             const units = (b.inbound_items as { expected: number }[]).reduce((a, i) => a + i.expected, 0);
-            const step = { announced: 0, in_transit: 1, receiving: 2, received: 5 }[b.status as string] ?? 0;
+            const step = { announced: 0, in_transit: 1, receiving: 2, counted: 3, received: 5 }[b.status as string] ?? 0;
             return (
               <Link key={b.id} href={`/inbounds/${b.id}`} className="ep-inbound">
                 <div className="ep-inbound-head">
