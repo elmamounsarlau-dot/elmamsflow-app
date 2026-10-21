@@ -29,3 +29,16 @@ export async function adjustStock(fd: FormData) {
   const { error } = await sb.rpc('adjust_stock', { p_product: str(fd, 'product'), p_qty: parseInt(str(fd, 'qty'), 10) || 0, p_reason: str(fd, 'reason') || 'Adjustment' });
   redirect(withMsg('/inventory', error ? error.message : 'Stock updated.', error ? 'err' : 'ok'));
 }
+
+export async function quarantineStock(fd: FormData) {
+  const sb = await supabaseServer();
+  const { error } = await sb.rpc('quarantine_stock', { p_product: str(fd, 'product'), p_qty: parseInt(str(fd, 'qty'), 10) || 0, p_reason: str(fd, 'reason') });
+  redirect(withMsg('/inventory', error ? error.message : 'Units moved to quarantine. They are no longer available to sell.', error ? 'err' : 'ok'));
+}
+
+export async function releaseStock(fd: FormData) {
+  const sb = await supabaseServer();
+  const writeOff = str(fd, 'mode') === 'writeoff';
+  const { error } = await sb.rpc('release_stock', { p_product: str(fd, 'product'), p_qty: parseInt(str(fd, 'qty'), 10) || 0, p_reason: str(fd, 'reason'), p_write_off: writeOff });
+  redirect(withMsg('/inventory', error ? error.message : writeOff ? 'Written off and removed from stock.' : 'Released back to available stock.', error ? 'err' : 'ok'));
+}

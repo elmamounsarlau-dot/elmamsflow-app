@@ -4,8 +4,12 @@ import type { Ctx } from './session';
 
 export type ProductRow = {
   id: string; org_id: string; sku: string; name: string; barcode: string | null; weight_g: number; hs_code: string | null;
-  customs_value: number; low_stock: number; on_hand: number; reserved: number; incoming: number;
+  customs_value: number; low_stock: number; on_hand: number; reserved: number; incoming: number; quarantined: number;
+  last_movement_at: string | null;
 };
+
+/** Sellable now: on hand − quarantined − reserved for open orders. */
+export const available = (p: Pick<ProductRow, 'on_hand' | 'quarantined' | 'reserved'>) => Math.max(0, p.on_hand - p.quarantined - p.reserved);
 
 export async function getProducts(ctx: Ctx) {
   const sb = await supabaseServer();
@@ -30,7 +34,7 @@ export function productOptions(products: ProductRow[], names?: Record<string, st
   return products.map((p) => ({
     id: p.id,
     org: p.org_id,
-    label: `${names ? names[p.org_id] + ' — ' : ''}${p.sku} · ${p.name} (${Math.max(0, p.on_hand - p.reserved)} available)`,
+    label: `${names ? names[p.org_id] + ' — ' : ''}${p.sku} · ${p.name} (${available(p)} available)`,
   }));
 }
 
