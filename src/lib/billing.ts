@@ -50,7 +50,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 
 export function money(n: number, c: string) {
-  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: c || 'USD' }).format(Number(n) || 0);
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: c || 'USD' }).format(Number(n) || 0);
 }
 
 export async function getRateCard(orgId: string): Promise<RateCard | null> {
