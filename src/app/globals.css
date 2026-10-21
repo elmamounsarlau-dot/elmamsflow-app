@@ -476,3 +476,9 @@ a.ep-btn--full { display: flex; justify-content: center; }
 .ep-inline { align-items: stretch; }
 .ep-inbound-actions { align-items: flex-end; }
 .ep-inbound-status select { width: 100%; }
+
+/* Inventory table: give product names room, keep the stock bar compact */
+.ep-app th.ep-w40 { width: 18%; min-width: 120px; }
+.ep-app .ep-table td:first-child { min-width: 170px; }
+.ep-app .ep-table td small { line-height: 1.4; }
+.ep-app .ep-table td:last-child small { white-space: nowrap; }
