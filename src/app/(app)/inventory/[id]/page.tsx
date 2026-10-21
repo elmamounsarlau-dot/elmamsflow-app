@@ -6,7 +6,7 @@ import { fmtDays, HEALTH, runway, salesByProduct } from '@/lib/insights';
 import { fmtDate } from '@/lib/format';
 import { Back, Empty, TeamOnly } from '@/components/ui';
 import { Submit } from '@/components/client';
-import { adjustStock, quarantineStock, releaseStock } from '../actions';
+import { adjustStock, quarantineStock, releaseStock, updateProduct } from '../actions';
 
 const TYPES: Record<string, string> = { inbound: 'Received', order: 'Shipped', adjust: 'Correction', count: 'Warehouse count', quarantine: 'To quarantine', release: 'Out of quarantine' };
 const SOURCE: Record<string, string> = { manual: 'Entered in app', csv: 'CSV import', warehouse: 'Warehouse confirmed' };
@@ -31,6 +31,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
   const max = Math.max(1, av + p.reserved + p.quarantined + p.incoming);
   const back = `/inventory/${p.id}`;
   const tools = ctx.can('stock.adjust');
+  const missing = !p.hs_code || !Number(p.customs_value);
   return (
     <>
       <Back href="/inventory">Inventory</Back>
@@ -40,7 +41,15 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
           <h1>{p.sku} <span className={`ep-st ep-st--${tone}`}>{hl}</span></h1>
           <p>{p.name} · {p.hs_code ? `HS ${p.hs_code}` : <em className="ep-warn">HS code missing</em>} · customs value ${Number(p.customs_value).toFixed(2)}{p.weight_g ? ` · ${p.weight_g} g` : ''}</p>
         </div>
+        {ctx.can('products.edit') && <div className="ep-actions"><a className="ep-btn ep-btn--ghost" href="#edit">Edit details</a></div>}
       </div>
+
+      {missing && ctx.can('products.edit') && (
+        <a href="#edit" className="ep-fixbar">
+          <span><b>Customs info missing.</b> Add the {!p.hs_code && 'HS code'}{!p.hs_code && !Number(p.customs_value) && ' and '}{!Number(p.customs_value) && 'customs value'} so orders with this product aren’t held.</span>
+          <em>Fix now →</em>
+        </a>
+      )}
 
       <div className="ep-sum ep-sum--5">
         <div className="ep-sum-card"><small>Sellable</small><b>{av.toLocaleString('en')}</b><span>Ready to ship today</span></div>
@@ -89,6 +98,26 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
             </form>
           </section>
         </div>
+      )}
+
+      {ctx.can('products.edit') && (
+        <section className={`ep-card${missing ? ' ep-card--hl' : ''}`} id="edit">
+          <div className="ep-card-head"><h2>Product details</h2><span className="ep-muted ep-small">SKU {p.sku} can’t be changed. Stock changes only through inbounds, orders and the warehouse.</span></div>
+          <form action={updateProduct} className="ep-form">
+            <input type="hidden" name="product" value={p.id} />
+            <div className="ep-row2"><label>Product name<input name="name" defaultValue={p.name} required /></label><label>Barcode<input name="barcode" defaultValue={p.barcode ?? ''} placeholder="EAN / UPC" /></label></div>
+            <div className="ep-row4">
+              <label>HS code<input name="hs_code" defaultValue={p.hs_code ?? ''} placeholder="e.g. 6307.90" autoFocus={missing && !p.hs_code} className={!p.hs_code ? 'is-missing' : ''} /></label>
+              <label>Customs value (USD)<input type="number" step="0.01" min={0} name="customs_value" defaultValue={Number(p.customs_value) || ''} className={!Number(p.customs_value) ? 'is-missing' : ''} /></label>
+              <label>Weight (g)<input type="number" min={0} name="weight_g" defaultValue={p.weight_g || ''} /></label>
+              <label>Low-stock alert at<input type="number" min={0} name="low_stock" defaultValue={p.low_stock} /></label>
+            </div>
+            <div className="ep-form-foot" style={{ justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+              <span className="ep-small ep-muted">Not sure of the HS code? Search the product on <a href="https://www.tariffnumber.com" target="_blank" rel="noreferrer">tariffnumber.com</a> or ask us in Support.</span>
+              <Submit>Save details</Submit>
+            </div>
+          </form>
+        </section>
       )}
 
       <section className="ep-card ep-card--flush">

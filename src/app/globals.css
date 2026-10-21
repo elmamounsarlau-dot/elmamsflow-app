@@ -688,3 +688,14 @@ a.ep-sum-card:hover { border-color: #C9D6E6; transform: translateY(-1px); box-sh
 }
 
 .ep-tabbar a { border-radius: 0; border-top: 0; border-left: 0; border-right: 0; background: none; }
+
+/* Fixing missing product details */
+.ep-fixbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .85rem 1.1rem; margin-bottom: 18px; border-radius: 14px; background: var(--warn-bg); color: var(--warn) !important; border: 1px solid #F7D7AE; transition: border-color .15s; }
+.ep-fixbar:hover { border-color: var(--orange); }
+.ep-fixbar em { font-style: normal; font-weight: 700; white-space: nowrap; }
+.ep-fixlink { display: inline-block; margin-left: .45rem; padding: .05rem .5rem; border-radius: 999px; background: var(--warn-bg); color: #B4570B !important; font-weight: 600; font-size: .72rem; }
+.ep-fixlink:hover { background: #FDE3C2; }
+.ep-row4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .8rem; }
+.ep-app input.is-missing { border-color: #F2B661 !important; background: #FFFBF4 !important; }
+#edit { scroll-margin-top: 90px; }
+@media (max-width: 900px) { .ep-row4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -44,3 +44,24 @@ export async function releaseStock(fd: FormData) {
   const { error } = await sb.rpc('release_stock', { p_product: str(fd, 'product'), p_qty: parseInt(str(fd, 'qty'), 10) || 0, p_reason: str(fd, 'reason'), p_write_off: writeOff });
   redirect(withMsg(back(fd), error ? error.message : writeOff ? 'Written off and removed from stock.' : 'Released back to available stock.', error ? 'err' : 'ok'));
 }
+
+/** Edit a product's details (not its SKU or stock). Clients with "Add and edit products" can do this for their own products. */
+export async function updateProduct(fd: FormData) {
+  const ctx = await getCtx();
+  const id = str(fd, 'product');
+  const to = `/inventory/${id}`;
+  if (!ctx?.can('products.edit')) redirect(withMsg(to, 'You don’t have access to that.', 'err'));
+  const name = str(fd, 'name');
+  if (!name) redirect(withMsg(`${to}#edit`, 'The product needs a name.', 'err'));
+  const hs = str(fd, 'hs_code').replace(/[^0-9.]/g, '');
+  if (hs && hs.replace(/\./g, '').length < 6) redirect(withMsg(`${to}#edit`, 'An HS code has at least 6 digits, e.g. 6307.90.', 'err'));
+  const sb = await supabaseServer();
+  const { data, error } = await sb.from('products').update({
+    name, barcode: str(fd, 'barcode') || null, weight_g: Math.max(0, parseInt(str(fd, 'weight_g'), 10) || 0),
+    hs_code: hs || null, customs_value: Math.max(0, parseFloat(str(fd, 'customs_value')) || 0),
+    low_stock: Math.max(0, parseInt(str(fd, 'low_stock'), 10) || 0),
+  }).eq('id', id).select('org_id, sku').maybeSingle();
+  if (error || !data) redirect(withMsg(`${to}#edit`, error?.message ?? 'You can’t edit this product.', 'err'));
+  await logActivity(sb, ctx.userId, data.org_id, 'product_updated', `${data.sku} · ${name}`);
+  redirect(withMsg(to, `${data.sku} saved.`));
+}

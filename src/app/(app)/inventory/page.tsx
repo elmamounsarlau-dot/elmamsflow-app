@@ -15,6 +15,7 @@ const FILTERS: [string, string][] = [
   ['idle', 'Not selling'],
   ['quarantine', 'Quarantine'],
   ['incoming', 'Incoming'],
+  ['customs', 'Missing customs info'],
 ];
 const SORTS: [string, string][] = [
   ['runway', 'Days of stock left'],
@@ -41,6 +42,7 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
     : f === 'idle' ? x.r.health === 'idle' || x.r.health === 'new'
     : f === 'quarantine' ? x.p.quarantined > 0
     : f === 'incoming' ? x.p.incoming > 0
+    : f === 'customs' ? !x.p.hs_code || !Number(x.p.customs_value)
     : true;
 
   const filter = FILTERS.some(([k]) => k === sp.f) ? sp.f : 'all';
@@ -114,7 +116,8 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
 
       {noCustoms > 0 && (
         <p className="ep-note ep-note--warn" style={{ marginBottom: 14 }}>
-          {noCustoms} product{noCustoms === 1 ? ' is' : 's are'} missing an HS code or customs value. Orders with them go on hold until it’s added.
+          {noCustoms} product{noCustoms === 1 ? ' is' : 's are'} missing an HS code or customs value. Orders with them go on hold until it’s added.{' '}
+          <Link href={link({ f: 'customs' })}><b>Show {noCustoms === 1 ? 'it' : 'them'} →</b></Link>
         </p>
       )}
 
@@ -187,7 +190,7 @@ function Row({ p, r, client }: { p: ProductRow; r: ReturnType<typeof runway>; cl
       <td>
         <div className="ep-prod">
           <span className="ep-prod-ic" aria-hidden="true">{p.sku.slice(0, 2)}</span>
-          <div><b>{p.sku}</b><small>{p.name}{!p.hs_code && <em className="ep-warn"> · HS code missing</em>}</small></div>
+          <div><b>{p.sku}</b><small>{p.name}{(!p.hs_code || !Number(p.customs_value)) && <a className="ep-fixlink" href={`/inventory/${p.id}#edit`}>{!p.hs_code ? 'Add HS code' : 'Add customs value'}</a>}</small></div>
         </div>
       </td>
       {client !== null && <td><small className="ep-client">{client}</small></td>}
