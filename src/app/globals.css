@@ -533,15 +533,15 @@ a.ep-sum-card:hover { border-color: #C9D6E6; transform: translateY(-1px); box-sh
 .ep-toolbar { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; padding: 1rem 1.3rem .75rem; }
 .ep-search { position: relative; flex: 1; min-width: 220px; max-width: 380px; }
 .ep-search svg { position: absolute; left: .85rem; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
-.ep-app .ep-search input { width: 100%; padding-left: 2.4rem; min-height: 40px; height: 40px; border-radius: 10px; }
+.ep-app .ep-search input { width: 100%; padding-left: 2.5rem !important; min-height: 40px; height: 40px; border-radius: 10px; }
 .ep-app .ep-toolbar select { min-height: 40px; height: 40px; border-radius: 10px; font-size: .86rem; }
 .ep-toolbar .ep-btn { min-height: 40px; height: 40px; border-radius: 10px; font-size: .86rem; padding: 0 1rem; box-shadow: none; }
-.ep-tabs { display: flex; gap: .2rem; padding: 0 1.3rem; border-bottom: 1px solid var(--line); overflow-x: auto; }
-.ep-tabs a { display: inline-flex; align-items: center; gap: .45rem; padding: .7rem .75rem; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--muted); font-size: .86rem; font-weight: 500; white-space: nowrap; transition: color .15s, border-color .15s; }
-.ep-tabs a em { font-style: normal; font-size: .72rem; font-weight: 700; padding: .1rem .45rem; border-radius: 999px; background: var(--mist); color: var(--muted); }
-.ep-tabs a:hover { color: var(--navy); }
-.ep-tabs a.is-on { color: var(--navy); border-bottom-color: var(--navy); }
-.ep-tabs a.is-on em { background: var(--navy); color: #fff; }
+.ep-tabbar { display: flex; gap: .2rem; padding: 0 1.3rem; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.ep-tabbar a { display: inline-flex; align-items: center; gap: .45rem; padding: .7rem .75rem; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--muted); font-size: .86rem; font-weight: 500; white-space: nowrap; transition: color .15s, border-color .15s; }
+.ep-tabbar a em { font-style: normal; font-size: .72rem; font-weight: 700; padding: .1rem .45rem; border-radius: 999px; background: var(--mist); color: var(--muted); }
+.ep-tabbar a:hover { color: var(--navy); }
+.ep-tabbar a.is-on { color: var(--navy); border-bottom-color: var(--navy); }
+.ep-tabbar a.is-on em { background: var(--navy); color: #fff; }
 .ep-table-foot { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; padding: .8rem 1.3rem; border-top: 1px solid var(--line); font-size: .8rem; color: var(--muted); background: #FAFBFD; }
 
 /* Inventory table */
@@ -686,3 +686,5 @@ a.ep-sum-card:hover { border-color: #C9D6E6; transform: translateY(-1px); box-sh
 	.ep-dl { grid-template-columns: 1fr; gap: .1rem; }
 	.ep-dl dd { margin-bottom: .5rem; }
 }
+
+.ep-tabbar a { border-radius: 0; border-top: 0; border-left: 0; border-right: 0; background: none; }

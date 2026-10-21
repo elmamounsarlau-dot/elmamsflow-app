@@ -93,7 +93,7 @@ export default async function Inbounds({ searchParams }: { searchParams: Promise
           {ctx.backOffice && <select name="c" defaultValue={client}><option value="">All clients</option>{Object.entries(names).map(([id, n]) => <option key={id} value={id}>{n}</option>)}</select>}
           <button className="ep-btn ep-btn--ghost">Apply</button>
         </form>
-        <div className="ep-tabs">
+        <div className="ep-tabbar">
           {TABS.map(([k, l, rows]) => <Link key={k} href={href(k)} className={tab[0] === k ? 'is-on' : ''}>{l}<em>{rows.filter((b) => !client || b.org_id === client).length}</em></Link>)}
         </div>
         {list.length === 0 ? (

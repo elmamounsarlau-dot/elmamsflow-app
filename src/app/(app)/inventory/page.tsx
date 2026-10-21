@@ -134,7 +134,7 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
           {filter !== 'all' && <input type="hidden" name="f" value={filter} />}
           <button className="ep-btn ep-btn--ghost">Apply</button>
         </form>
-        <div className="ep-tabs">
+        <div className="ep-tabbar">
           {FILTERS.map(([k, l]) => {
             const n = base.filter((x) => match(k, x)).length;
             if (k !== 'all' && n === 0 && filter !== k) return null;
