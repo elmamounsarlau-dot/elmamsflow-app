@@ -1,112 +1,209 @@
 import Link from 'next/link';
 import { requireCtx } from '@/lib/session';
-import { available, getClients, getProducts, orgNames } from '@/lib/data';
+import { available, getProducts, orgNames, type ProductRow } from '@/lib/data';
+import { fmtDays, HEALTH, runway, salesByProduct, type Health } from '@/lib/insights';
 import { fmtDate } from '@/lib/format';
-import { Empty, TeamOnly } from '@/components/ui';
-import { Submit } from '@/components/client';
-import { addProduct, adjustStock, quarantineStock, releaseStock } from './actions';
+import { Arrow, Empty } from '@/components/ui';
 
 export const metadata = { title: 'Inventory' };
+
+const FILTERS: [string, string][] = [
+  ['all', 'All SKUs'],
+  ['reorder', 'Reorder now'],
+  ['low', 'Running low'],
+  ['healthy', 'Healthy'],
+  ['idle', 'Not selling'],
+  ['quarantine', 'Quarantine'],
+  ['incoming', 'Incoming'],
+];
+const SORTS: [string, string][] = [
+  ['runway', 'Days of stock left'],
+  ['sales', 'Best sellers (30d)'],
+  ['sellable', 'Sellable units'],
+  ['sku', 'SKU A–Z'],
+  ['updated', 'Recently moved'],
+];
 
 export default async function Inventory({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const ctx = await requireCtx();
   const sp = await searchParams;
-  const [products, clients, names] = await Promise.all([getProducts(ctx), ctx.org ? Promise.resolve([]) : getClients(), ctx.backOffice ? orgNames() : Promise.resolve({} as Record<string, string>)]);
-  const quarantined = products.filter((p) => p.quarantined > 0);
-  const label = (p: (typeof products)[number]) => `${ctx.backOffice ? `${names[p.org_id]} — ` : ''}${p.sku} · ${p.name}`;
+  const [products, names, sales] = await Promise.all([
+    getProducts(ctx),
+    ctx.backOffice ? orgNames() : Promise.resolve({} as Record<string, string>),
+    salesByProduct(ctx, 30),
+  ]);
+
+  const rows = products.map((p) => ({ p, r: runway(p, sales.get(p.id) ?? 0) }));
+  const match = (f: string, x: (typeof rows)[number]) =>
+    f === 'reorder' ? x.r.health === 'critical' || x.r.health === 'out'
+    : f === 'low' ? x.r.health === 'warning'
+    : f === 'healthy' ? x.r.health === 'healthy'
+    : f === 'idle' ? x.r.health === 'idle' || x.r.health === 'new'
+    : f === 'quarantine' ? x.p.quarantined > 0
+    : f === 'incoming' ? x.p.incoming > 0
+    : true;
+
+  const filter = FILTERS.some(([k]) => k === sp.f) ? sp.f : 'all';
+  const sort = SORTS.some(([k]) => k === sp.sort) ? sp.sort : 'runway';
+  const q = (sp.q ?? '').trim().toLowerCase();
+  const client = ctx.backOffice ? sp.c ?? '' : '';
+
+  const base = rows.filter((x) => (!client || x.p.org_id === client) && (!q || `${x.p.sku} ${x.p.name} ${x.p.barcode ?? ''}`.toLowerCase().includes(q)));
+  const list = base.filter((x) => match(filter, x)).sort((a, b) => {
+    if (sort === 'sales') return b.r.sold30 - a.r.sold30;
+    if (sort === 'sellable') return b.r.available - a.r.available;
+    if (sort === 'sku') return a.p.sku.localeCompare(b.p.sku);
+    if (sort === 'updated') return (b.p.last_movement_at ?? '').localeCompare(a.p.last_movement_at ?? '');
+    const rank: Record<Health, number> = { out: 0, critical: 1, warning: 2, healthy: 3, idle: 4, new: 5 };
+    return rank[a.r.health] - rank[b.r.health] || (a.r.days ?? 1e9) - (b.r.days ?? 1e9);
+  });
+
+  const scopeRows = base;
+  const sellable = scopeRows.reduce((a, x) => a + x.r.available, 0);
+  const value = scopeRows.reduce((a, x) => a + x.p.on_hand * Number(x.p.customs_value || 0), 0);
+  const reorder = scopeRows.filter((x) => match('reorder', x));
+  const quarantined = scopeRows.reduce((a, x) => a + x.p.quarantined, 0);
+  const incoming = scopeRows.reduce((a, x) => a + x.p.incoming, 0);
+  const noCustoms = scopeRows.filter((x) => !x.p.hs_code || !Number(x.p.customs_value)).length;
+
+  const link = (patch: Record<string, string>) => {
+    const u = new URLSearchParams({ ...(q ? { q } : {}), ...(client ? { c: client } : {}), ...(filter !== 'all' ? { f: filter } : {}), ...(sort !== 'runway' ? { sort } : {}), ...patch });
+    for (const [k, v] of [...u.entries()]) if (!v || (k === 'f' && v === 'all')) u.delete(k);
+    const s = u.toString();
+    return `/inventory${s ? `?${s}` : ''}`;
+  };
+  const exportHref = `/inventory/export?${new URLSearchParams({ ...(q ? { q } : {}), ...(client ? { c: client } : {}), f: filter }).toString()}`;
+
   return (
     <>
-      <div className="ep-title-row">
-        <h1 className="ep-page-title">Inventory</h1>
+      <div className="ep-head">
+        <div>
+          <p className="ep-crumb">Inventory</p>
+          <h1>Inventory</h1>
+          <p>Every unit we hold for {ctx.backOffice ? 'your clients' : 'you'}, what is sellable, and how long it will last.</p>
+        </div>
         <div className="ep-actions">
           {(ctx.can('stock.adjust') || ctx.can('products.edit')) && <Link className="ep-btn ep-btn--ghost" href="/inventory/import">Import CSV</Link>}
+          <a className="ep-btn ep-btn--ghost" href={exportHref}>Export</a>
+          {ctx.can('products.edit') && <Link className="ep-btn" href="/inventory/new">Add product <Arrow /></Link>}
         </div>
       </div>
-      <p className="ep-muted ep-small" style={{ marginTop: '-6px', marginBottom: '14px' }}>
-        Balances are kept from receipts, shipments and corrections recorded here. The China warehouse confirms counts by WeChat, so they are entered or imported by our team, not synchronised automatically.
-      </p>
-      <div className="ep-split">
-        <div className="ep-card--grow">
-        <section className="ep-card">
-          <div className="ep-card-head"><h2>Products</h2><span className="ep-legend"><i className="a" />Available <i className="r" />Reserved <i className="q" />Quarantine <i className="n" />Incoming</span></div>
-          {products.length === 0 ? <Empty title="No products yet" text="Add the first product: SKU, weight and customs details." /> : (
-            <table className="ep-table">
-              <thead><tr><th>Product</th>{ctx.backOffice && <th>Client</th>}<th className="ep-w40">Stock</th><th className="ep-right">Available</th><th className="ep-right">On hand</th><th className="ep-right">Reserved</th><th className="ep-right">Quarantine</th><th className="ep-right">Incoming</th><th>Updated</th></tr></thead>
+
+      <div className="ep-sum">
+        <div className="ep-sum-card">
+          <small>Sellable now</small>
+          <b>{sellable.toLocaleString('en')} <i>units</i></b>
+          <span>{scopeRows.length} SKU{scopeRows.length === 1 ? '' : 's'}{incoming ? ` · ${incoming.toLocaleString('en')} incoming` : ''}</span>
+        </div>
+        <div className="ep-sum-card">
+          <small>Inventory value</small>
+          <b>${value.toLocaleString('en', { maximumFractionDigits: 0 })}</b>
+          <span>On hand, at declared customs value</span>
+        </div>
+        <Link href={link({ f: 'reorder' })} className={`ep-sum-card${reorder.length ? ' is-alert' : ''}`}>
+          <small>Reorder now</small>
+          <b>{reorder.length}</b>
+          <span>{reorder.length ? 'Under 3 weeks of stock, or out' : 'Nothing about to run out'}</span>
+        </Link>
+        <Link href={link({ f: 'quarantine' })} className={`ep-sum-card${quarantined ? ' is-warn' : ''}`}>
+          <small>Quarantine</small>
+          <b>{quarantined.toLocaleString('en')} <i>units</i></b>
+          <span>{quarantined ? 'Set aside, waiting for a decision' : 'Nothing set aside'}</span>
+        </Link>
+      </div>
+
+      {noCustoms > 0 && (
+        <p className="ep-note ep-note--warn" style={{ marginBottom: 14 }}>
+          {noCustoms} product{noCustoms === 1 ? ' is' : 's are'} missing an HS code or customs value. Orders with them go on hold until it’s added.
+        </p>
+      )}
+
+      <section className="ep-card ep-card--flush">
+        <form className="ep-toolbar" action="/inventory">
+          <div className="ep-search">
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="M13.5 13.5L17 17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+            <input name="q" defaultValue={q} placeholder="Search SKU, name or barcode" />
+          </div>
+          {ctx.backOffice && (
+            <select name="c" defaultValue={client}>
+              <option value="">All clients</option>
+              {Object.entries(names).map(([id, n]) => <option key={id} value={id}>{n}</option>)}
+            </select>
+          )}
+          <select name="sort" defaultValue={sort}>{SORTS.map(([k, l]) => <option key={k} value={k}>Sort: {l}</option>)}</select>
+          {filter !== 'all' && <input type="hidden" name="f" value={filter} />}
+          <button className="ep-btn ep-btn--ghost">Apply</button>
+        </form>
+        <div className="ep-tabs">
+          {FILTERS.map(([k, l]) => {
+            const n = base.filter((x) => match(k, x)).length;
+            if (k !== 'all' && n === 0 && filter !== k) return null;
+            return <Link key={k} href={link({ f: k })} className={filter === k ? 'is-on' : ''}>{l}<em>{n}</em></Link>;
+          })}
+        </div>
+
+        {list.length === 0 ? (
+          <Empty title={products.length ? 'Nothing matches' : 'No products yet'} text={products.length ? 'Try another filter or search.' : 'Add your first product, or import your list from a CSV file.'}>
+            {!products.length && ctx.can('products.edit') && <Link className="ep-btn" href="/inventory/new">Add product <Arrow /></Link>}
+          </Empty>
+        ) : (
+          <div className="ep-tablewrap">
+            <table className="ep-table ep-inv">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  {ctx.backOffice && <th>Client</th>}
+                  <th className="ep-inv-bar">Stock</th>
+                  <th className="ep-right">In warehouse</th>
+                  <th className="ep-right">Reserved</th>
+                  <th className="ep-right">Sellable</th>
+                  <th className="ep-right">Quarantine</th>
+                  <th className="ep-right">Incoming</th>
+                  <th className="ep-right">Sold 30d</th>
+                  <th>Runway</th>
+                </tr>
+              </thead>
               <tbody>
-                {products.map((p) => {
-                  const av = available(p);
-                  const max = Math.max(1, av + p.reserved + p.quarantined + p.incoming);
-                  return (
-                    <tr key={p.id} data-href={`/inventory/${p.id}`}>
-                      <td><b>{p.sku}</b><small>{p.name}{!p.hs_code && <em className="ep-warn"> · HS code missing</em>}</small></td>
-                      {ctx.backOffice && <td>{names[p.org_id]}</td>}
-                      <td><div className="ep-bar3"><i className="a" style={{ width: `${(av / max) * 100}%` }} /><i className="r" style={{ width: `${(p.reserved / max) * 100}%` }} /><i className="q" style={{ width: `${(p.quarantined / max) * 100}%` }} /><i className="n" style={{ width: `${(p.incoming / max) * 100}%` }} /></div></td>
-                      <td className="ep-right"><b className={av <= p.low_stock ? 'ep-warn' : ''}>{av}</b></td>
-                      <td className="ep-right">{p.on_hand}</td>
-                      <td className="ep-right">{p.reserved}</td>
-                      <td className="ep-right">{p.quarantined ? <span className="ep-st ep-st--warn">{p.quarantined}</span> : 0}</td>
-                      <td className="ep-right">{p.incoming}</td>
-                      <td><small>{p.last_movement_at ? fmtDate(p.last_movement_at, true) : '—'}</small></td>
-                    </tr>
-                  );
-                })}
+                {list.map(({ p, r }) => <Row key={p.id} p={p} r={r} client={ctx.backOffice ? names[p.org_id] : null} />)}
               </tbody>
             </table>
-          )}
-        </section>
-          {ctx.can('stock.adjust') && products.length > 0 && (
-            <div className="ep-tools">
-              <section className="ep-card ep-card--team">
-                <h2>Quarantine</h2>
-                <TeamOnly />
-                <p className="ep-small ep-muted" style={{ marginBottom: '.8rem' }}>Set aside damaged or doubtful units. They stay on hand but can’t be sold.</p>
-                <form action={quarantineStock} className="ep-form">
-                  <label>Product<select name="product" required defaultValue=""><option value="">Choose…</option>{products.map((p) => <option key={p.id} value={p.id}>{label(p)} ({available(p) + p.reserved} sellable)</option>)}</select></label>
-                  <div className="ep-row2"><label>Units<input type="number" name="qty" min={1} required /></label><label>Reason<input name="reason" required placeholder="e.g. Crushed boxes" /></label></div>
-                  <Submit className="ep-btn ep-btn--ghost ep-btn--full">Move to quarantine</Submit>
-                </form>
-              </section>
-              {quarantined.length > 0 && (
-                <section className="ep-card ep-card--team">
-                  <h2>Release from quarantine</h2>
-                  <TeamOnly />
-                  <form action={releaseStock} className="ep-form">
-                    <label>Product<select name="product" required defaultValue=""><option value="">Choose…</option>{quarantined.map((p) => <option key={p.id} value={p.id}>{label(p)} ({p.quarantined} in quarantine)</option>)}</select></label>
-                    <div className="ep-row2"><label>Units<input type="number" name="qty" min={1} required /></label><label>Decision<select name="mode"><option value="release">Back to available</option><option value="writeoff">Write off (remove)</option></select></label></div>
-                    <label>Reason<input name="reason" required placeholder="e.g. Checked OK / Unsellable" /></label>
-                    <Submit className="ep-btn ep-btn--ghost ep-btn--full">Confirm</Submit>
-                  </form>
-                </section>
-              )}
-              <section className="ep-card ep-card--team">
-                <h2>Correct stock</h2>
-                <TeamOnly />
-                <form action={adjustStock} className="ep-form">
-                  <label>Product<select name="product" required defaultValue=""><option value="">Choose…</option>{products.map((p) => <option key={p.id} value={p.id}>{label(p)}</option>)}</select></label>
-                  <div className="ep-row2"><label>Units (+ or −)<input type="number" name="qty" required placeholder="-2" /></label><label>Reason<select name="reason"><option>Cycle count</option><option>Damaged</option><option>Found</option><option>Opening stock</option><option>Other</option></select></label></div>
-                  <Submit className="ep-btn ep-btn--ghost ep-btn--full">Save correction</Submit>
-                </form>
-              </section>
-            </div>
-          )}
+          </div>
+        )}
+        <div className="ep-table-foot">
+          <span>{list.length} of {base.length} SKU{base.length === 1 ? '' : 's'}</span>
+          <span className="ep-legend"><i className="a" />Sellable <i className="r" />Reserved <i className="q" />Quarantine <i className="n" />Incoming</span>
         </div>
-        <div className="ep-card--side">
-          {ctx.can('products.edit') && (
-            <section className={`ep-card${sp.new ? ' ep-card--hl' : ''}`}>
-              <h2>Add a product</h2>
-              <form action={addProduct} className="ep-form">
-                {!ctx.org && <label>Client<select name="org_id" required defaultValue=""><option value="">Choose a client…</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>}
-                <div className="ep-row2"><label>SKU<input name="sku" required placeholder="MASK-BLK" /></label><label>Barcode<input name="barcode" placeholder="EAN / UPC" /></label></div>
-                <label>Product name<input name="name" required placeholder="Silk sleep mask · Black" /></label>
-                <div className="ep-row2"><label>Weight (g)<input type="number" name="weight_g" min={0} /></label><label>Low-stock alert at<input type="number" name="low_stock" min={0} defaultValue={10} /></label></div>
-                <div className="ep-row2"><label>HS code<input name="hs_code" placeholder="e.g. 6307.90" /></label><label>Customs value (USD)<input type="number" step="0.01" min={0} name="customs_value" /></label></div>
-                <Submit className="ep-btn ep-btn--full">Add product</Submit>
-                <p className="ep-small ep-muted">HS code and customs value are needed to ship; orders without them go on hold.</p>
-              </form>
-            </section>
-          )}
-        </div>
-      </div>
+      </section>
     </>
+  );
+}
+
+function Row({ p, r, client }: { p: ProductRow; r: ReturnType<typeof runway>; client: string | null }) {
+  const av = available(p);
+  const max = Math.max(1, av + p.reserved + p.quarantined + p.incoming);
+  const [label, tone] = HEALTH[r.health];
+  return (
+    <tr data-href={`/inventory/${p.id}`}>
+      <td>
+        <div className="ep-prod">
+          <span className="ep-prod-ic" aria-hidden="true">{p.sku.slice(0, 2)}</span>
+          <div><b>{p.sku}</b><small>{p.name}{!p.hs_code && <em className="ep-warn"> · HS code missing</em>}</small></div>
+        </div>
+      </td>
+      {client !== null && <td><small className="ep-client">{client}</small></td>}
+      <td className="ep-inv-bar"><div className="ep-bar3"><i className="a" style={{ width: `${(av / max) * 100}%` }} /><i className="r" style={{ width: `${(p.reserved / max) * 100}%` }} /><i className="q" style={{ width: `${(p.quarantined / max) * 100}%` }} /><i className="n" style={{ width: `${(p.incoming / max) * 100}%` }} /></div></td>
+      <td className="ep-right">{p.on_hand.toLocaleString('en')}</td>
+      <td className="ep-right">{p.reserved || <span className="ep-zero">0</span>}</td>
+      <td className="ep-right"><b>{av.toLocaleString('en')}</b></td>
+      <td className="ep-right">{p.quarantined ? <span className="ep-st ep-st--warn">{p.quarantined}</span> : <span className="ep-zero">0</span>}</td>
+      <td className="ep-right">{p.incoming || <span className="ep-zero">0</span>}</td>
+      <td className="ep-right">{r.sold30 || <span className="ep-zero">0</span>}</td>
+      <td>
+        <div className="ep-runway">
+          <span className={`ep-st ep-st--${tone}`}>{label}</span>
+          <small>{r.days !== null ? `${fmtDays(r.days)} left` : p.last_movement_at ? `moved ${fmtDate(p.last_movement_at)}` : 'no movement'}</small>
+        </div>
+      </td>
+    </tr>
   );
 }

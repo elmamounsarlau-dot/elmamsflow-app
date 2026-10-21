@@ -25,3 +25,19 @@ export function DailyOrders({ days }: { days: { label: string; count: number }[]
     </div>
   );
 }
+
+/** Small line chart with soft area, for KPI cards. */
+export function Spark({ values }: { values: number[] }) {
+  const w = 240;
+  const h = 46;
+  const max = Math.max(1, ...values);
+  const step = w / Math.max(1, values.length - 1);
+  const pts = values.map((v, i) => [i * step, h - 4 - (v / max) * (h - 10)] as const);
+  const line = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+  return (
+    <svg className="ep-spark" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
+      <path className="area" d={`${line} L${w} ${h} L0 ${h}Z`} />
+      <path className="ln" d={line} />
+    </svg>
+  );
+}
