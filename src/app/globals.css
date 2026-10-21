@@ -424,3 +424,5 @@ a.ep-btn--full { display: flex; justify-content: center; }
 .ep-inbound-status { display: grid; gap: .3rem; min-width: 260px; }
 .ep-inbound-status span { font-size: .8rem; font-weight: 600; color: var(--navy); }
 .ep-inbound-status select { padding: .7rem .85rem; border: 1px solid var(--line); border-radius: 10px; background: #fff; font: 400 .92rem var(--body); color: var(--navy); }
+.ep-notfound { max-width: 560px; margin: 8vh auto 0; text-align: left; }
+.ep-notfound h2 { margin: .4rem 0 .5rem; }
