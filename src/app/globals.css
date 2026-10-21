@@ -826,3 +826,10 @@ body, .ep-card, .ep-sum-card, .ep-kpi { transition: background-color .25s var(--
 .ep-btn:not(.ep-btn--ghost):hover, .ep-chip:hover { background: var(--btn-grad-hover) !important; box-shadow: 0 2px 4px rgba(0,0,0,.08), 0 12px 26px -12px var(--btn-glow); }
 .ep-btn:not(.ep-btn--ghost):focus-visible { box-shadow: 0 0 0 3px rgba(255,145,0,.35); }
 .ep-btn:not(.ep-btn--ghost):disabled, .ep-btn:not(.ep-btn--ghost)[disabled] { box-shadow: none; }
+
+/* ===== Active menu item (theme B): soft blue with an orange marker ===== */
+:root { --nav-on-bg: #EAF3FF; --nav-on-fg: #0A6CF0; --nav-mark: #FF9100; }
+:root[data-theme="dark"] { --nav-on-bg: rgba(61,155,255,.14); --nav-on-fg: #8EC5FF; --nav-mark: #FFA733; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --nav-on-bg: rgba(61,155,255,.14); --nav-on-fg: #8EC5FF; --nav-mark: #FFA733; } }
+.ep-side nav a.is-on { background: var(--nav-on-bg) !important; color: var(--nav-on-fg) !important; box-shadow: inset 3px 0 0 var(--nav-mark); font-weight: 600; }
+.ep-side nav a.is-on svg { color: var(--nav-on-fg); }
