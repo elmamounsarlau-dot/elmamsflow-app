@@ -246,3 +246,9 @@ a.ep-kpi:hover { border-color: #BFD5EE; transform: translateY(-2px); }
 .ep-page-title { font-size: 1.9rem; letter-spacing: -.055em; margin: 6px 0 14px; }
 .ep-top { justify-content: flex-end; }
 @media (max-width: 900px) { .ep-top { justify-content: space-between; } }
+.ep-skel i { display: block; border-radius: 16px; background: linear-gradient(90deg, #EEF2F7 0%, #F7F9FC 50%, #EEF2F7 100%); background-size: 200% 100%; animation: epShimmer 1.2s ease-in-out infinite; }
+.ep-skel-title { width: 220px; height: 34px; margin: 8px 0 22px; }
+.ep-skel-kpi { height: 88px; }
+.ep-skel-card { height: 340px; border-radius: 20px !important; }
+@keyframes epShimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.ep-btn:disabled { opacity: .6; cursor: progress; }

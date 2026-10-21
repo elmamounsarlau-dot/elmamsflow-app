@@ -15,9 +15,9 @@ export async function updateSession(request: NextRequest) {
       },
     },
   });
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Verifies the sign-in token locally (no round trip to Supabase on every click).
+  const { data } = await supabase.auth.getClaims();
+  const user = data?.claims?.sub ? data.claims : null;
   const path = request.nextUrl.pathname;
   if (!user && !PUBLIC.some((p) => path.startsWith(p))) {
     const url = request.nextUrl.clone();

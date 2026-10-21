@@ -25,10 +25,10 @@ export const VIEW_AS_COOKIE = 'elm_as';
 
 export const getCtx = cache(async (): Promise<Ctx | null> => {
   const supabase = await supabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
+  const { data: claimData } = await supabase.auth.getClaims();
+  const claims = claimData?.claims;
+  if (!claims?.sub) return null;
+  const user = { id: claims.sub as string, email: (claims.email as string | undefined) ?? '' };
 
   const [{ data: profile }, { data: memberships }] = await Promise.all([
     supabase.from('profiles').select('full_name, email').eq('id', user.id).maybeSingle(),
@@ -42,8 +42,8 @@ export const getCtx = cache(async (): Promise<Ctx | null> => {
 
   const staff = rows.find((m) => m.org.kind === 'owner');
   const client = rows.find((m) => m.org.kind === 'client');
-  const name = profile?.full_name || user.email?.split('@')[0] || 'You';
-  const base = { userId: user.id, email: user.email ?? '', name };
+  const name = profile?.full_name || user.email.split('@')[0] || 'You';
+  const base = { userId: user.id, email: user.email, name };
 
   if (staff) {
     const role = staff.role as StaffRole;

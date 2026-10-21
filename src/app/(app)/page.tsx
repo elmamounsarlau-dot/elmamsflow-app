@@ -21,24 +21,21 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const low = products.filter((p) => p.on_hand - p.reserved <= p.low_stock);
   const today = new Date(Date.now() - 864e5).toISOString();
 
-  let kpis: [string, number, string][];
-  if (ctx.backOffice) {
-    kpis = [
-      ['Active clients', Object.keys(names).length, '/clients'],
-      ['Orders to ship', await count('orders', (q) => q.in('status', ['new', 'packed'])), '/orders?s=new'],
-      ['On hold', await count('orders', (q) => q.eq('status', 'on_hold')), '/orders?s=on_hold'],
-      ['Inbounds expected', await count('inbounds', (q) => q.neq('status', 'received')), '/inbounds'],
-      ['Open tickets', await count('tickets', (q) => q.eq('status', 'open')), '/support'],
-    ];
-  } else {
-    kpis = [
-      ['Orders, last 24h', await count('orders', (q) => q.gte('created_at', today)), '/orders'],
-      ['In transit', await count('orders', (q) => q.eq('status', 'shipped')), '/tracking'],
-      ['Need your action', await count('orders', (q) => q.eq('status', 'on_hold')), '/orders?s=on_hold'],
-      ['Low stock SKUs', low.length, '/inventory'],
-      ['Open tickets', await count('tickets', (q) => q.neq('status', 'closed')), '/support'],
-    ];
-  }
+  const kpis: [string, number, string][] = ctx.backOffice
+    ? await Promise.all([
+        Promise.resolve(['Active clients', Object.keys(names).length, '/clients'] as [string, number, string]),
+        count('orders', (q) => q.in('status', ['new', 'packed'])).then((n) => ['Orders to ship', n, '/orders?s=new'] as [string, number, string]),
+        count('orders', (q) => q.eq('status', 'on_hold')).then((n) => ['On hold', n, '/orders?s=on_hold'] as [string, number, string]),
+        count('inbounds', (q) => q.neq('status', 'received')).then((n) => ['Inbounds expected', n, '/inbounds'] as [string, number, string]),
+        count('tickets', (q) => q.eq('status', 'open')).then((n) => ['Open tickets', n, '/support'] as [string, number, string]),
+      ])
+    : await Promise.all([
+        count('orders', (q) => q.gte('created_at', today)).then((n) => ['Orders, last 24h', n, '/orders'] as [string, number, string]),
+        count('orders', (q) => q.eq('status', 'shipped')).then((n) => ['In transit', n, '/tracking'] as [string, number, string]),
+        count('orders', (q) => q.eq('status', 'on_hold')).then((n) => ['Need your action', n, '/orders?s=on_hold'] as [string, number, string]),
+        Promise.resolve(['Low stock SKUs', low.length, '/inventory'] as [string, number, string]),
+        count('tickets', (q) => q.neq('status', 'closed')).then((n) => ['Open tickets', n, '/support'] as [string, number, string]),
+      ]);
   const { data: activity } = ctx.backOffice ? await sb.from('activity_log').select('*').order('created_at', { ascending: false }).limit(8) : { data: [] };
   const orders = latest.data ?? [];
   const [{ count: inbCount }, { count: ordCount }] = ctx.backOffice
