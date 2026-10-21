@@ -29,21 +29,17 @@ export async function inviteToOrg(opts: { email: string; name: string; orgId: st
     return { ...sent, existing: true };
   }
 
-  const { data, error } = await admin.auth.admin.inviteUserByEmail(email, { data: { full_name: opts.name }, redirectTo: redirectTo() });
-  // Supabase may create the account even when the email itself fails.
-  let userId = data?.user?.id;
-  if (!userId) {
-    const { data: p } = await admin.from('profiles').select('id').eq('email', email).maybeSingle();
-    userId = p?.id;
-  }
-  let link: string | undefined;
-  if (userId) {
-    await admin.from('profiles').upsert({ id: userId, email, full_name: opts.name });
-    await admin.from('memberships').upsert({ org_id: opts.orgId, user_id: userId, role: opts.role, status: 'invited', invited_by: opts.invitedBy }, { onConflict: 'org_id,user_id' });
-    link = (await keepLink(userId, email, opts.orgId, opts.invitedBy, !error, error ? emailError(error.message) : null)).link;
-  }
-  if (error) return { ok: false, existing: false, emailed: false, link, error: emailError(error.message) };
-  return { ok: true, existing: false, emailed: true, link };
+  // 1) Try to email the invitation. If the email fails, Supabase does not create the account at all.
+  const { error } = await admin.auth.admin.inviteUserByEmail(email, { data: { full_name: opts.name }, redirectTo: redirectTo() });
+  // 2) Always make a private link for the owner. If the account doesn't exist yet (email failed),
+  //    creating an invite link creates the account without sending anything.
+  let kept = await keepLink(null, email, opts.orgId, opts.invitedBy, !error, error ? emailError(error.message) : null);
+  if (!kept.link) kept = await keepLink(null, email, opts.orgId, opts.invitedBy, false, error ? emailError(error.message) : null, false, { full_name: opts.name });
+  if (!kept.userId) return { ok: false, existing: false, emailed: false, error: error ? emailError(error.message) : kept.error };
+  await admin.from('profiles').upsert({ id: kept.userId, email, full_name: opts.name });
+  await admin.from('memberships').upsert({ org_id: opts.orgId, user_id: kept.userId, role: opts.role, status: 'invited', invited_by: opts.invitedBy }, { onConflict: 'org_id,user_id' });
+  if (error) return { ok: false, existing: false, emailed: false, link: kept.link, error: emailError(error.message) };
+  return { ok: true, existing: false, emailed: true, link: kept.link };
 }
 
 /**
@@ -71,16 +67,22 @@ export async function copyableSignInLink(userId: string, email: string, orgId: s
   return r.link ? { ok: true, link: r.link } : { ok: false, error: r.error ?? 'Could not create link' };
 }
 
-async function keepLink(userId: string, email: string, orgId: string | null, by: string, emailed: boolean, emailErr: string | null, keepEmailedFlag = false) {
+async function keepLink(
+  userId: string | null, email: string, orgId: string | null, by: string, emailed: boolean, emailErr: string | null,
+  keepEmailedFlag = false, createWith?: Record<string, string>,
+): Promise<{ link?: string; userId?: string; error?: string }> {
   const admin = supabaseAdmin();
-  const { data, error } = await admin.auth.admin.generateLink({ type: 'recovery', email });
+  const { data, error } = createWith
+    ? await admin.auth.admin.generateLink({ type: 'invite', email, options: { data: createWith, redirectTo: redirectTo() } })
+    : await admin.auth.admin.generateLink({ type: 'recovery', email });
   if (error || !data.properties?.hashed_token) return { error: error?.message ?? 'Could not create link' };
-  const link = `${siteUrl()}/auth/confirm?token_hash=${data.properties.hashed_token}&type=recovery&next=/set-password`;
-  const row: Record<string, unknown> = { user_id: userId, org_id: orgId, email, link, created_by: by, created_at: new Date().toISOString() };
+  const type = createWith ? 'invite' : 'recovery';
+  const link = `${siteUrl()}/auth/confirm?token_hash=${data.properties.hashed_token}&type=${type}&next=/set-password`;
+  const uid = userId ?? data.user?.id;
+  const row: Record<string, unknown> = { user_id: uid, org_id: orgId, email, link, created_by: by, created_at: new Date().toISOString() };
   if (!keepEmailedFlag) Object.assign(row, { emailed, email_error: emailErr });
-  // If migration 0003 hasn't been run yet this simply does nothing.
   await admin.from('access_links').upsert(row, { onConflict: 'user_id' });
-  return { link };
+  return { link, userId: uid };
 }
 
 /** Once someone has chosen their password their stored link is no longer needed. */

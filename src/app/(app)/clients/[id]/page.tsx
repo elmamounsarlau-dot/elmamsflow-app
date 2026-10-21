@@ -42,7 +42,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
       </div>
       {sp.link && (
         <div className="ep-linkbox">
-          <div><p className="ep-eyebrow"><i />Private link for {sp.for}</p><p>Send it privately (WeChat, message). It works once. It is also kept below next to their name.</p></div>
+          <div><p className="ep-eyebrow"><i />Private link for {sp.for}</p><p>Copy it and send it privately (WhatsApp, WeChat). It works once and is also kept on your Home page under “Waiting to sign in” until they set their password.</p></div>
           <CopyLink value={sp.link} />
         </div>
       )}

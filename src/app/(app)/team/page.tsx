@@ -32,7 +32,7 @@ export default async function Team({ searchParams }: { searchParams: Promise<Rec
       <h1 className="ep-page-title">{s.staff ? 'Your team' : `${s.orgName} team`}</h1>
       {sp.link && (
         <div className="ep-linkbox">
-          <div><p className="ep-eyebrow"><i />Private link for {sp.for}</p><p>Send it privately. It works once; any earlier link stops working.</p></div>
+          <div><p className="ep-eyebrow"><i />Private link for {sp.for}</p><p>Copy it and send it privately (WhatsApp, WeChat). It works once and is also kept on your Home page until they set their password.</p></div>
           <CopyLink value={sp.link} />
         </div>
       )}
