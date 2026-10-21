@@ -26,7 +26,8 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
         Balances are kept from receipts, shipments and corrections recorded here. The China warehouse confirms counts by WeChat, so they are entered or imported by our team, not synchronised automatically.
       </p>
       <div className="ep-split">
-        <section className="ep-card ep-card--grow">
+        <div className="ep-card--grow">
+        <section className="ep-card">
           <div className="ep-card-head"><h2>Products</h2><span className="ep-legend"><i className="a" />Available <i className="r" />Reserved <i className="q" />Quarantine <i className="n" />Incoming</span></div>
           {products.length === 0 ? <Empty title="No products yet" text="Add the first product: SKU, weight and customs details." /> : (
             <table className="ep-table">
@@ -53,23 +54,8 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
             </table>
           )}
         </section>
-        <div className="ep-card--side">
-          {ctx.can('products.edit') && (
-            <section className={`ep-card${sp.new ? ' ep-card--hl' : ''}`}>
-              <h2>Add a product</h2>
-              <form action={addProduct} className="ep-form">
-                {!ctx.org && <label>Client<select name="org_id" required defaultValue=""><option value="">Choose a client…</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>}
-                <div className="ep-row2"><label>SKU<input name="sku" required placeholder="MASK-BLK" /></label><label>Barcode<input name="barcode" placeholder="EAN / UPC" /></label></div>
-                <label>Product name<input name="name" required placeholder="Silk sleep mask · Black" /></label>
-                <div className="ep-row2"><label>Weight (g)<input type="number" name="weight_g" min={0} /></label><label>Low-stock alert at<input type="number" name="low_stock" min={0} defaultValue={10} /></label></div>
-                <div className="ep-row2"><label>HS code<input name="hs_code" placeholder="e.g. 6307.90" /></label><label>Customs value (USD)<input type="number" step="0.01" min={0} name="customs_value" /></label></div>
-                <Submit className="ep-btn ep-btn--full">Add product</Submit>
-                <p className="ep-small ep-muted">HS code and customs value are needed to ship; orders without them go on hold.</p>
-              </form>
-            </section>
-          )}
           {ctx.can('stock.adjust') && products.length > 0 && (
-            <>
+            <div className="ep-tools">
               <section className="ep-card ep-card--team">
                 <h2>Quarantine</h2>
                 <TeamOnly />
@@ -101,7 +87,23 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
                   <Submit className="ep-btn ep-btn--ghost ep-btn--full">Save correction</Submit>
                 </form>
               </section>
-            </>
+            </div>
+          )}
+        </div>
+        <div className="ep-card--side">
+          {ctx.can('products.edit') && (
+            <section className={`ep-card${sp.new ? ' ep-card--hl' : ''}`}>
+              <h2>Add a product</h2>
+              <form action={addProduct} className="ep-form">
+                {!ctx.org && <label>Client<select name="org_id" required defaultValue=""><option value="">Choose a client…</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>}
+                <div className="ep-row2"><label>SKU<input name="sku" required placeholder="MASK-BLK" /></label><label>Barcode<input name="barcode" placeholder="EAN / UPC" /></label></div>
+                <label>Product name<input name="name" required placeholder="Silk sleep mask · Black" /></label>
+                <div className="ep-row2"><label>Weight (g)<input type="number" name="weight_g" min={0} /></label><label>Low-stock alert at<input type="number" name="low_stock" min={0} defaultValue={10} /></label></div>
+                <div className="ep-row2"><label>HS code<input name="hs_code" placeholder="e.g. 6307.90" /></label><label>Customs value (USD)<input type="number" step="0.01" min={0} name="customs_value" /></label></div>
+                <Submit className="ep-btn ep-btn--full">Add product</Submit>
+                <p className="ep-small ep-muted">HS code and customs value are needed to ship; orders without them go on hold.</p>
+              </form>
+            </section>
           )}
         </div>
       </div>

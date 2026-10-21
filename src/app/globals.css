@@ -426,3 +426,8 @@ a.ep-btn--full { display: flex; justify-content: center; }
 .ep-inbound-status select { padding: .7rem .85rem; border: 1px solid var(--line); border-radius: 10px; background: #fff; font: 400 .92rem var(--body); color: var(--navy); }
 .ep-notfound { max-width: 560px; margin: 8vh auto 0; text-align: left; }
 .ep-notfound h2 { margin: .4rem 0 .5rem; }
+
+/* Warehouse stock tools sit under the product table, side by side */
+.ep-tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; align-items: start; }
+.ep-tools > .ep-card { margin: 0; height: 100%; display: flex; flex-direction: column; }
+.ep-tools > .ep-card form { margin-top: auto; }
