@@ -6,6 +6,8 @@ import { Burger, ClickableRows, Flash, NavCloser } from '@/components/client';
 import { Arrow } from '@/components/ui';
 import { NavLinks, type NavItem } from './nav';
 import { exitViewAs } from './view-as';
+import { ThemeSwitch } from '@/components/theme';
+import { themeMode } from '@/lib/theme';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireCtx();
@@ -64,6 +66,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="ep-main">
           <header className="ep-top">
             <Burger />
+            <ThemeSwitch initial={await themeMode()} />
             <div className="ep-me">
               <span className="ep-avatar">{ctx.name.slice(0, 1).toUpperCase()}</span>
               <span>

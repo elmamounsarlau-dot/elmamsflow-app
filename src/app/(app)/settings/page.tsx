@@ -2,6 +2,8 @@ import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
 import { PasswordField, Submit } from '@/components/client';
 import { changePassword, saveProfile } from './actions';
+import { ThemeSwitch } from '@/components/theme';
+import { themeMode } from '@/lib/theme';
 
 export const metadata = { title: 'Settings' };
 
@@ -33,6 +35,10 @@ export default async function Settings() {
           </form>
         </section>
       </div>
+      <section className="ep-card ep-card--narrow">
+        <div className="ep-card-head"><h2>Appearance</h2><span className="ep-muted ep-small">Saved on this device</span></div>
+        <ThemeSwitch initial={await themeMode()} full />
+      </section>
     </>
   );
 }
