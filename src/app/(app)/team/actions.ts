@@ -42,8 +42,8 @@ export async function inviteMember(fd: FormData) {
   if (!/^\S+@\S+\.\S+$/.test(email) || !s.roles.includes(role)) redirect(withMsg('/team', 'Add a valid email and choose a role.', 'err'));
   const r = await inviteToOrg({ email, name: str(fd, 'name'), orgId: s.orgId, role, invitedBy: ctx.userId });
   await logActivity(supabaseAdmin(), ctx.userId, s.staff ? null : s.orgId, 'member_invited', `${email} as ${role}`);
-  if (!r.ok) redirect(withMsg('/team', `Invite failed: ${r.error}`, 'err'));
-  redirect(withMsg('/team', r.existing ? `${email} already had an account and now has access.` : `Invitation emailed to ${email}.`));
+  if (!r.ok) redirect(withMsg('/team', `${email} is added, but ${r.error}.`, 'warn'));
+  redirect(withMsg('/team', r.emailed ? `Invitation emailed to ${email}.` : `${email} already had an account and now has access.`));
 }
 
 export async function changeRole(fd: FormData) {

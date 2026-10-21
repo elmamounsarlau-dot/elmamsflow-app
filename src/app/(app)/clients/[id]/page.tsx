@@ -6,7 +6,7 @@ import { ACTIVITY_LABELS } from '@/lib/log';
 import { roleLabel } from '@/lib/roles';
 import { Arrow, Back, Empty, Kpi, TeamOnly } from '@/components/ui';
 import { CopyLink, Submit } from '@/components/client';
-import { memberLink, toggleClient, updateClient } from '../actions';
+import { inviteClientMember, memberLink, toggleClient, updateClient } from '../actions';
 import { viewAs } from '../../view-as';
 
 export default async function ClientPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string>> }) {
@@ -79,6 +79,18 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
         </div>
         {manage && (
           <div className="ep-card--side">
+            <section className={`ep-card ep-card--team${(members ?? []).length === 0 ? ' ep-card--hl' : ''}`}>
+              <h2>{(members ?? []).length === 0 ? 'Invite their admin' : 'Add someone'}</h2>
+              <TeamOnly />
+              {(members ?? []).length === 0 && <p className="ep-small" style={{ marginBottom: '.8rem' }}>Nobody is attached to this workspace yet. Invite the person who will manage it.</p>}
+              <form action={inviteClientMember} className="ep-form">
+                <input type="hidden" name="org" value={org.id} />
+                <label>Name<input name="name" /></label>
+                <label>Email<input type="email" name="email" required /></label>
+                <label>Role<select name="role" defaultValue="admin"><option value="admin">Admin</option><option value="operations">Operations</option><option value="support">Customer support</option><option value="finance">Finance</option></select></label>
+                <Submit className="ep-btn ep-btn--full">Send invitation <Arrow /></Submit>
+              </form>
+            </section>
             <section className="ep-card ep-card--team">
               <h2>Access</h2>
               <TeamOnly />

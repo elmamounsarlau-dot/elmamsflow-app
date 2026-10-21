@@ -24,8 +24,20 @@ export async function createClient(fd: FormData) {
   if (error || !org) redirect(withMsg('/clients', error?.message ?? 'Could not create the client.', 'err'));
   const inv = await inviteToOrg({ email, name, orgId: org.id, role: 'admin', invitedBy: ctx.userId });
   await logActivity(admin, ctx.userId, org.id, 'client_created', `${company} (${email})`);
-  if (!inv.ok) redirect(withMsg(`/clients/${org.id}`, `${company} is created, but the invite failed: ${inv.error}. Use “Email a new link”.`, 'warn'));
-  redirect(withMsg(`/clients/${org.id}`, inv.existing ? `${company} is created. ${email} already had an account and was added straight away.` : `${company} is created. We emailed ${email} a private link to choose their password.`));
+  if (!inv.ok) redirect(withMsg(`/clients/${org.id}`, `${company} is created and ${email} is added as admin, but ${inv.error}.`, 'warn'));
+  redirect(withMsg(`/clients/${org.id}`, inv.emailed ? `${company} is created. We emailed ${email} a private link to choose their password.` : `${company} is created. ${email} already had an account and was added straight away.`));
+}
+
+/** Add (or re-add) a person to a client workspace from the client page. */
+export async function inviteClientMember(fd: FormData) {
+  const ctx = await manager();
+  const orgId = str(fd, 'org');
+  const email = str(fd, 'email').toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) redirect(withMsg(`/clients/${orgId}`, 'Add a valid email.', 'err'));
+  const role = ['admin', 'operations', 'support', 'finance'].includes(str(fd, 'role')) ? str(fd, 'role') : 'admin';
+  const inv = await inviteToOrg({ email, name: str(fd, 'name'), orgId, role, invitedBy: ctx.userId });
+  await logActivity(supabaseAdmin(), ctx.userId, orgId, 'member_invited', `${email} as ${role}`);
+  redirect(withMsg(`/clients/${orgId}`, inv.ok ? (inv.emailed ? `Invitation emailed to ${email}.` : `${email} now has access.`) : `${email} is added, but ${inv.error}.`, inv.ok ? 'ok' : 'warn'));
 }
 
 export async function updateClient(fd: FormData) {
