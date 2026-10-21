@@ -431,3 +431,48 @@ a.ep-btn--full { display: flex; justify-content: center; }
 .ep-tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; align-items: start; }
 .ep-tools > .ep-card { margin: 0; height: 100%; display: flex; flex-direction: column; }
 .ep-tools > .ep-card form { margin-top: auto; }
+
+/* ===== Controls: one consistent look for every field and button ===== */
+.ep-app input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]),
+.ep-app select,
+.ep-app textarea {
+  min-height: 46px; padding: 0 .95rem; border: 1px solid var(--line); border-radius: 12px; background-color: #fff;
+  font: 400 .92rem var(--body); color: var(--navy); box-shadow: 0 1px 2px rgba(11,27,51,.04);
+  transition: border-color .18s var(--ease), box-shadow .18s var(--ease), background-color .18s var(--ease);
+  outline: none;
+}
+.ep-app textarea { padding: .75rem .95rem; min-height: 96px; line-height: 1.5; }
+.ep-app select {
+  -webkit-appearance: none; appearance: none; padding-right: 2.6rem; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none' stroke='%2366768C' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right .95rem center; background-size: 12px 8px;
+}
+.ep-app input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):hover,
+.ep-app select:hover, .ep-app textarea:hover { border-color: #C9D6E6; }
+.ep-app input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
+.ep-app select:focus, .ep-app textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(30,136,229,.14); outline: none; }
+.ep-app input::placeholder, .ep-app textarea::placeholder { color: #9AA8BA; }
+
+/* Compact fields inside tables and member rows */
+.ep-app .ep-qty { min-height: 38px; height: 38px; padding: 0 .7rem !important; border-radius: 10px; font-weight: 600; }
+.ep-app .ep-member-actions select { min-height: 36px; height: 36px; padding: 0 2.2rem 0 .7rem; border-radius: 10px; font-size: .84rem; background-position: right .7rem center; }
+
+/* Buttons */
+.ep-btn {
+  min-height: 46px; padding: 0 1.3rem; border-radius: 12px; font-weight: 500; letter-spacing: -.005em; line-height: 1;
+  box-shadow: 0 1px 2px rgba(11,27,51,.12), 0 6px 16px -10px rgba(11,27,51,.5);
+  transition: background-color .18s var(--ease), border-color .18s var(--ease), box-shadow .18s var(--ease), transform .18s var(--ease);
+}
+.ep-btn:hover { background: var(--navy-2); transform: translateY(-1px); box-shadow: 0 2px 4px rgba(11,27,51,.12), 0 12px 24px -12px rgba(11,27,51,.55); }
+.ep-btn:active { transform: translateY(0); box-shadow: 0 1px 2px rgba(11,27,51,.15); }
+.ep-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(30,136,229,.28); }
+.ep-btn svg { transition: transform .18s var(--ease); }
+.ep-btn:hover svg { transform: translate(1px, -1px); }
+.ep-btn--ghost { box-shadow: 0 1px 2px rgba(11,27,51,.05); }
+.ep-btn--ghost:hover { background: var(--mist); border-color: #C9D6E6; box-shadow: 0 1px 2px rgba(11,27,51,.06), 0 8px 18px -14px rgba(11,27,51,.4); }
+.ep-btn:disabled, .ep-btn[disabled] { transform: none; box-shadow: none; }
+
+/* Field + button rows line up exactly */
+.ep-inline { align-items: stretch; }
+.ep-inbound-actions { align-items: flex-end; }
+.ep-inbound-status select { width: 100%; }
