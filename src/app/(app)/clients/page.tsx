@@ -8,7 +8,7 @@ import { createClient } from './actions';
 export const metadata = { title: 'Clients' };
 
 export default async function Clients() {
-  const ctx = await requirePerm('clients.view');
+  const ctx = await requirePerm('clients.view', '/clients');
   const sb = await supabaseServer();
   const { data: orgs } = await sb.from('organizations').select('id, name, code, status, country, created_at, memberships(count)').eq('kind', 'client').order('created_at', { ascending: false });
   const list = orgs ?? [];

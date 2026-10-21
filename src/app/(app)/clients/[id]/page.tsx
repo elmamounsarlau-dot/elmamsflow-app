@@ -14,8 +14,8 @@ import { inviteClientMember, memberLink, toggleClient, updateClient } from '../a
 import { viewAs } from '../../view-as';
 
 export default async function ClientPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string>> }) {
-  const ctx = await requirePerm('clients.view');
   const { id } = await params;
+  const ctx = await requirePerm('clients.view', `/clients/${encodeURIComponent(id)}`);
   const sp = await searchParams;
   const sb = await supabaseServer();
   const { data: org } = await sb.from('organizations').select('*').eq('id', id).eq('kind', 'client').maybeSingle();
