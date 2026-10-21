@@ -36,6 +36,12 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
       {o.status === 'on_hold' && o.hold_reason && <p className="ep-note ep-note--warn">On hold: {o.hold_reason}</p>}
       <div className="ep-split">
         <div className="ep-card--grow">
+          <div className="ep-track-head">
+            <div><small>Shipment</small><b>#{o.number}</b></div>
+            <div><small>From</small><b>China</b></div>
+            <div><small>To</small><b>{[o.city, COUNTRIES[o.country] ?? o.country].filter(Boolean).join(', ')}</b></div>
+            <div><small>Service</small><b>{o.service === 'ddp' ? 'DDP Express' : 'Express'}</b></div>
+          </div>
           <section className="ep-card">
             <h2>Journey</h2>
             <ol className="ep-steps">

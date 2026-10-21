@@ -8,8 +8,8 @@ export const ORDER_STATUS: Record<string, [string, string]> = {
 };
 
 export const INBOUND_STATUS: Record<string, [string, string]> = {
-  announced: ['Announced', 'mute'],
-  in_transit: ['On its way', 'go'],
+  announced: ['Booked', 'mute'],
+  in_transit: ['Picked up', 'go'],
   receiving: ['Receiving', 'pk'],
   received: ['Available', 'ok'],
 };

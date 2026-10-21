@@ -23,7 +23,12 @@ export default async function InboundPage({ params }: { params: Promise<{ id: st
       <Back href="/inbounds">Stock inbounds</Back>
       <div className="ep-client-head"><div><h2>{b.ref} <Badge map={INBOUND_STATUS} value={b.status} /></h2><p className="ep-muted">{ctx.backOffice ? `${(b.organizations as unknown as { name: string })?.name} · ` : ''}{b.supplier ? `${b.supplier} · ` : ''}{b.cartons} cartons{b.eta ? ` · ETA ${fmtDate(b.eta)}` : ''}</p></div></div>
       <section className="ep-card">
-        <ol className="ep-steps ep-steps--row">{order.map((k, i) => <li key={k} className={i <= pos ? 'done' : ''}><b>{INBOUND_STATUS[k][0]}</b></li>)}</ol>
+        <div className="ep-inbound-steps ep-inbound-steps--big">
+          {['Booked', 'Picked up', 'Receiving', 'Counted', 'Available'].map((l, i) => {
+            const step = b.status === 'received' ? 5 : pos;
+            return <i key={l} className={i < step || step === 5 ? 'done' : i === step ? 'now' : ''}>{l}</i>;
+          })}
+        </div>
         {b.notes && <p className="ep-muted" style={{ marginTop: '1rem' }}>{b.notes}</p>}
       </section>
       <section className={`ep-card${receiving ? ' ep-card--team' : ''}`}>

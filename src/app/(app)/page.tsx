@@ -4,50 +4,88 @@ import { supabaseServer } from '@/lib/supabase/server';
 import { getProducts, orgNames } from '@/lib/data';
 import { fmtDate, greeting, ORDER_STATUS } from '@/lib/format';
 import { ACTIVITY_LABELS } from '@/lib/log';
-import { Badge, Empty, Kpi } from '@/components/ui';
+import { Badge, Empty } from '@/components/ui';
+import { DailyOrders } from '@/components/charts';
 
 export const metadata = { title: 'Home' };
+
+const TZ = 'Asia/Shanghai';
+const dayKey = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(d);
+
+function pct(now: number, before: number) {
+  if (!before) return now ? { text: 'new today', up: true } : { text: 'same as yesterday', up: false };
+  const p = ((now - before) / before) * 100;
+  return { text: `${p >= 0 ? '+' : ''}${p.toFixed(1)}% vs yesterday`, up: p >= 0 };
+}
 
 export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const ctx = await requireCtx();
   const sp = await searchParams;
   const sb = await supabaseServer();
-  const scope = <T,>(q: T) => (ctx.org ? (q as unknown as { eq: (a: string, b: string) => T }).eq('org_id', ctx.org.id) : q);
-  const count = async (table: string, f: (q: any) => any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
-    const { count: c } = await f(scope(sb.from(table).select('id', { count: 'exact', head: true })));
-    return c ?? 0;
-  };
-  const [products, latest, names] = await Promise.all([getProducts(ctx), scope(sb.from('orders').select('id, number, customer, city, country, created_at, status, org_id').order('created_at', { ascending: false }).limit(6)), ctx.backOffice ? orgNames() : Promise.resolve({} as Record<string, string>)]);
-  const low = products.filter((p) => p.on_hand - p.reserved <= p.low_stock);
-  const today = new Date(Date.now() - 864e5).toISOString();
+  const since = new Date(Date.now() - 15 * 864e5).toISOString();
+  const since30 = new Date(Date.now() - 30 * 864e5).toISOString();
 
-  const kpis: [string, number, string][] = ctx.backOffice
-    ? await Promise.all([
-        Promise.resolve(['Active clients', Object.keys(names).length, '/clients'] as [string, number, string]),
-        count('orders', (q) => q.in('status', ['new', 'packed'])).then((n) => ['Orders to ship', n, '/orders?s=new'] as [string, number, string]),
-        count('orders', (q) => q.eq('status', 'on_hold')).then((n) => ['On hold', n, '/orders?s=on_hold'] as [string, number, string]),
-        count('inbounds', (q) => q.neq('status', 'received')).then((n) => ['Inbounds expected', n, '/inbounds'] as [string, number, string]),
-        count('tickets', (q) => q.eq('status', 'open')).then((n) => ['Open tickets', n, '/support'] as [string, number, string]),
-      ])
-    : await Promise.all([
-        count('orders', (q) => q.gte('created_at', today)).then((n) => ['Orders, last 24h', n, '/orders'] as [string, number, string]),
-        count('orders', (q) => q.eq('status', 'shipped')).then((n) => ['In transit', n, '/tracking'] as [string, number, string]),
-        count('orders', (q) => q.eq('status', 'on_hold')).then((n) => ['Need your action', n, '/orders?s=on_hold'] as [string, number, string]),
-        Promise.resolve(['Low stock SKUs', low.length, '/inventory'] as [string, number, string]),
-        count('tickets', (q) => q.neq('status', 'closed')).then((n) => ['Open tickets', n, '/support'] as [string, number, string]),
-      ]);
-  const { data: activity } = ctx.backOffice ? await sb.from('activity_log').select('*').order('created_at', { ascending: false }).limit(8) : { data: [] };
-  const orders = latest.data ?? [];
-  const [{ count: inbCount }, { count: ordCount }] = ctx.backOffice
-    ? [{ count: 1 }, { count: 1 }]
-    : await Promise.all([scope(sb.from('inbounds').select('id', { count: 'exact', head: true })), scope(sb.from('orders').select('id', { count: 'exact', head: true }))]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const scope = (q: any) => (ctx.org ? q.eq('org_id', ctx.org.id) : q);
+  const headCount = (table: string) => scope(sb.from(table).select('id', { count: 'exact', head: true }));
+
+  const [products, names, recent, delivered, latest, toShip, onHold, inboundsOpen, tickets, activity, everInbounds] = await Promise.all([
+    getProducts(ctx),
+    ctx.backOffice ? orgNames() : Promise.resolve({} as Record<string, string>),
+    scope(sb.from('orders').select('created_at')).gte('created_at', since),
+    scope(sb.from('orders').select('shipped_at, delivered_at')).gte('delivered_at', since30).not('shipped_at', 'is', null),
+    scope(sb.from('orders').select('id, number, customer, city, country, created_at, status, org_id, carrier').order('created_at', { ascending: false }).limit(6)),
+    headCount('orders').in('status', ['new', 'packed']),
+    headCount('orders').eq('status', 'on_hold'),
+    headCount('inbounds').neq('status', 'received'),
+    headCount('tickets').eq('status', 'open'),
+    ctx.backOffice ? sb.from('activity_log').select('*').order('created_at', { ascending: false }).limit(8) : Promise.resolve({ data: [] as { id: number; action: string; detail: string | null; org_id: string | null; created_at: string }[] }),
+    ctx.backOffice ? Promise.resolve({ count: 1 }) : headCount('inbounds'),
+  ]);
+
+  // Daily orders, last 14 days
+  const byDay = new Map<string, number>();
+  for (const o of (recent.data ?? []) as { created_at: string }[]) byDay.set(dayKey(new Date(o.created_at)), (byDay.get(dayKey(new Date(o.created_at))) ?? 0) + 1);
+  const days = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(Date.now() - (13 - i) * 864e5);
+    return { key: dayKey(d), label: new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: TZ }).format(d), count: byDay.get(dayKey(d)) ?? 0 };
+  });
+  const today = days[13].count;
+  const yesterday = days[12].count;
+  const trend = pct(today, yesterday);
+
+  // Delivery: average days door to door, and share delivered within 9 days (our 3–9 day promise)
+  const trips: number[] = ((delivered.data ?? []) as { shipped_at: string; delivered_at: string }[]).map((o) => (Date.parse(o.delivered_at) - Date.parse(o.shipped_at)) / 864e5);
+  const avg = trips.length ? trips.reduce((a, b) => a + b, 0) / trips.length : null;
+  const onTime = trips.length ? (trips.filter((d) => d <= 9).length / trips.length) * 100 : null;
+
+  const low = products.filter((p) => p.on_hand - p.reserved <= p.low_stock);
+  const orders = (latest.data ?? []) as { id: string; number: string; customer: string; city: string | null; country: string; created_at: string; status: string; org_id: string; carrier: string | null }[];
+  const who = ctx.backOffice ? 'Elmamsflow back office' : ctx.org?.name;
+  const dateLine = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ }).format(new Date());
+
+  const attention: [string, number, string, string][] = ctx.backOffice
+    ? [
+        ['Orders to ship', toShip.count ?? 0, '/orders?s=new', 'go'],
+        ['On hold', onHold.count ?? 0, '/orders?s=on_hold', 'warn'],
+        ['Inbounds expected', inboundsOpen.count ?? 0, '/inbounds', 'pk'],
+        ['Open tickets', tickets.count ?? 0, '/support', 'warn'],
+      ]
+    : [
+        ['Need your action', onHold.count ?? 0, '/orders?s=on_hold', 'warn'],
+        ['Low stock SKUs', low.length, '/inventory', 'warn'],
+        ['Inbounds on the way', inboundsOpen.count ?? 0, '/inbounds', 'pk'],
+        ['Open tickets', tickets.count ?? 0, '/support', 'go'],
+      ];
 
   return (
     <>
-      <h1 className="ep-page-title">{ctx.backOffice ? 'Overview' : 'Home'}</h1>
-      <p className="ep-hello">
-        {greeting()}, {ctx.viewingAs ? ctx.org?.name : ctx.name}. {ctx.backOffice ? 'Here’s the warehouse today.' : 'Here’s where your operation stands today.'}
-      </p>
+      <div className="ep-hello2">
+        <small>{dateLine} · {who}</small>
+        <b>{greeting()}, {ctx.viewingAs ? ctx.org?.name : ctx.name.split(' ')[0]}</b>
+        <span>{ctx.backOffice ? 'Here’s the warehouse today, across every client.' : 'Here’s where your operation stands today.'}</span>
+      </div>
+
       {!ctx.backOffice && (sp.welcome || products.length === 0) && (
         <div className="ep-welcome">
           <div>
@@ -56,14 +94,41 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           </div>
           <ol>
             <li className={products.length ? 'done' : ''}><b>Add your products</b><span>SKU, weight, HS code and customs value.</span><Link href="/inventory?new=1">Add a product</Link></li>
-            <li className={inbCount ? 'done' : ''}><b>Announce your stock</b><span>Tell us what your factory is sending.</span><Link href="/inbounds/new">Announce an inbound</Link></li>
-            <li className={ordCount ? 'done' : ''}><b>Send your first order</b><span>We pick, pack and ship it.</span><Link href="/orders/new">Create an order</Link></li>
+            <li className={everInbounds.count ? 'done' : ''}><b>Announce your stock</b><span>Tell us what your factory is sending.</span><Link href="/inbounds/new">Announce an inbound</Link></li>
+            <li className={orders.length ? 'done' : ''}><b>Send your first order</b><span>We pick, pack and ship it.</span><Link href="/orders/new">Create an order</Link></li>
           </ol>
         </div>
       )}
-      <div className="ep-kpis">
-        {kpis.map(([l, v, h]) => <Kpi key={l} label={l} value={v} href={h} />)}
+
+      <div className="ep-kpis ep-kpis--3">
+        <div className="ep-kpi">
+          <small>Orders today</small>
+          <b>{today}</b>
+          <em className={trend.up ? 'up' : ''}>{trend.text}</em>
+        </div>
+        <div className="ep-kpi">
+          <small>Avg. delivery</small>
+          <b>{avg ? <>{avg.toFixed(1)} <i>days</i></> : '—'}</b>
+          <em>{avg ? 'Door to door, last 30 days' : 'Shows after the first deliveries'}</em>
+        </div>
+        <div className="ep-kpi">
+          <small>On-time rate</small>
+          <b>{onTime !== null ? `${onTime.toFixed(1)}%` : '—'}</b>
+          <em className={onTime !== null && onTime >= 95 ? 'up' : ''}>{onTime !== null ? 'Delivered within 9 days' : 'Our promise: 3–9 days'}</em>
+        </div>
       </div>
+
+      <DailyOrders days={days} />
+
+      <div className="ep-attn">
+        {attention.map(([l, n, h, tone]) => (
+          <Link key={l} href={h} className={n ? `is-${tone}` : ''}>
+            <b>{n}</b>
+            <span>{l}</span>
+          </Link>
+        ))}
+      </div>
+
       <div className="ep-grid2">
         <section className="ep-card">
           <div className="ep-card-head"><h2>Latest orders</h2><Link href="/orders">All orders</Link></div>
@@ -85,11 +150,11 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           )}
         </section>
         <section className="ep-card">
-          <div className="ep-card-head"><h2>{ctx.backOffice ? 'Latest activity' : 'Stock to watch'}</h2></div>
+          <div className="ep-card-head"><h2>{ctx.backOffice ? 'Latest activity' : 'Ready to reorder'}</h2></div>
           {ctx.backOffice ? (
-            (activity ?? []).length === 0 ? <Empty title="Nothing yet" text="Actions by your team and your clients show here." /> : (
+            (activity.data ?? []).length === 0 ? <Empty title="Nothing yet" text="Actions by your team and your clients show here." /> : (
               <ul className="ep-activity">
-                {(activity ?? []).map((a) => (
+                {(activity.data ?? []).map((a) => (
                   <li key={a.id}><b>{ACTIVITY_LABELS[a.action] ?? a.action}</b><span>{[a.org_id ? names[a.org_id] : '', a.detail].filter(Boolean).join(' · ')}</span><small>{fmtDate(a.created_at, true)}</small></li>
                 ))}
               </ul>
