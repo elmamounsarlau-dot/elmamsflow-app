@@ -86,6 +86,10 @@ jobs:
       - run: OUT=e2e-results node e2e/audit.mjs
       - name: Live tracking (signed webhook, forged webhook, auto-delivery, daily sync) against a fake 17TRACK
         run: node e2e/tracking.mjs
+      - name: Store address changes reach held orders (needs a fresh seed)
+        run: |
+          bash supabase/local/up.sh > /dev/null
+          npm run test:stack
       - if: always()
         uses: actions/upload-artifact@v4
         with:

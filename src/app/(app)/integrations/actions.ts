@@ -9,7 +9,7 @@ import { seal, randomSecret } from '@/lib/integrations/crypto';
 import { KIND_LABEL, loadIntegration, logEvent, rematchOrder, type Integration, type Kind } from '@/lib/integrations/core';
 import { normalizeShop, shopifyConnect, type ShopifySecrets } from '@/lib/integrations/shopify';
 import { normalizeWooUrl, wooCall, wooConnect, type WooSecrets } from '@/lib/integrations/woocommerce';
-import { importProducts, pushTracking, refreshLines, registerWebhooks, syncOrders, webhookUrl } from '@/lib/integrations/service';
+import { importProducts, pushTracking, refreshFromStore, refreshLines, registerWebhooks, syncOrders, webhookUrl } from '@/lib/integrations/service';
 
 /** Who may manage a client's stores: the client's own admins, or Elmamsflow owner/managers. */
 function allowed(ctx: Ctx | null, orgId: string) {
@@ -151,6 +151,11 @@ export async function rematchProducts(fd: FormData) {
   const { data: o } = await supabaseAdmin().from('orders').select('org_id').eq('id', id).maybeSingle();
   if (!o || !ctx || !(ctx.staffRole || ctx.org?.id === o.org_id) || !(ctx.can('orders.create') || ctx.can('orders.hold'))) redirect(withMsg(`/orders/${id}`, 'You don’t have access to that.', 'err'));
   await refreshLines(id);
+  // Pick up a corrected address from the store first (this also re-checks the hold).
+  const fresh = await refreshFromStore(id).catch(() => 'error' as const);
+  const { data: after } = await supabaseAdmin().from('orders').select('status, hold_kind').eq('id', id).maybeSingle();
+  if (fresh === 'updated' && after?.status === 'new') redirect(withMsg(`/orders/${id}`, 'New address received from the store. The order is ready for the warehouse.'));
+  if (after?.hold_kind === 'address') redirect(withMsg(`/orders/${id}`, fresh === 'error' ? 'The store couldn’t be reached. Try again in a minute.' : 'The address in the store is still incomplete. Fix it in the store; this order updates by itself.', 'warn'));
   const r = await rematchOrder(id);
   redirect(withMsg(`/orders/${id}`, r.message, r.ok ? 'ok' : 'warn'));
 }

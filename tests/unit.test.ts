@@ -106,7 +106,7 @@ test('CSV export: formulas from store data are neutralised, quotes escaped', asy
 test('cron: fails closed without a secret, never trusts the user agent, needs the exact bearer secret', async () => {
   const { cronAllowed } = await import('../src/lib/cron-auth');
   const secret = 'x'.repeat(40);
-  assert.deepEqual(cronAllowed(null, undefined), { ok: false, reason: 'not_configured' });
+  assert.deepEqual(cronAllowed(null, ''), { ok: false, reason: 'not_configured' });
   assert.deepEqual(cronAllowed('Bearer short', 'short'), { ok: false, reason: 'not_configured' });
   assert.equal(cronAllowed(null, secret).ok, false);
   assert.equal(cronAllowed('vercel-cron/1.0', secret).ok, false);       // a user-agent value is not a credential
