@@ -20,12 +20,12 @@ const INBOUND = '1c000000-0000-0000-0000-000000000005';
 const ATLAS = '11111111-1111-1111-1111-111111111111';
 
 const STAFF_PAGES = ['/', '/clients', `/clients/${ATLAS}`, '/orders', '/orders?t=attention', `/orders/${ORDER}`, `/orders/${HELD}`, '/orders/new', '/inventory', `/inventory/${PRODUCT}`, '/inventory/new', '/inventory/import', '/inbounds', `/inbounds/${INBOUND}`, '/inbounds/new', '/tracking', '/support', '/support/7a000000-0000-0000-0000-000000000002', '/support/new', '/invoices', '/invoices/1a000000-0000-0000-0000-000000000002', '/integrations', '/integrations/1e000000-0000-0000-0000-000000000001', '/integrations/new', '/warehouses', '/transfers', '/transfers/new', '/transfers/new?kind=allocation', '/transfers/:first', '/team', '/activity', '/settings', '/settings/billing'];
-const CLIENT_PAGES = ['/', '/orders', `/orders/${ORDER}`, '/orders/new', '/inventory', `/inventory/${PRODUCT}`, '/inbounds', '/inbounds/new', '/tracking', '/support', '/support/new', '/invoices', '/invoices/1a000000-0000-0000-0000-000000000002', '/integrations', '/team', '/settings'];
+const CLIENT_PAGES = ['/', '/notifications', '/orders', `/orders/${ORDER}`, '/orders/new', '/inventory', `/inventory/${PRODUCT}`, '/inbounds', '/inbounds/new', '/tracking', '/support', '/support/new', '/invoices', '/invoices/1a000000-0000-0000-0000-000000000002', '/integrations', '/team', '/settings'];
 const ROLES = [
   { key: 'owner', email: 'owner@local.test', pages: STAFF_PAGES },
   { key: 'warehouse', email: 'warehouse@local.test', pages: ['/', '/orders', `/orders/${ORDER}`, '/inventory', `/inventory/${PRODUCT}`, `/inbounds/${INBOUND}`] },
   { key: 'client-admin', email: 'admin@atlas.local.test', pages: CLIENT_PAGES },
-  { key: 'client-ops', email: 'ops@atlas.local.test', pages: ['/', '/orders', '/inventory', '/team'] },
+  { key: 'client-ops', email: 'ops@atlas.local.test', pages: ['/', '/notifications', '/orders', '/inventory', '/team'] },
 ];
 const WIDTHS = [{ name: '375', width: 375, height: 812, mobile: true }, { name: '768', width: 768, height: 1024, mobile: true }, { name: 'desktop', width: 1440, height: 900, mobile: false }];
 

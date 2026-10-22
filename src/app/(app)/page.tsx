@@ -10,6 +10,9 @@ import { ACTIVITY_LABELS } from '@/lib/log';
 import { Arrow, Badge, Empty } from '@/components/ui';
 import { Spark } from '@/components/charts';
 import { MiniSteps } from '@/components/steps';
+import { NoticeCard } from '@/components/notices';
+import { getNotices } from '@/lib/notifications';
+import { money } from '@/lib/billing';
 
 export const metadata = { title: 'Home' };
 
@@ -91,6 +94,15 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const markets = [...byCountry.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
 
   const orders = (latest.data ?? []) as OrderLite[];
+  // Back office: invoices waiting to be issued (drafts) or chased (overdue). Client: everything to act on.
+  const billing = ctx.backOffice && ctx.can('invoices.view');
+  type Inv = { id: string; number: string; org_id: string; status: string; total: number; currency: string; period_start: string; due_date: string | null };
+  const invRows = billing
+    ? (((await sb.from('invoices').select('id, number, org_id, status, total, currency, period_start, due_date').or(`status.eq.draft,and(status.eq.open,due_date.lt.${new Date().toISOString().slice(0, 10)})`).order('period_start', { ascending: false }).limit(50)).data ?? []) as Inv[])
+    : [];
+  const drafts = invRows.filter((i) => i.status === 'draft');
+  const overdue = invRows.filter((i) => i.status === 'open');
+  const notices = ctx.org ? await getNotices(ctx) : [];
   const ownerView = ctx.backOffice && (ctx.staffRole === 'owner' || ctx.staffRole === 'manager');
   const { data: pendingLinks } = ownerView ? await sb.from('access_links').select('*').order('created_at', { ascending: false }).limit(10) : { data: [] as AccessLink[] };
   const pending = (pendingLinks ?? []) as AccessLink[];
@@ -107,6 +119,50 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     { href: '/inventory?f=quarantine', n: quarantined, label: 'Quarantine', hint: 'units set aside', tone: 'warn', icon: 'shield' as const },
     { href: '/support', n: tickets.count ?? 0, label: 'Open tickets', hint: 'waiting for a reply', tone: 'blue', icon: 'chat' as const },
   ];
+
+  const latestCard = (
+    <section className="ep-bcard ep-bcard--flush">
+      <div className="ep-bhead ep-pad"><span className="ep-bic ep-bic--blue"><HIcon d="orders" /></span><h2>Latest orders</h2><Link className="ep-blink" href="/orders">All orders →</Link></div>
+      {orders.length === 0 ? <Empty title="No orders yet" text="Orders will appear here." /> : (
+        <table className="ep-table ep-htable">
+          <thead><tr><th>Order</th><th>Customer</th><th>Destination</th><th className="ep-right">Status</th></tr></thead>
+          <tbody>
+            {orders.map((o) => (
+              <tr key={o.id} data-href={`/orders/${o.id}`}>
+                <td><b>#{o.number}</b><small>{fmtDate(o.created_at)}</small></td>
+                <td>{o.customer}{ctx.backOffice && <small>{names[o.org_id]}</small>}</td>
+                <td>{countryName(o.country)}{o.city && <small>{o.city}</small>}</td>
+                <td className="ep-right"><Badge map={ORDER_STATUS} value={o.status} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+  const invoiceCard = (
+    <section className={`ep-bcard ep-bcard--flush${drafts.length || overdue.length ? ' ep-card--hl' : ''}`}>
+      <div className="ep-bhead ep-pad"><span className="ep-bic ep-bic--orange"><HIcon d="doc" /></span><h2>Invoices to send</h2><span className="ep-btag">{drafts.length} to issue{overdue.length ? ` · ${overdue.length} overdue` : ''}</span><Link className="ep-blink" href="/invoices">All invoices →</Link></div>
+      {drafts.length + overdue.length === 0 ? (
+        <div className="ep-pad" style={{ paddingTop: 0 }}><div className="ep-hk-ok"><b>Nothing to send</b><span>Drafts for last month appear here on the 1st. Review and issue them.</span></div></div>
+      ) : (
+        <table className="ep-table ep-htable">
+          <thead><tr><th>Invoice</th><th>Client</th><th className="ep-right">Amount</th><th className="ep-right">Next step</th></tr></thead>
+          <tbody>
+            {[...overdue, ...drafts].slice(0, 6).map((i) => (
+              <tr key={i.id} data-href={`/invoices/${i.id}`}>
+                <td><b className="ep-mono">{i.number}</b><small>{new Date(i.period_start).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</small></td>
+                <td>{names[i.org_id] ?? '—'}</td>
+                <td className="ep-right"><b>{money(Number(i.total), i.currency)}</b></td>
+                <td className="ep-right">{i.status === 'draft' ? <span className="ep-st ep-st--warn">Review &amp; issue</span> : <span className="ep-st ep-st--err">Overdue · remind</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {drafts.length + overdue.length > 6 && <p className="ep-small ep-pad" style={{ paddingTop: 0 }}><Link href="/invoices">+{drafts.length + overdue.length - 6} more</Link></p>}
+    </section>
+  );
 
   return (
     <div className="ep-home">
@@ -187,25 +243,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
 
       <div className="ep-hmain">
         <div className="ep-hcol">
-          <section className="ep-bcard ep-bcard--flush">
-            <div className="ep-bhead ep-pad"><span className="ep-bic ep-bic--blue"><HIcon d="orders" /></span><h2>Latest orders</h2><Link className="ep-blink" href="/orders">All orders →</Link></div>
-            {orders.length === 0 ? <Empty title="No orders yet" text="Orders will appear here." /> : (
-              <table className="ep-table ep-htable">
-                <thead><tr><th>Order</th><th>Customer</th><th>Destination</th><th>Date</th><th className="ep-right">Status</th></tr></thead>
-                <tbody>
-                  {orders.map((o) => (
-                    <tr key={o.id} data-href={`/orders/${o.id}`}>
-                      <td><b>#{o.number}</b></td>
-                      <td>{o.customer}{ctx.backOffice && <small>{names[o.org_id]}</small>}</td>
-                      <td className="ep-muted">{[o.city, countryName(o.country)].filter(Boolean).join(', ')}</td>
-                      <td className="ep-muted">{fmtDate(o.created_at)}</td>
-                      <td className="ep-right"><Badge map={ORDER_STATUS} value={o.status} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </section>
+          {billing && invoiceCard}
+          {latestCard}
 
           <section className="ep-bcard">
             <div className="ep-bhead"><span className="ep-bic ep-bic--orange"><HIcon d="star" /></span><h2>Best sellers</h2><span className="ep-btag">{range === 'today' ? 'Today' : `Last ${days} days`}</span><Link className="ep-blink" href="/inventory?sort=sales">Inventory →</Link></div>
@@ -241,7 +280,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         </div>
 
         <aside className="ep-hcol">
-          {onHold.length > 0 && (
+          {ctx.org && <NoticeCard list={notices} />}
+          {!ctx.org && onHold.length > 0 && (
             <section className="ep-bcard ep-bcard--alert">
               <div className="ep-bhead"><span className="ep-bic ep-bic--red"><HIcon d="hold" /></span><h2>On hold</h2><Link className="ep-blink" href="/orders?t=attention">Fix them →</Link></div>
               <ul className="ep-hlist">

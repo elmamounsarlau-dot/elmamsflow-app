@@ -8,6 +8,8 @@ import { NavLinks, type NavItem } from './nav';
 import { exitViewAs } from './view-as';
 import { ThemeSwitch } from '@/components/theme';
 import { themeMode } from '@/lib/theme';
+import { getNotices } from '@/lib/notifications';
+import { Bell } from '@/components/notices';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireCtx();
@@ -22,7 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     if (ctx.can('team.manage')) items.push({ href: '/team', label: 'Team', icon: 'team' });
     if (ctx.can('activity.view')) items.push({ href: '/activity', label: 'Activity', icon: 'activity' });
   } else {
-    items.push({ href: '/', label: 'Home', icon: 'home' }, { href: '/orders', label: 'Orders', icon: 'orders' }, { href: '/inventory', label: 'Inventory', icon: 'inventory' }, { href: '/inbounds', label: 'Stock inbounds', icon: 'inbounds' }, { href: '/tracking', label: 'Tracking', icon: 'tracking' });
+    items.push({ href: '/', label: 'Home', icon: 'home' }, { href: '/notifications', label: 'Notifications', icon: 'bell' }, { href: '/orders', label: 'Orders', icon: 'orders' }, { href: '/inventory', label: 'Inventory', icon: 'inventory' }, { href: '/inbounds', label: 'Stock inbounds', icon: 'inbounds' }, { href: '/tracking', label: 'Tracking', icon: 'tracking' });
     if (ctx.can('invoices.view')) items.push({ href: '/invoices', label: 'Invoices', icon: 'invoices' });
     if (ctx.can('integrations.manage')) items.push({ href: '/integrations', label: 'Stores', icon: 'stores' });
     items.push({ href: '/support', label: 'Support', icon: 'support' });
@@ -31,6 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!ctx.viewingAs) items.push({ href: '/settings', label: 'Settings', icon: 'settings' });
 
   const role = ctx.staffRole ? `Elmamsflow · ${ctx.roleName}` : ctx.roleName;
+  const notices = ctx.org ? await getNotices(ctx).catch(() => []) : [];
 
   return (
     <div className="ep-app">
@@ -69,6 +72,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <header className="ep-top">
             <Burger />
             <ThemeSwitch initial={await themeMode()} />
+            {ctx.org && <Bell count={notices.length} urgent={notices.filter((n) => n.level === 'action').length} />}
             <div className="ep-me">
               <span className="ep-avatar">{ctx.name.slice(0, 1).toUpperCase()}</span>
               <span>
