@@ -46,10 +46,13 @@ export function ClickableRows() {
 
 export function Submit({ children, className = 'ep-btn', confirm }: { children: ReactNode; className?: string; confirm?: string }) {
   const { pending } = useFormStatus();
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []); // marks the button interactive (used by end-to-end tests)
   return (
     <button
       className={className}
       disabled={pending}
+      data-ready={ready ? '1' : undefined}
       onClick={(e) => {
         if (confirm && !window.confirm(confirm)) e.preventDefault();
       }}
