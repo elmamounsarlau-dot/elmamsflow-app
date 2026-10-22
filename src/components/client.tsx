@@ -34,7 +34,7 @@ export function ClickableRows() {
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
-      if (t.closest('a, button, input, select, textarea')) return;
+      if (t.closest('a, button, input, select, textarea, label, summary, .ep-ock')) return;
       const tr = t.closest('tr[data-href]') as HTMLElement | null;
       if (tr) router.push(tr.dataset.href!);
     };

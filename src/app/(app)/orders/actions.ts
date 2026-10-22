@@ -52,3 +52,34 @@ export async function cancelOrder(fd: FormData) {
   const { error } = await sb.rpc('cancel_order', { p_order: id });
   redirect(withMsg(`/orders/${id}`, error ? error.message : 'Order cancelled.', error ? 'err' : 'ok'));
 }
+
+/** Row and bulk actions from the Orders list: hold, release, cancel. */
+export async function ordersListAction(fd: FormData) {
+  const raw = str(fd, 'back');
+  const back = raw.startsWith('/orders') ? raw : '/orders';
+  const ctx = await getCtx();
+  if (!ctx) redirect('/login');
+  const [act, one] = str(fd, 'act').split(':');
+  const ids = (one ? [one] : fd.getAll('ids').map(String)).filter((x) => /^[0-9a-f-]{36}$/.test(x)).slice(0, 500);
+  if (!ids.length) redirect(withMsg(back, 'Select at least one order.', 'warn'));
+  const sb = await supabaseServer();
+  const n = ids.length;
+  const s = (k: number) => `${k} order${k === 1 ? '' : 's'}`;
+  if (act === 'hold' || act === 'release') {
+    const { data, error } = await sb.rpc('hold_orders', { p_orders: ids, p_hold: act === 'hold', p_reason: str(fd, 'reason') || null });
+    if (error) redirect(withMsg(back, error.message, 'err'));
+    const done = Number(data ?? 0);
+    const verb = act === 'hold' ? 'put on hold' : 'released';
+    const why = act === 'hold' ? 'only new orders the warehouse hasn’t started can be held' : 'held for a product, customs or address problem — fix that and they release by themselves';
+    redirect(withMsg(back, done === n ? `${s(done)} ${verb}.` : `${s(done)} ${verb}; ${n - done} skipped (${why}).`, done === n ? 'ok' : 'warn'));
+  }
+  if (act === 'cancel') {
+    let done = 0;
+    for (const id of ids) {
+      const { error } = await sb.rpc('cancel_order', { p_order: id });
+      if (!error) done++;
+    }
+    redirect(withMsg(back, done === n ? `${s(done)} cancelled.` : `${s(done)} cancelled; ${n - done} couldn’t be (already packed or shipped).`, done === n ? 'ok' : 'warn'));
+  }
+  redirect(back);
+}

@@ -50,7 +50,7 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
         <form key={st.id} action={importStoreProducts}>
           <input type="hidden" name="id" value={st.id} />
           <input type="hidden" name="back" value="/inventory" />
-          <Submit className="ep-btn ep-btn--ghost ep-btn--store" confirm={`Import every product with a SKU from ${st.name ?? KIND_LABEL[st.kind]}? Products already here are not changed.`}>
+          <Submit className="ep-btn ep-btn--ghost ep-btn--store" confirm={`Import every product from ${st.name ?? KIND_LABEL[st.kind]}? Products already here are not changed.`}>
             <span className={`ep-store-dot ep-store-dot--${st.kind}`} aria-hidden="true" />Import from {ctx.backOffice ? `${st.name ?? KIND_LABEL[st.kind]}` : KIND_LABEL[st.kind]}
           </Submit>
         </form>
