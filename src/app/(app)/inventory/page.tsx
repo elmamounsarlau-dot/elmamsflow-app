@@ -38,10 +38,10 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
     salesByProduct(ctx, 30),
   ]);
 
-  // Connected stores this person can import products from.
-  let storesQ = supabaseAdmin().from('integrations').select('id, kind, name, org_id').in('status', ['active', 'error']);
-  if (ctx.org) storesQ = storesQ.eq('org_id', ctx.org.id);
-  const { data: storeRows } = ctx.can('products.edit') ? await storesQ : { data: [] };
+  // Store product import lives in the client's own workspace only (the back office stays free of per-store buttons).
+  const { data: storeRows } = ctx.org && ctx.can('products.edit')
+    ? await supabaseAdmin().from('integrations').select('id, kind, name, org_id').in('status', ['active', 'error']).eq('org_id', ctx.org.id)
+    : { data: [] };
   const stores = ((storeRows ?? []) as { id: string; kind: 'shopify' | 'woocommerce'; name: string | null; org_id: string }[]);
   const canConnect = ctx.can('integrations.manage') && !!ctx.org;
   const storeImport = (
