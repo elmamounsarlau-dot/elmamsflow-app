@@ -22,6 +22,17 @@ process.on('unhandledRejection', (e) => { console.log(`::error title=shipper e2e
 const browser = await chromium.launch();
 const as = async (email) => { const c = await browser.newContext(); await c.addCookies(await cookiesFor(email, BASE)); return c.newPage(); };
 const p = await as('shipper@local.test');
+// Submit the ship form and wait for the server's answer (flash message in the address); on slow machines the first
+// click can land before the page is interactive, so it is retried once.
+const save = async () => {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const before = p.url();
+    await p.click('#ship form button.ep-btn--full');
+    try { await p.waitForURL((u) => u.toString() !== before && /[?&](ok|warn|err)=/.test(u.toString()), { timeout: 15000 }); return; } catch { /* retry */ }
+  }
+  throw new Error('the ship form did not submit');
+};
+const openOrder = async (oid) => { await p.goto(`${BASE}/orders/${oid}`, { waitUntil: 'networkidle' }); await p.waitForFunction(() => document.readyState === 'complete'); await p.waitForTimeout(300); };
 current = p;
 
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
@@ -38,14 +49,14 @@ console.log('ok  shipper sees only Shipping, Orders and Tracking');
 const id = sql("select o.id from orders o join organizations g on g.id = o.org_id where o.status = 'packed' and g.name like 'Atlas%' order by o.number limit 1");
 await p.goto(`${BASE}/shipping`, { waitUntil: 'networkidle' });
 assert.ok(await p.locator(`a[href="/orders/${id}#ship"]`).count(), 'packed order is in the queue');
-await p.goto(`${BASE}/orders/${id}`, { waitUntil: 'networkidle' });
+await openOrder(id);
 const options = await p.locator('#ship select[name=status] option').allInnerTexts();
 assert.ok(!options.includes('On hold') && !options.includes('Cancelled'), 'no hold/cancel for the shipper');
 
 await p.selectOption('#ship select[name=status]', 'shipped');
 await p.fill('#ship input[name=carrier]', 'YunExpress');
 await p.fill('#ship input[name=tracking]', 'YT2299000001');
-await p.click('#ship form button.ep-btn--full');
+await save();
 await p.getByText(/Add the label photo/).waitFor();
 assert.equal(sql(`select status from orders where id = '${id}'`), 'packed');
 console.log('ok  cannot mark in transit without the label');
@@ -53,7 +64,7 @@ console.log('ok  cannot mark in transit without the label');
 await p.selectOption('#ship select[name=status]', 'shipped');
 await p.fill('#ship input[name=tracking]', 'YT2299000001');
 await p.setInputFiles('#ship input[name=label]', { name: 'label.txt.png', mimeType: 'image/png', buffer: Buffer.from('not an image at all') });
-await p.click('#ship form button.ep-btn--full');
+await save();
 await p.getByText(/must be a photo/).waitFor();
 console.log('ok  a file that is not really an image or PDF is refused');
 
@@ -61,7 +72,7 @@ await p.selectOption('#ship select[name=status]', 'shipped');
 await p.fill('#ship input[name=carrier]', 'YunExpress');
 await p.fill('#ship input[name=tracking]', 'YT2299000001');
 await p.setInputFiles('#ship input[name=label]', { name: 'label.png', mimeType: 'image/png', buffer: PNG });
-await p.click('#ship form button.ep-btn--full');
+await save();
 await p.getByText(/Order saved/).waitFor();
 const row = sql(`select status || '|' || tracking || '|' || (label_path is not null) || '|' || (tracking_registered_at is not null) from orders where id = '${id}'`);
 assert.equal(row, 'shipped|YT2299000001|true|true');
