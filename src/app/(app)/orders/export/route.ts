@@ -5,10 +5,7 @@ import { orgNames } from '@/lib/data';
 import { ORDER_STATUS } from '@/lib/format';
 import { applyScope, applyTab, CHANNELS, HOLD_KIND, parseFilters } from '@/lib/orders-query';
 
-const cell = (v: unknown) => {
-  const s = String(v ?? '');
-  return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
+import { csvCell as cell } from '@/lib/format';
 
 /** Orders as a CSV file: the ticked ones, or everything matching the page's tab, search and filters. */
 export async function GET(req: NextRequest) {

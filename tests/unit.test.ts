@@ -82,3 +82,23 @@ test('roles: locked roles have everything, others only what is ticked; client ro
   assert.equal(roleCan(ops, 'products.edit', false), false);
   assert.equal(roleCan(admin, 'billing.manage', false), false);
 });
+
+test('shipping weight: every parcel is billed rounded UP to the full kg', async () => {
+  const { billableKg } = await import('../src/lib/billing');
+  assert.deepEqual(billableKg([300]), { kg: 1, unknown: 0, actualKg: 0.3 });
+  assert.deepEqual(billableKg([1000]), { kg: 1, unknown: 0, actualKg: 1 });
+  assert.deepEqual(billableKg([1001]), { kg: 2, unknown: 0, actualKg: 1.001 });
+  // Three 300 g parcels are 3 kg billed, not 0.9 kg.
+  assert.equal(billableKg([300, 300, 300]).kg, 3);
+  // A parcel with no weight is reported, never silently billed as 0.
+  assert.deepEqual(billableKg([0, 2500]), { kg: 3, unknown: 1, actualKg: 2.5 });
+});
+
+test('CSV export: formulas from store data are neutralised, quotes escaped', async () => {
+  const { csvCell } = await import('../src/lib/format');
+  assert.equal(csvCell('=HYPERLINK("http://x","click")'), `"'=HYPERLINK(""http://x"",""click"")"`);
+  assert.equal(csvCell('+33 6 12'), "'+33 6 12");
+  assert.equal(csvCell(-5), '-5');            // real numbers stay numbers
+  assert.equal(csvCell('Paris, FR'), '"Paris, FR"');
+  assert.equal(csvCell(null), '');
+});

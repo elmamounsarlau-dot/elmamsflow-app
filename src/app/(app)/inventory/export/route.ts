@@ -3,10 +3,7 @@ import { getCtx } from '@/lib/session';
 import { available, getProducts, orgNames } from '@/lib/data';
 import { HEALTH, runway, salesByProduct } from '@/lib/insights';
 
-const cell = (v: unknown) => {
-  const s = String(v ?? '');
-  return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
+import { csvCell as cell } from '@/lib/format';
 
 /** The inventory as a CSV file (same search and client filter as the page). */
 export async function GET(req: NextRequest) {

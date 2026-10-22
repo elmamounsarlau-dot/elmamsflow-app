@@ -64,6 +64,18 @@ export async function getRateCard(orgId: string): Promise<RateCard | null> {
 
 const ON_HAND = new Set(['inbound', 'order', 'adjust', 'count']);
 
+/** Billable weight: each parcel is charged by its weight rounded UP to the next full kilogram
+ *  (a 300 g parcel is 1 kg, 1.2 kg is 2 kg). Parcels with no weight at all are counted separately. */
+export function billableKg(parcelGrams: number[]) {
+  let kg = 0;
+  let unknown = 0;
+  for (const g of parcelGrams) {
+    if (!(g > 0)) { unknown++; continue; }
+    kg += Math.ceil(g / 1000);
+  }
+  return { kg, unknown, actualKg: Math.round(parcelGrams.reduce((a, g) => a + Math.max(0, g || 0), 0)) / 1000 };
+}
+
 /** Everything a client is charged for between `start` (included) and `end` (excluded), from what really happened. */
 export async function computeCharges(orgId: string, rates: RateCard, start: Date, end: Date) {
   const admin = supabaseAdmin();
@@ -75,7 +87,9 @@ export async function computeCharges(orgId: string, rates: RateCard, start: Date
     const out: unknown[] = [];
     for (let from = 0; ; from += 1000) {
       const { data, error } = await make().range(from, from + 999);
-      if (error || !data?.length) break;
+      // Never bill from partial data: a failed read stops the invoice instead of silently under-charging.
+      if (error) throw new Error(`Could not read the data for this invoice: ${error.message}`);
+      if (!data?.length) break;
       out.push(...data);
       if (data.length < 1000) break;
     }
@@ -92,7 +106,10 @@ export async function computeCharges(orgId: string, rates: RateCard, start: Date
   const nOrders = os.length;
   const units = os.reduce((a, o) => a + o.order_items.reduce((b, i) => b + i.qty, 0), 0);
   const extra = Math.max(0, units - nOrders);
-  const kg = r3(os.reduce((a, o) => a + (o.weight_g || o.order_items.reduce((b, i) => b + i.qty * (i.products?.weight_g ?? 0), 0)), 0) / 1000);
+  // Parcel weight: what the warehouse weighed, otherwise the products' weights.
+  const parcels = os.map((o) => o.weight_g || o.order_items.reduce((b, i) => b + i.qty * (i.products?.weight_g ?? 0), 0));
+  const w = billableKg(parcels);
+  const kg = w.kg;
   const ddp = os.filter((o) => o.service === 'ddp').length;
 
   type I = { cartons: number; inbound_items: { received: number }[] };
@@ -123,7 +140,7 @@ export async function computeCharges(orgId: string, rates: RateCard, start: Date
   add('fulfillment', `Extra items picked · ${extra} unit${extra === 1 ? '' : 's'}`, extra, rates.pick_pack_extra_unit);
   add('packaging', `Packaging · ${nOrders} parcel${nOrders === 1 ? '' : 's'}`, nOrders, rates.packaging_order);
   add('shipping', `Shipping · ${nOrders} parcel${nOrders === 1 ? '' : 's'}`, nOrders, rates.shipping_base);
-  add('shipping', `Shipping weight · ${kg.toLocaleString('en')} kg`, kg, rates.shipping_per_kg);
+  add('shipping', `Shipping weight · ${kg.toLocaleString('en')} kg billed (each parcel rounded up to the full kg; ${w.actualKg.toLocaleString('en')} kg actual)${w.unknown ? ` · ${w.unknown} parcel${w.unknown === 1 ? '' : 's'} without a weight not included` : ''}`, kg, rates.shipping_per_kg);
   add('customs', `DDP customs handling · ${ddp} order${ddp === 1 ? '' : 's'}`, ddp, rates.ddp_order);
   add('receiving', `Receiving · ${cartons} carton${cartons === 1 ? '' : 's'} on ${ins.length} inbound${ins.length === 1 ? '' : 's'}`, cartons, rates.receiving_carton);
   add('receiving', `Counting in · ${unitsIn.toLocaleString('en')} units`, unitsIn, rates.receiving_unit);
@@ -131,7 +148,7 @@ export async function computeCharges(orgId: string, rates: RateCard, start: Date
   const subtotal = r2(lines.reduce((a, l) => a + l.amount, 0));
   if (rates.monthly_minimum > subtotal && days >= 28) add('other', 'Monthly minimum top-up', 1, r2(rates.monthly_minimum - subtotal));
   const total = r2(lines.reduce((a, l) => a + l.amount, 0));
-  return { lines, total, stats: { orders: nOrders, units, kg, ddp, cartons, unitsIn, avgStored: Math.round(unitDays / days) } };
+  return { lines, total, stats: { orders: nOrders, units, kg, kgActual: w.actualKg, noWeight: w.unknown, ddp, cartons, unitsIn, avgStored: Math.round(unitDays / days) } };
 }
 
 /** First day of a month (UTC) and the first day of the next one. */
@@ -154,13 +171,25 @@ export async function draftInvoice(orgId: string, ym: string, by: string | null)
   if (existing) return { id: existing.id as string, created: false };
   const rates = await getRateCard(orgId);
   if (!rates) return { error: 'This client has no price list yet.' };
-  const { lines, total } = await computeCharges(orgId, rates, start, end);
+  let charges: Awaited<ReturnType<typeof computeCharges>>;
+  try {
+    charges = await computeCharges(orgId, rates, start, end);
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+  const { lines, total } = charges;
   const { data: inv, error } = await admin.from('invoices').insert({
     org_id: orgId, period_start: periodStart, period_end: new Date(end.getTime() - 864e5).toISOString().slice(0, 10),
     currency: rates.currency, status: 'draft', total, created_by: by,
   }).select('id').single();
   if (error || !inv) return { error: error?.message ?? 'Could not create the invoice.' };
-  if (lines.length) await admin.from('invoice_lines').insert(lines.map((l, i) => ({ ...l, invoice_id: inv.id, position: i })));
+  if (lines.length) {
+    const { error: le } = await admin.from('invoice_lines').insert(lines.map((l, i) => ({ ...l, invoice_id: inv.id, position: i })));
+    if (le) {
+      await admin.from('invoices').delete().eq('id', inv.id);
+      return { error: `Could not save the invoice lines: ${le.message}` };
+    }
+  }
   return { id: inv.id as string, created: true };
 }
 

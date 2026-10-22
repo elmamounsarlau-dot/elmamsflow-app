@@ -61,3 +61,11 @@ export function countryName(cc: string) {
   if (COUNTRIES[cc]) return COUNTRIES[cc];
   try { return REGION.of(cc) ?? cc; } catch { return cc; }
 }
+
+/** One CSV cell. Text that a spreadsheet would run as a formula (=, +, -, @) is prefixed with ' so it stays text —
+ *  customer names and addresses come from stores and could otherwise run in Excel. */
+export function csvCell(v: unknown) {
+  let s = String(v ?? '');
+  if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return /[",\n;\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
