@@ -29,7 +29,7 @@ const ROLES = [
 ];
 const WIDTHS = [{ name: '375', width: 375, height: 812, mobile: true }, { name: '768', width: 768, height: 1024, mobile: true }, { name: 'desktop', width: 1440, height: 900, mobile: false }];
 
-const slug = (p) => (p === '/' ? 'home' : p.replace(/^\//, '').replace(/[/?=&]/g, '_'));
+const slug = (p) => (p === '/' ? 'home' : p.replace(/^\//, '').replace(/[/?=&:]/g, '_'));
 const report = [];
 const browser = await chromium.launch({ ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}) });
 
