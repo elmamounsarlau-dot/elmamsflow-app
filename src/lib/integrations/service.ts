@@ -1,7 +1,7 @@
 import 'server-only';
 import { supabaseAdmin } from '../supabase/admin';
 import { siteUrl } from '../format';
-import { importOrder, KIND_LABEL, loadIntegration, logEvent, markError, type ExtOrder, type ExtProduct, type Integration } from './core';
+import { importOrder, syncShipTo, KIND_LABEL, loadIntegration, logEvent, markError, type ExtOrder, type ExtProduct, type Integration } from './core';
 import { shopifyFulfil, shopifyOpenOrders, shopifyOrder, shopifyProducts, shopifyRegisterWebhooks } from './shopify';
 import { wooCall, wooFulfil, wooOpenOrders, wooProducts, wooRegisterWebhooks, wooToExt } from './woocommerce';
 
@@ -15,7 +15,7 @@ export async function registerWebhooks(i: Integration) {
 
 /** Bring in paid orders waiting to ship, created since `since`. */
 export async function syncOrders(i: Integration, since: Date) {
-  const counts = { imported: 0, existing: 0, skipped: 0, cancelled: 0, failed: 0 };
+  const counts = { imported: 0, existing: 0, updated: 0, skipped: 0, cancelled: 0, failed: 0 };
   let list: ExtOrder[];
   try {
     list = i.kind === 'shopify' ? await shopifyOpenOrders(i, since) : await wooOpenOrders(i, since);
@@ -106,4 +106,15 @@ export async function refreshLines(orderId: string) {
     const fresh = i.kind === 'shopify' ? await shopifyOrder(i, o.external_id) : wooToExt(await wooCall(i, `/orders/${encodeURIComponent(o.external_id)}`));
     if (fresh?.lines.length) await admin.from('orders').update({ external_lines: fresh.lines }).eq('id', o.id);
   } catch { /* store unreachable: match with what we have */ }
+}
+
+/** Read the order again from the store and apply a changed address (used by "Check the store again"). */
+export async function refreshFromStore(orderId: string) {
+  const { data: o } = await supabaseAdmin().from('orders').select('id, integration_id, external_id').eq('id', orderId).maybeSingle();
+  if (!o?.integration_id || !o.external_id) return 'not_store' as const;
+  const i = await loadIntegration(o.integration_id);
+  if (!i) return 'not_store' as const;
+  const fresh = i.kind === 'shopify' ? await shopifyOrder(i, o.external_id) : wooToExt(await wooCall(i, `/orders/${encodeURIComponent(o.external_id)}`));
+  if (!fresh) return 'missing' as const;
+  return (await syncShipTo(i, o.id, fresh)) ? ('updated' as const) : ('same' as const);
 }

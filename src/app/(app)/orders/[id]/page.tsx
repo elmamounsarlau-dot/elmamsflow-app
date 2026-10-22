@@ -43,8 +43,8 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
       </div>
       {o.status === 'on_hold' && o.hold_reason && (
         <div className="ep-fixbar" style={{ cursor: 'default' }}>
-          <span><b>On hold:</b> {o.hold_reason}</span>
-          {o.external_lines && <form action={rematchProducts}><input type="hidden" name="order" value={o.id} /><Submit className="ep-btn ep-btn--sm">Match products again</Submit></form>}
+          <span><b>On hold:</b> {o.hold_reason}{o.hold_kind === 'address' && o.integration_id ? <> — fix it in {o.source === 'shopify' ? 'Shopify' : 'WooCommerce'} and this order updates by itself.</> : null}</span>
+          {o.external_lines && <form action={rematchProducts}><input type="hidden" name="order" value={o.id} /><Submit className="ep-btn ep-btn--sm">{o.hold_kind === 'address' ? 'Check the store again' : 'Match products again'}</Submit></form>}
         </div>
       )}
       {o.source !== 'manual' && (

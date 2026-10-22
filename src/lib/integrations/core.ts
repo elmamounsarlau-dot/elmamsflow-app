@@ -97,7 +97,7 @@ function holdReason(unmatched: string[], noCustoms: boolean, noAddress: boolean)
 }
 
 /** Create (or cancel) the Elmamsflow order for one store order. Safe to call twice for the same order. */
-export async function importOrder(i: Integration, o: ExtOrder): Promise<'imported' | 'exists' | 'cancelled' | 'skipped'> {
+export async function importOrder(i: Integration, o: ExtOrder): Promise<'imported' | 'exists' | 'updated' | 'cancelled' | 'skipped'> {
   const admin = supabaseAdmin();
   const { data: existing } = await admin.from('orders').select('id, number, status').eq('integration_id', i.id).eq('external_id', o.external_id).maybeSingle();
 
@@ -110,18 +110,17 @@ export async function importOrder(i: Integration, o: ExtOrder): Promise<'importe
     }
     return 'skipped';
   }
-  if (existing) return 'exists';
+  if (existing) return (await syncShipTo(i, existing.id, o)) ? 'updated' : 'exists';
   if (!o.shippable) return 'skipped';
 
   const { data: prods } = await admin.from('products').select('id, sku, hs_code, customs_value, ext_ref').eq('org_id', i.org_id);
   const m = match(o.lines, (prods ?? []) as Prod[]);
   if (!m.items.length && !m.unmatched.length) return 'skipped'; // nothing to ship (digital items only)
-  const noAddress = !o.address || !o.country;
+  const noAddress = addressMissing(shipToOf(o));
   const reason = holdReason(m.unmatched, m.noCustoms, noAddress);
 
   const { data: order, error } = await admin.from('orders').insert({
-    org_id: i.org_id, store_ref: o.ref || null, customer: o.customer || 'Customer', email: o.email, phone: o.phone,
-    address: o.address || '—', city: o.city, zip: o.zip, country: (o.country || 'XX').toUpperCase().slice(0, 2), service: 'express',
+    org_id: i.org_id, store_ref: o.ref || null, ...shipToOf(o), service: 'express',
     status: reason ? 'on_hold' : 'new', hold_reason: reason,
     source: i.kind, integration_id: i.id, external_id: o.external_id, external_lines: o.lines,
   }).select('id, number').single();
@@ -135,6 +134,69 @@ export async function importOrder(i: Integration, o: ExtOrder): Promise<'importe
   await admin.from('activity_log').insert({ org_id: i.org_id, action: 'order_created', detail: `#${order.number} · ${o.ref} from ${KIND_LABEL[i.kind]}` });
   await logEvent(i, 'imported', `${o.ref} → #${order.number}${reason ? ' (on hold)' : ''}`);
   return 'imported';
+}
+
+/** The ship-to fields exactly as we store them for a store order. */
+export function shipToOf(o: ExtOrder) {
+  return {
+    customer: o.customer || 'Customer', email: o.email, phone: o.phone, address: o.address || '—',
+    city: o.city, zip: o.zip, country: (o.country || 'XX').toUpperCase().slice(0, 2),
+  };
+}
+const SHIP_FIELDS = ['customer', 'email', 'phone', 'address', 'city', 'zip', 'country'] as const;
+const addressMissing = (a: { address: string | null; country: string | null }) => !a.address || a.address === '—' || !a.country || a.country === 'XX';
+
+/**
+ * The customer's address (or name, email, phone) changed in the store. Until the parcel is packed, the change is
+ * applied here too, and an address hold releases by itself once the address is complete (other holds stay).
+ * After packing nothing is changed automatically; the team gets a warning to check the label.
+ * Returns true when the order was updated.
+ */
+export async function syncShipTo(i: Integration, orderId: string, o: ExtOrder) {
+  const admin = supabaseAdmin();
+  const { data: cur } = await admin.from('orders').select('id, number, org_id, status, hold_kind, hold_reason, external_lines, customer, email, phone, address, city, zip, country').eq('id', orderId).maybeSingle();
+  if (!cur) return false;
+  const next = shipToOf(o);
+  // A store payload without any address (e.g. a partial update) never wipes an address we already have.
+  if (addressMissing(next) && !addressMissing(cur)) return false;
+  const changed = SHIP_FIELDS.filter((k) => (cur[k] ?? '') !== (next[k] ?? ''));
+  if (!changed.length) return false;
+  const label = changed.includes('address') || changed.includes('city') || changed.includes('zip') || changed.includes('country') ? 'shipping address' : 'customer details';
+
+  if (!['new', 'on_hold'].includes(cur.status)) {
+    if (['packed'].includes(cur.status)) {
+      await admin.from('activity_log').insert({ org_id: cur.org_id, action: 'order_address_late', detail: `#${cur.number} · ${label} changed in ${KIND_LABEL[i.kind]} after packing — check the label` });
+      await logEvent(i, 'error', `${o.ref}: ${label} changed after packing; not applied automatically (#${cur.number})`);
+    }
+    return false;
+  }
+
+  const patch: Record<string, unknown> = { ...next };
+  // Re-check the hold: address/product/customs holds are recomputed; holds set by a person ("manual", "stock") stay.
+  const system = cur.status === 'new' || ['address', 'products', 'customs'].includes(cur.hold_kind ?? '');
+  const lines = (cur.external_lines ?? null) as ExtOrder['lines'] | null;
+  if (system && lines?.length) {
+    const { data: prods } = await admin.from('products').select('id, sku, hs_code, customs_value, ext_ref').eq('org_id', cur.org_id);
+    const m = match(lines, (prods ?? []) as Prod[]);
+    const reason = holdReason(m.unmatched, m.noCustoms, addressMissing(next));
+    patch.status = reason ? 'on_hold' : 'new';
+    patch.hold_reason = reason;
+  } else if (system) {
+    // No store lines kept (older import): only the address part is re-checked, using the order's own products.
+    const { data: its } = await admin.from('order_items').select('products(hs_code, customs_value)').eq('order_id', cur.id);
+    const noCustoms = (its ?? []).some((x) => { const p = x.products as unknown as { hs_code: string | null; customs_value: number } | null; return !p?.hs_code || !Number(p?.customs_value); });
+    if (addressMissing(next)) { patch.status = 'on_hold'; patch.hold_reason = holdReason([], false, true); }
+    else if (cur.hold_kind === 'address') {
+      const reason = (its ?? []).length ? holdReason([], noCustoms, false) : 'No products matched yet. Press “Match products again”';
+      patch.status = reason ? 'on_hold' : 'new'; patch.hold_reason = reason;
+    }
+  }
+  const { error } = await admin.from('orders').update(patch).eq('id', cur.id).in('status', ['new', 'on_hold']);
+  if (error) throw new Error(error.message);
+  const released = cur.status === 'on_hold' && patch.status === 'new';
+  await admin.from('activity_log').insert({ org_id: cur.org_id, action: 'order_address_updated', detail: `#${cur.number} · ${label} updated from ${KIND_LABEL[i.kind]}${released ? ' · released from hold' : ''}` });
+  await logEvent(i, 'imported', `${o.ref}: ${label} updated → #${cur.number}${released ? ' (hold released)' : ''}`);
+  return true;
 }
 
 /** After the client adds missing products: match the store lines again and release the hold if everything fits. */
