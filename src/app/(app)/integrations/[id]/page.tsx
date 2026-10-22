@@ -77,7 +77,7 @@ export default async function StorePage({ params }: { params: Promise<{ id: stri
             <p className="ep-small ep-muted" style={{ margin: '.3rem 0 .9rem' }}>New orders arrive by themselves. Use this if something seems missing — orders already here are never duplicated.</p>
             <form action={syncNow} className="ep-inline">
               <input type="hidden" name="id" value={i.id} />
-              <select name="days" defaultValue="7"><option value="1">Last 24 hours</option><option value="3">Last 3 days</option><option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30">Last 30 days</option></select>
+              <select name="days" defaultValue="7" aria-label="How far back to check"><option value="1">Last 24 hours</option><option value="3">Last 3 days</option><option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30">Last 30 days</option></select>
               <Submit>Check now</Submit>
             </form>
           </section>

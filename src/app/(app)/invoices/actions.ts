@@ -20,7 +20,7 @@ async function invoiceFor(id: string) {
   return data;
 }
 
-const ymOk = (v: string) => (/^\d{4}-(0[1-9]|1[0-2])$/.test(v) ? v : lastMonth());
+const ymOk = (v: string) => (/^\d{4}-(0[1-9]|1[0-2])$/.test(v) ? v : lastMonth('UTC'));
 
 // ---------- Price list ----------
 
@@ -190,6 +190,7 @@ export async function saveBillingSettings(fd: FormData) {
   const ctx = await billing('/settings/billing');
   const row: Record<string, unknown> = { id: 1, updated_at: new Date().toISOString() };
   for (const k of ['company', 'address', 'tax_id', 'email', 'bank_usd', 'bank_eur', 'bank_gbp', 'footer']) row[k] = str(fd, k).slice(0, 1000) || null;
+  row.invoice_timezone = str(fd, 'invoice_timezone') === 'Asia/Shanghai' ? 'Asia/Shanghai' : 'UTC';
   const { error } = await supabaseAdmin().from('billing_settings').upsert(row, { onConflict: 'id' });
   await logActivity(supabaseAdmin(), ctx.userId, null, 'billing_settings', '');
   redirect(withMsg('/settings/billing', error ? error.message : 'Billing details saved.', error ? 'err' : 'ok'));

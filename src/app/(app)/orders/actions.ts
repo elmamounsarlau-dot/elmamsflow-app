@@ -89,3 +89,14 @@ export async function ordersListAction(fd: FormData) {
   }
   redirect(back);
 }
+
+/** Owner only: undo a shipment that never physically left (e.g. a test). Needs a reason and evidence; fully logged. */
+export async function reverseShipment(fd: FormData) {
+  const id = str(fd, 'id');
+  const ctx = await getCtx();
+  if (ctx?.staffRole !== 'owner') redirect(withMsg(`/orders/${id}`, 'Only the owner can reverse a shipment.', 'err'));
+  if (str(fd, 'confirm') !== 'REVERSE') redirect(withMsg(`/orders/${id}#correction`, 'Type REVERSE to confirm.', 'err'));
+  const sb = await supabaseServer();
+  const { error } = await sb.rpc('reverse_shipment', { p_order: id, p_reason: str(fd, 'reason').slice(0, 300), p_evidence: str(fd, 'evidence').slice(0, 500) });
+  redirect(withMsg(`/orders/${id}`, error ? error.message : 'Shipment reversed. The units are back in stock and the order is cancelled. Both steps are in the history.', error ? 'err' : 'ok'));
+}

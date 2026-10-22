@@ -6,10 +6,10 @@ import { fmtDays, HEALTH, runway, salesByProduct } from '@/lib/insights';
 import { fmtDate } from '@/lib/format';
 import { Back, Empty, TeamOnly } from '@/components/ui';
 import { Submit } from '@/components/client';
-import { adjustStock, quarantineStock, releaseStock, updateProduct } from '../actions';
+import { adjustStock, quarantineStock, reconcileStock, releaseStock, updateProduct } from '../actions';
 
 const TYPES: Record<string, string> = { inbound: 'Received', order: 'Shipped', adjust: 'Correction', count: 'Warehouse count', quarantine: 'To quarantine', release: 'Out of quarantine' };
-const SOURCE: Record<string, string> = { manual: 'Entered in app', csv: 'CSV import', warehouse: 'Warehouse confirmed' };
+const SOURCE: Record<string, string> = { manual: 'Entered in app', csv: 'CSV import', warehouse: 'Warehouse confirmed', reconciliation: 'Reconciliation (owner)' };
 
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireCtx();
@@ -97,6 +97,20 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
               <Submit className="ep-btn ep-btn--ghost ep-btn--full">Save correction</Submit>
             </form>
           </section>
+          {ctx.staffRole === 'owner' && (
+            <section className="ep-card ep-card--team">
+              <h2>Reconcile (owner)</h2>
+              <TeamOnly />
+              <p className="ep-small ep-muted" style={{ marginBottom: '.8rem' }}>For differences you’ve investigated. Your approval, the reason and the evidence are stored with the movement.</p>
+              <form action={reconcileStock} className="ep-form">
+                <input type="hidden" name="product" value={p.id} /><input type="hidden" name="back" value={back} />
+                <div className="ep-row2"><label>Units (+ or −)<input type="number" name="qty" required /></label><label>Reference<input name="ref" maxLength={60} placeholder="e.g. EM-20005" /></label></div>
+                <label>Reason<input name="reason" required maxLength={300} /></label>
+                <label>Evidence<input name="evidence" required maxLength={500} placeholder="What proves it: count sheet, photo, message" /></label>
+                <Submit className="ep-btn ep-btn--ghost ep-btn--full">Record reconciliation</Submit>
+              </form>
+            </section>
+          )}
         </div>
       )}
 
@@ -126,7 +140,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
           <div className="ep-tablewrap">
             <table className="ep-table">
               <thead><tr><th>Date</th><th>Movement</th><th>Reference</th><th>Note</th><th>Source</th><th className="ep-right">Units</th></tr></thead>
-              <tbody>{(moves ?? []).map((m) => <tr key={m.id}><td><small>{fmtDate(m.created_at, true)}</small></td><td>{TYPES[m.type] ?? m.type}</td><td>{m.ref || '—'}</td><td><small>{m.note || '—'}</small></td><td><small>{SOURCE[m.source] ?? m.source}</small></td><td className="ep-right"><b className={['quarantine', 'release'].includes(m.type) ? 'ep-q' : m.qty < 0 ? 'ep-neg' : 'ep-pos'}>{m.qty > 0 ? '+' : ''}{m.qty}</b></td></tr>)}</tbody>
+              <tbody>{(moves ?? []).map((m) => <tr key={m.id}><td><small>{fmtDate(m.created_at, true)}</small></td><td>{TYPES[m.type] ?? m.type}</td><td>{m.ref || '—'}</td><td><small>{m.note || '—'}{m.evidence ? <><br />Evidence: {m.evidence}</> : null}</small></td><td><small>{SOURCE[m.source] ?? m.source}</small></td><td className="ep-right"><b className={['quarantine', 'release'].includes(m.type) ? 'ep-q' : m.qty < 0 ? 'ep-neg' : 'ep-pos'}>{m.qty > 0 ? '+' : ''}{m.qty}</b></td></tr>)}</tbody>
             </table>
           </div>
         )}

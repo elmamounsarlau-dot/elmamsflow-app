@@ -5,6 +5,7 @@ import { getCtx, type Ctx } from '@/lib/session';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { inviteToOrg } from '@/lib/invite';
 import { logActivity } from '@/lib/log';
+import { flashLink } from '@/lib/link-flash';
 import { permsFor, type RoleDef } from '@/lib/roles';
 import { getOrgRoles } from '@/lib/roles-db';
 import { str, withMsg } from '@/lib/format';
@@ -48,8 +49,8 @@ export async function inviteMember(fd: FormData) {
   await logActivity(supabaseAdmin(), ctx.userId, s.staff ? null : s.orgId, 'member_invited', `${email} as ${role}`);
   const msg = !r.ok ? withMsg('/team', `${email} is added, but ${r.error}.`, 'warn') : withMsg('/team', r.emailed ? `Invitation emailed to ${email}.` : `${email} already had an account and now has access.`);
   // The owner (and managers) also get the private link on screen; client admins only get the email.
-  const showLink = r.link && s.staff ? `&link=${encodeURIComponent(r.link)}&for=${encodeURIComponent(email)}` : r.link && !s.staff && ctx.viewingAs ? `&link=${encodeURIComponent(r.link)}&for=${encodeURIComponent(email)}` : '';
-  redirect(msg + showLink);
+  if (r.link && (s.staff || ctx.viewingAs)) await flashLink(r.link, email);
+  redirect(msg);
 }
 
 export async function changeRole(fd: FormData) {

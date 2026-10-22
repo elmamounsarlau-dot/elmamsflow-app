@@ -107,7 +107,7 @@ export default async function InboundPage({ params }: { params: Promise<{ id: st
                   return (
                     <tr key={it.id}>
                       <td><b>{it.products?.sku}</b></td><td>{it.products?.name}</td><td className="ep-right">{it.expected.toLocaleString('en')}</td>
-                      <td className="ep-right">{receiving ? <input className="ep-qty" type="number" min={0} name={`rcv_${it.id}`} defaultValue={showCount ? it.received : it.expected} /> : showCount ? <b>{it.received.toLocaleString('en')}</b> : <span className="ep-zero">—</span>}</td>
+                      <td className="ep-right">{receiving ? <input className="ep-qty" type="number" min={0} aria-label="Units counted" name={`rcv_${it.id}`} defaultValue={showCount ? it.received : it.expected} /> : showCount ? <b>{it.received.toLocaleString('en')}</b> : <span className="ep-zero">—</span>}</td>
                       {showCount && <td className="ep-right">{diff === 0 ? <span className="ep-zero">0</span> : <b className={diff < 0 ? 'ep-neg' : 'ep-pos'}>{diff > 0 ? '+' : ''}{diff}</b>}</td>}
                     </tr>
                   );

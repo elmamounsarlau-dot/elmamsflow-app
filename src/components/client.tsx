@@ -64,7 +64,7 @@ export function CopyLink({ value, label = 'Copy link' }: { value: string; label?
   const ref = useRef<HTMLInputElement>(null);
   return (
     <div className="ep-copy">
-      <input ref={ref} readOnly value={value} onFocus={(e) => e.currentTarget.select()} />
+      <input ref={ref} readOnly value={value} aria-label="Private link to copy" onFocus={(e) => e.currentTarget.select()} />
       <button
         type="button"
         className="ep-btn"
@@ -148,7 +148,7 @@ export function ItemRows({ products, clients }: { products: P[]; clients?: { id:
         </div>
         {Array.from({ length: rows }).map((_, i) => (
           <div className="ep-item" key={i}>
-            <select name="item_product" defaultValue="">
+            <select name="item_product" defaultValue="" aria-label={`Product, line ${i + 1}`}>
               <option value="">Choose a product…</option>
               {list.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -156,7 +156,7 @@ export function ItemRows({ products, clients }: { products: P[]; clients?: { id:
                 </option>
               ))}
             </select>
-            <input type="number" name="item_qty" min={0} step={1} placeholder="0" />
+            <input type="number" name="item_qty" min={0} step={1} placeholder="0" aria-label={`Quantity, line ${i + 1}`} />
           </div>
         ))}
         <button type="button" className="ep-link" onClick={() => setRows(rows + 1)}>
@@ -196,4 +196,36 @@ export function PrintNow() {
       Print or save as PDF
     </button>
   );
+}
+
+/**
+ * Small screens: each table row becomes a card. Every cell gets its column name (data-label) so the card still
+ * says what each value is. Scrollable table areas become keyboard-focusable regions.
+ */
+export function ResponsiveTables() {
+  useEffect(() => {
+    const apply = () => {
+      document.querySelectorAll<HTMLTableElement>('table.ep-table').forEach((t) => {
+        const heads = [...t.querySelectorAll('thead th')].map((th) => (th.textContent ?? '').trim());
+        if (!heads.length) return;
+        t.classList.add('ep-stack');
+        t.querySelectorAll<HTMLTableRowElement>('tbody tr').forEach((tr) => {
+          [...tr.children].forEach((td, i) => { if (!td.hasAttribute('data-label')) td.setAttribute('data-label', heads[i] ?? ''); });
+        });
+      });
+      document.querySelectorAll<HTMLElement>('.ep-tablewrap').forEach((el) => {
+        if (el.hasAttribute('tabindex')) return;
+        el.setAttribute('tabindex', '0');
+        el.setAttribute('role', 'region');
+        const h = el.closest('section')?.querySelector('h2, h3')?.textContent?.trim();
+        el.setAttribute('aria-label', h ? `${h} (table)` : 'Table');
+      });
+    };
+    apply();
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const mo = new MutationObserver(() => { clearTimeout(t); t = setTimeout(apply, 50); });
+    mo.observe(document.body, { childList: true, subtree: true });
+    return () => { mo.disconnect(); clearTimeout(t); };
+  }, []);
+  return null;
 }

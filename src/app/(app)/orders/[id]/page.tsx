@@ -5,7 +5,7 @@ import { supabaseServer } from '@/lib/supabase/server';
 import { COUNTRIES, fmtDate, ORDER_STATUS } from '@/lib/format';
 import { Arrow, Back, Badge, TeamOnly } from '@/components/ui';
 import { Submit } from '@/components/client';
-import { cancelOrder, updateOrder } from '../actions';
+import { cancelOrder, reverseShipment, updateOrder } from '../actions';
 import { rematchProducts, resendTracking } from '../../integrations/actions';
 
 export default async function OrderPage({ params }: { params: Promise<{ id: string }> }) {
@@ -99,6 +99,20 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
           {['new', 'on_hold'].includes(o.status) && ctx.can('orders.create') && (
             <section className="ep-card">
               <form action={cancelOrder}><input type="hidden" name="id" value={o.id} /><Submit className="ep-btn ep-btn--ghost ep-btn--full" confirm="Cancel this order?">Cancel order</Submit></form>
+            </section>
+          )}
+          {ctx.staffRole === 'owner' && ['shipped', 'delivered'].includes(o.status) && o.stock_out && (
+            <section className="ep-card ep-card--team" id="correction">
+              <h2>Correction: reverse shipment</h2>
+              <TeamOnly />
+              <p className="ep-small ep-muted" style={{ marginBottom: '.8rem' }}>Only if no parcel physically left (e.g. a test). The units go back to stock and the order is cancelled; the original shipment stays in the history with your name, the reason and the evidence. It doesn’t change the order in the store.</p>
+              <form action={reverseShipment} className="ep-form">
+                <input type="hidden" name="id" value={o.id} />
+                <label>Reason<input name="reason" required maxLength={300} placeholder="e.g. Test shipment, no parcel left the warehouse" /></label>
+                <label>Evidence<input name="evidence" required maxLength={500} placeholder="e.g. Warehouse confirmation on WeChat, 22 Oct" /></label>
+                <label>Type REVERSE to confirm<input name="confirm" required pattern="REVERSE" autoComplete="off" /></label>
+                <Submit className="ep-btn ep-btn--ghost ep-btn--full">Reverse shipment</Submit>
+              </form>
             </section>
           )}
           <section className="ep-card"><Link className="ep-link" href={`/support/new?ref=${o.number}`}>Ask about this order <Arrow /></Link></section>

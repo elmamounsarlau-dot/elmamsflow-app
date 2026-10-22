@@ -24,8 +24,10 @@
     "@types/node": "22.15.21",
     "@types/react": "19.1.8",
     "@types/react-dom": "19.1.6",
+    "axe-core": "4.10.2",
     "eslint": "9.39.5",
     "eslint-config-next": "15.5.28",
+    "playwright-core": "1.56.1",
     "typescript": "5.9.3"
   }
 }

@@ -1,0 +1,91 @@
+name: CI
+# Runs on every push and pull request. Nothing here touches production: the database checks and the
+# screen audit run against a throw-away Postgres in the runner with synthetic data.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: Type-check, lint, unit tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
+          NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3000
+
+  database:
+    name: Database integrity, permissions and concurrency
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGPORT: 5432
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - run: bash supabase/tests/run.sh
+
+  screens:
+    name: Screens at 375 / 768 / desktop (layout + WCAG 2.2 AA)
+    runs-on: ubuntu-latest
+    needs: [app, database]
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGPORT: 5432
+      LOCAL_JWT_SECRET: ci-only-jwt-secret-0123456789-abcdef
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - run: npm ci
+      - run: npx -y playwright@1.56.1 install --with-deps chromium
+      - name: Local stack (database + API + test sign-in)
+        run: |
+          bash supabase/local/up.sh
+          curl -sSL https://github.com/PostgREST/postgrest/releases/download/v12.2.3/postgrest-v12.2.3-linux-static-x64.tar.xz | tar xJ
+          ./postgrest /tmp/elm-postgrest.conf > postgrest.log 2>&1 &
+          node supabase/local/gateway.mjs > gateway.log 2>&1 &
+          node supabase/local/env.mjs >> "$GITHUB_ENV"
+      - name: Build and start the app against the local stack
+        run: |
+          npm run build
+          npx next start -H 127.0.0.1 -p 3000 > app.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf -o /dev/null http://127.0.0.1:3000/login && break; sleep 1; done
+      - run: OUT=e2e-results node e2e/audit.mjs
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screens
+          path: e2e-results
+          retention-days: 14

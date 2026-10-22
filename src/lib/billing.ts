@@ -151,22 +151,39 @@ export async function computeCharges(orgId: string, rates: RateCard, start: Date
   return { lines, total, stats: { orders: nOrders, units, kg, kgActual: w.actualKg, noWeight: w.unknown, ddp, cartons, unitsIn, avgStored: Math.round(unitDays / days) } };
 }
 
-/** First day of a month (UTC) and the first day of the next one. */
-export function monthBounds(ym: string) {
+export type InvoiceTz = 'UTC' | 'Asia/Shanghai';
+const TZ_OFFSET_H: Record<InvoiceTz, number> = { UTC: 0, 'Asia/Shanghai': 8 }; // China has no daylight saving
+
+/** Which clock decides the invoice month (Settings → Billing). */
+export async function invoiceTz(): Promise<InvoiceTz> {
+  const { data } = await supabaseAdmin().from('billing_settings').select('invoice_timezone').eq('id', 1).maybeSingle();
+  return data?.invoice_timezone === 'Asia/Shanghai' ? 'Asia/Shanghai' : 'UTC';
+}
+
+/** Midnight on the 1st of the month and of the next month, in the invoice time zone. */
+export function monthBounds(ym: string, tz: InvoiceTz = 'UTC') {
   const [y, m] = ym.split('-').map(Number);
-  const start = new Date(Date.UTC(y, m - 1, 1));
-  const end = new Date(Date.UTC(y, m, 1));
+  const off = TZ_OFFSET_H[tz] * 3600e3;
+  const start = new Date(Date.UTC(y, m - 1, 1) - off);
+  const end = new Date(Date.UTC(y, m, 1) - off);
   return { start, end, label: new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(start) };
 }
 
-export const ymOf = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-export const lastMonth = () => ymOf(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - 1, 1)));
+export const ymOf = (d: Date, tz: InvoiceTz = 'UTC') => {
+  const local = new Date(d.getTime() + TZ_OFFSET_H[tz] * 3600e3);
+  return `${local.getUTCFullYear()}-${String(local.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+export const lastMonth = (tz: InvoiceTz = 'UTC', now = new Date()) => {
+  const [y, m] = ymOf(now, tz).split('-').map(Number);
+  return ymOf(new Date(Date.UTC(y, m - 2, 1)));
+};
 
 /** Create the draft invoice for one client and month (or return the one that already exists). */
 export async function draftInvoice(orgId: string, ym: string, by: string | null) {
   const admin = supabaseAdmin();
-  const { start, end } = monthBounds(ym);
-  const periodStart = start.toISOString().slice(0, 10);
+  const tz = await invoiceTz();
+  const { start, end } = monthBounds(ym, tz);
+  const periodStart = `${ym}-01`;
   const { data: existing } = await admin.from('invoices').select('id, status').eq('org_id', orgId).eq('period_start', periodStart).neq('status', 'void').maybeSingle();
   if (existing) return { id: existing.id as string, created: false };
   const rates = await getRateCard(orgId);
@@ -179,7 +196,7 @@ export async function draftInvoice(orgId: string, ym: string, by: string | null)
   }
   const { lines, total } = charges;
   const { data: inv, error } = await admin.from('invoices').insert({
-    org_id: orgId, period_start: periodStart, period_end: new Date(end.getTime() - 864e5).toISOString().slice(0, 10),
+    org_id: orgId, period_start: periodStart, period_end: new Date(Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0)).toISOString().slice(0, 10),
     currency: rates.currency, status: 'draft', total, created_by: by,
   }).select('id').single();
   if (error || !inv) return { error: error?.message ?? 'Could not create the invoice.' };

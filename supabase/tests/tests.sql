@@ -332,3 +332,35 @@ set role authenticated;
 select t.login('00000000-0000-0000-0000-0000000000a3');
 select t.raises('ship: an order with no products is refused', $q$select public.set_order_status('0a000000-0000-0000-0000-0000000000e1', 'shipped', 'X', 'E1')$q$);
 reset role;
+
+-- =====================================================================
+-- 6. Auditable reconciliation (migration 0012) — owner only, evidence required
+-- =====================================================================
+reset role;
+insert into public.orders (id, org_id, customer, address, country) values
+  ('0a000000-0000-0000-0000-0000000000f1', '11111111-1111-1111-1111-111111111111', 'Test ship', 'x', 'FR');
+insert into public.order_items (order_id, product_id, qty) values ('0a000000-0000-0000-0000-0000000000f1', 'a0000000-0000-0000-0000-000000000002', 2);
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000a3');
+select t.works('reconcile: warehouse ships a test order', $q$select public.set_order_status('0a000000-0000-0000-0000-0000000000f1', 'shipped', 'TEST', 'T0')$q$);
+select t.raises('reconcile: warehouse cannot reverse a shipment', $q$select public.reverse_shipment('0a000000-0000-0000-0000-0000000000f1', 'test', 'evidence')$q$);
+select t.login('00000000-0000-0000-0000-0000000000a2');
+select t.raises('reconcile: a manager cannot reverse a shipment', $q$select public.reverse_shipment('0a000000-0000-0000-0000-0000000000f1', 'test', 'evidence')$q$);
+select t.raises('reconcile: a manager cannot reconcile stock', $q$select public.reconcile_stock('a0000000-0000-0000-0000-000000000002', 3, 'x', 'y')$q$);
+select t.login('00000000-0000-0000-0000-0000000000b1');
+select t.raises('reconcile: a client admin cannot reconcile stock', $q$select public.reconcile_stock('a0000000-0000-0000-0000-000000000002', 3, 'x', 'y')$q$);
+select t.login('00000000-0000-0000-0000-0000000000a1');
+select t.raises('reconcile: evidence is required', $q$select public.reverse_shipment('0a000000-0000-0000-0000-0000000000f1', 'test shipment', '  ')$q$);
+select t.ok('reconcile: before reversal A-2 = 2', (select on_hand from t.stock('a0000000-0000-0000-0000-000000000002')) = 2, (select on_hand from t.stock('a0000000-0000-0000-0000-000000000002'))::text);
+select t.works('reconcile: owner reverses the test shipment', $q$select public.reverse_shipment('0a000000-0000-0000-0000-0000000000f1', 'Test shipment, no parcel left', 'Confirmed by warehouse on 22 Oct')$q$);
+select t.ok('reconcile: units are back (4) and the order is cancelled',
+  (select on_hand from t.stock('a0000000-0000-0000-0000-000000000002')) = 4
+  and (select status from public.orders where id = '0a000000-0000-0000-0000-0000000000f1') = 'cancelled');
+select t.ok('reconcile: original shipment movement kept, reversal recorded with approver and evidence',
+  t.rows($q$select 1 from public.stock_moves where ref = (select number from public.orders where id = '0a000000-0000-0000-0000-0000000000f1') and type = 'order'$q$) = 1
+  and t.rows($q$select 1 from public.stock_moves where source = 'reconciliation' and approved_by = '00000000-0000-0000-0000-0000000000a1' and evidence is not null$q$) = 1);
+select t.raises('reconcile: a reversed order cannot be reversed again', $q$select public.reverse_shipment('0a000000-0000-0000-0000-0000000000f1', 'again', 'again')$q$);
+select t.raises('reconcile: cannot reconcile below zero', $q$select public.reconcile_stock('a0000000-0000-0000-0000-000000000002', -50, 'x', 'y')$q$);
+select t.works('reconcile: owner records a receipt with evidence', $q$select public.reconcile_stock('a0000000-0000-0000-0000-000000000002', 3, 'Units received without inbound', 'Warehouse photo WeChat 22 Oct', 'EM-TEST')$q$);
+select t.ok('reconcile: balance 7 = sum of movements', (select on_hand from t.stock('a0000000-0000-0000-0000-000000000002')) = 7 and t.moves_sum('a0000000-0000-0000-0000-000000000002') = 7);
+reset role;

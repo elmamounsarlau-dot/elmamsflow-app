@@ -2,7 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { requireCtx } from '@/lib/session';
-import { Burger, ClickableRows, Flash, NavCloser } from '@/components/client';
+import { Burger, ClickableRows, Flash, NavCloser, ResponsiveTables } from '@/components/client';
 import { Arrow } from '@/components/ui';
 import { NavLinks, type NavItem } from './nav';
 import { exitViewAs } from './view-as';
@@ -86,6 +86,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </div>
       <ClickableRows />
+      <ResponsiveTables />
       <NavCloser />
     </div>
   );

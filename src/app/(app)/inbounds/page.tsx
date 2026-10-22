@@ -1,9 +1,9 @@
 import Link from 'next/link';
 import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
-import { orgNames } from '@/lib/data';
+import { allRows, orgNames } from '@/lib/data';
 import { fmtDate, INBOUND_STATUS } from '@/lib/format';
-import { Arrow, Badge, Empty } from '@/components/ui';
+import { Arrow, Badge, Empty, Pager, pageOf } from '@/components/ui';
 import { MiniSteps } from '@/components/steps';
 
 export const metadata = { title: 'Stock inbounds' };
@@ -17,8 +17,11 @@ export default async function Inbounds({ searchParams }: { searchParams: Promise
   const ctx = await requireCtx();
   const sp = await searchParams;
   const sb = await supabaseServer();
-  let qy = sb.from('inbounds').select('id, ref, supplier, eta, status, cartons, org_id, created_at, received_at, inbound_items(expected, received)').order('created_at', { ascending: false }).limit(500);
-  if (ctx.org) qy = qy.eq('org_id', ctx.org.id);
+  const qy = allRows<Row>(() => {
+    let x = sb.from('inbounds').select('id, ref, supplier, eta, status, cartons, org_id, created_at, received_at, inbound_items(expected, received)').order('created_at', { ascending: false }).order('id');
+    if (ctx.org) x = x.eq('org_id', ctx.org.id);
+    return x;
+  }).then((data) => ({ data }));
   let lg = sb.from('activity_log').select('detail, created_at').eq('action', 'inbound_status').like('detail', '%→ receiving').gte('created_at', new Date(Date.now() - 120 * 864e5).toISOString()).limit(2000);
   if (ctx.org) lg = lg.eq('org_id', ctx.org.id);
   const [{ data }, names, { data: logs }] = await Promise.all([qy, ctx.backOffice ? orgNames() : Promise.resolve({} as Record<string, string>), lg]);
@@ -47,7 +50,10 @@ export default async function Inbounds({ searchParams }: { searchParams: Promise
   const q = (sp.q ?? '').trim().toLowerCase();
   const client = ctx.backOffice ? sp.c ?? '' : '';
   const list = tab[2].filter((b) => (!client || b.org_id === client) && (!q || `${b.ref} ${b.supplier ?? ''} ${names[b.org_id] ?? ''}`.toLowerCase().includes(q)));
-  const href = (t: string) => `/inbounds?${new URLSearchParams({ ...(t !== 'all' ? { t } : {}), ...(q ? { q } : {}), ...(client ? { c: client } : {}) })}`;
+  const href = (t: string, pg = 1) => `/inbounds?${new URLSearchParams({ ...(t !== 'all' ? { t } : {}), ...(q ? { q } : {}), ...(client ? { c: client } : {}), ...(pg > 1 ? { p: String(pg) } : {}) })}`;
+  const PER = 25;
+  const page = Math.min(pageOf(sp.p), Math.max(1, Math.ceil(list.length / PER)));
+  const shown = list.slice((page - 1) * PER, page * PER);
 
   return (
     <>
@@ -90,7 +96,7 @@ export default async function Inbounds({ searchParams }: { searchParams: Promise
             <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="M13.5 13.5L17 17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
             <input name="q" defaultValue={q} placeholder="Search reference or supplier" />
           </div>
-          {ctx.backOffice && <select name="c" defaultValue={client}><option value="">All clients</option>{Object.entries(names).map(([id, n]) => <option key={id} value={id}>{n}</option>)}</select>}
+          {ctx.backOffice && <select name="c" defaultValue={client} aria-label="Client"><option value="">All clients</option>{Object.entries(names).map(([id, n]) => <option key={id} value={id}>{n}</option>)}</select>}
           <button className="ep-btn ep-btn--ghost">Apply</button>
         </form>
         <div className="ep-tabbar">
@@ -105,7 +111,7 @@ export default async function Inbounds({ searchParams }: { searchParams: Promise
             <table className="ep-table">
               <thead><tr><th>Inbound</th>{ctx.backOffice && <th>Client</th>}<th>Supplier</th><th>Created</th><th>Expected</th><th className="ep-right">SKUs</th><th className="ep-right">Units</th><th>Progress</th><th>Status</th></tr></thead>
               <tbody>
-                {list.map((b) => {
+                {shown.map((b) => {
                   const ld = lateDays(b);
                   const u = units(b);
                   return (
@@ -126,7 +132,7 @@ export default async function Inbounds({ searchParams }: { searchParams: Promise
             </table>
           </div>
         )}
-        <div className="ep-table-foot"><span>{list.length} inbound{list.length === 1 ? '' : 's'}</span></div>
+        <Pager total={list.length} page={page} per={PER} href={(n) => href(tab[0], n)} noun="inbound" />
       </section>
     </>
   );

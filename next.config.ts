@@ -12,6 +12,8 @@ const security = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Local test builds (pointed at the local stack) go to their own folder.
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   async headers() {
     return [{ source: '/:path*', headers: security }];
   },

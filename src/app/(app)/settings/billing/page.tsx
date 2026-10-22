@@ -30,6 +30,13 @@ export default async function BillingSettings() {
               <label key={c}>{c.toUpperCase()} account<textarea name={`bank_${c}`} rows={3} defaultValue={(s?.[`bank_${c}`] as string) ?? ''} placeholder={'Bank name\nAccount holder\nIBAN / account number · SWIFT'} /></label>
             ))}
             <label>Footer line<input name="footer" defaultValue={s?.footer ?? ''} placeholder="Thank you for shipping with Elmamsflow." /></label>
+            <label>Invoice month follows
+              <select name="invoice_timezone" defaultValue={s?.invoice_timezone ?? 'UTC'}>
+                <option value="UTC">UTC (London winter time)</option>
+                <option value="Asia/Shanghai">China time (UTC+8, the warehouse day)</option>
+              </select>
+              <small>Decides which month a parcel shipped around midnight on the 1st belongs to.</small>
+            </label>
             <div className="ep-form-foot"><Submit>Save billing details</Submit></div>
           </form>
         </section>

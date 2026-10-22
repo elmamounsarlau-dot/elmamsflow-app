@@ -11,5 +11,5 @@ export const ACTIVITY_LABELS: Record<string, string> = {
   link_emailed: 'Sign-in link emailed', link_copied: 'Sign-in link created', password_set: 'Password chosen', password_changed: 'Password changed',
   product_added: 'Product added', stock_adjusted: 'Stock adjusted', inbound_created: 'Inbound announced', inbound_status: 'Inbound updated', inbound_received: 'Inbound received',
   order_created: 'Order created', order_updated: 'Order updated', order_cancelled: 'Order cancelled', order_held: 'Order put on hold', order_released: 'Order released', ticket_opened: 'Ticket opened', ticket_reply: 'Ticket reply',
-  stock_quarantined: 'Moved to quarantine', stock_released: 'Released from quarantine', stock_written_off: 'Written off', stock_counted: 'Warehouse count applied', products_imported: 'Products imported',
+  stock_quarantined: 'Moved to quarantine', stock_released: 'Released from quarantine', stock_written_off: 'Written off', stock_counted: 'Warehouse count applied', stock_reconciled: 'Stock reconciled', shipment_reversed: 'Shipment reversed', products_imported: 'Products imported',
 };

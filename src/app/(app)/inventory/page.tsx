@@ -124,9 +124,9 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
           <span>{scopeRows.length} SKU{scopeRows.length === 1 ? '' : 's'}{incoming ? ` · ${incoming.toLocaleString('en')} incoming` : ''}</span>
         </div>
         <div className="ep-sum-card">
-          <small>Inventory value</small>
+          <small>Declared value · USD</small>
           <b>${value.toLocaleString('en', { maximumFractionDigits: 0 })}</b>
-          <span>On hand, at declared customs value</span>
+          <span>On hand × each product’s customs value (entered in USD)</span>
         </div>
         <Link href={link({ f: 'reorder' })} className={`ep-sum-card${reorder.length ? ' is-alert' : ''}`}>
           <small>Reorder now</small>
@@ -154,12 +154,12 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
             <input name="q" defaultValue={q} placeholder="Search SKU, name or barcode" />
           </div>
           {ctx.backOffice && (
-            <select name="c" defaultValue={client}>
+            <select name="c" defaultValue={client} aria-label="Client">
               <option value="">All clients</option>
               {Object.entries(names).map(([id, n]) => <option key={id} value={id}>{n}</option>)}
             </select>
           )}
-          <select name="sort" defaultValue={sort}>{SORTS.map(([k, l]) => <option key={k} value={k}>Sort: {l}</option>)}</select>
+          <select name="sort" defaultValue={sort} aria-label="Sort by">{SORTS.map(([k, l]) => <option key={k} value={k}>Sort: {l}</option>)}</select>
           {filter !== 'all' && <input type="hidden" name="f" value={filter} />}
           <button className="ep-btn ep-btn--ghost">Apply</button>
         </form>

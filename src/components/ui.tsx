@@ -65,3 +65,24 @@ export function PageHead({ crumb, title, sub, children }: { crumb: string; title
     </div>
   );
 }
+
+/** Page links under a list: total, page x of y, first / previous / next / last. */
+export function Pager({ total, page, per, href, noun = 'item' }: { total: number; page: number; per: number; href: (p: number) => string; noun?: string }) {
+  const pages = Math.max(1, Math.ceil(total / per));
+  const p = Math.min(Math.max(1, page), pages);
+  const link = (n: number, label: string, text: string, off: boolean) =>
+    off ? <span className="ep-pg is-off" aria-hidden="true">{text}</span> : <Link className="ep-pg" href={href(n)} aria-label={label}>{text}</Link>;
+  return (
+    <div className="ep-pager">
+      <span className="ep-muted">{total.toLocaleString('en')} {noun}{total === 1 ? '' : 's'}</span>
+      {pages > 1 && <span>Page {p} of {pages}</span>}
+      {pages > 1 && (
+        <div className="ep-pager-nav">
+          {link(1, 'First page', '«', p <= 1)}{link(p - 1, 'Previous page', '‹', p <= 1)}{link(p + 1, 'Next page', '›', p >= pages)}{link(pages, 'Last page', '»', p >= pages)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export const pageOf = (v: string | undefined) => Math.max(1, parseInt(v ?? '1', 10) || 1);

@@ -1,3 +1,4 @@
+import { readFlashLink } from '@/lib/link-flash';
 import { notFound } from 'next/navigation';
 import { requirePerm } from '@/lib/guard';
 import { supabaseServer } from '@/lib/supabase/server';
@@ -5,7 +6,7 @@ import { COUNTRIES, fmtDate } from '@/lib/format';
 import { ACTIVITY_LABELS } from '@/lib/log';
 import { roleLabel } from '@/lib/roles';
 import { getOrgRoles } from '@/lib/roles-db';
-import { computeCharges, CURRENCIES, getRateCard, lastMonth, money, monthBounds, RATE_FIELDS, ymOf } from '@/lib/billing';
+import { computeCharges, CURRENCIES, getRateCard, invoiceTz, lastMonth, money, monthBounds, RATE_FIELDS, ymOf } from '@/lib/billing';
 import { createInvoice, saveRateCard } from '../../invoices/actions';
 import { Arrow, Back, Empty, Kpi, TeamOnly } from '@/components/ui';
 import { CopyLink, Submit } from '@/components/client';
@@ -18,7 +19,8 @@ import { viewAs } from '../../view-as';
 export default async function ClientPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string>> }) {
   const { id } = await params;
   const ctx = await requirePerm('clients.view', `/clients/${encodeURIComponent(id)}`);
-  const sp = await searchParams;
+  await searchParams;
+  const flash = await readFlashLink();
   const sb = await supabaseServer();
   const { data: org } = await sb.from('organizations').select('*').eq('id', id).eq('kind', 'client').maybeSingle();
   if (!org) notFound();
@@ -32,7 +34,8 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
   const { roles: defs } = await getOrgRoles(id, false);
   const billingOn = !!ctx.staffRole && ctx.can('billing.manage');
   const rates = billingOn ? await getRateCard(id) : null;
-  const running = rates ? await computeCharges(id, rates, monthBounds(ymOf(new Date())).start, new Date()) : null;
+  const tz = await invoiceTz();
+  const running = rates ? await computeCharges(id, rates, monthBounds(ymOf(new Date(), tz), tz).start, new Date()) : null;
   const groups = [...new Set(RATE_FIELDS.map((f) => f.group))];
   const linkFor = new Map(((links ?? []) as AccessLink[]).map((l) => [l.user_id, l]));
   const back = `/clients/${id}`;
@@ -46,10 +49,10 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
         </div>
         <form action={viewAs}><input type="hidden" name="org" value={org.id} /><Submit>View as client <Arrow /></Submit></form>
       </div>
-      {sp.link && (
+      {flash && (
         <div className="ep-linkbox">
-          <div><p className="ep-eyebrow"><i />Private link for {sp.for}</p><p>Copy it and send it privately (WhatsApp, WeChat). It works once and is also kept on your Home page under “Waiting to sign in” until they set their password.</p></div>
-          <CopyLink value={sp.link} />
+          <div><p className="ep-eyebrow"><i />Private link for {flash.email}</p><p>Copy it and send it privately (WhatsApp, WeChat). It works once and is also kept on your Home page under “Waiting to sign in” until they set their password.</p></div>
+          <CopyLink value={flash.link} />
         </div>
       )}
       <div className="ep-split">
@@ -119,9 +122,9 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
               {rates && (
                 <form action={createInvoice} className="ep-inline" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px dashed var(--line)', alignItems: 'center', justifyContent: 'space-between' }}>
                   <input type="hidden" name="org" value={org.id} />
-                  <input type="hidden" name="month" value={lastMonth()} />
+                  <input type="hidden" name="month" value={lastMonth(tz)} />
                   <span className="ep-small">Invoices are drafted automatically on the 1st. Need it now?</span>
-                  <Submit className="ep-btn ep-btn--ghost">Create {monthBounds(lastMonth()).label} invoice</Submit>
+                  <Submit className="ep-btn ep-btn--ghost">Create {monthBounds(lastMonth(tz)).label} invoice</Submit>
                 </form>
               )}
             </section>

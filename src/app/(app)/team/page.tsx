@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { readFlashLink } from '@/lib/link-flash';
 import { requireCtx } from '@/lib/session';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { permsFor, roleCan, roleLabel, type Perm } from '@/lib/roles';
@@ -18,7 +19,8 @@ export default async function Team({ searchParams }: { searchParams: Promise<Rec
   const ctx = await requireCtx();
   const s = await teamScope(ctx);
   if (!s) redirect('/');
-  const sp = await searchParams;
+  await searchParams;
+  const flash = await readFlashLink();
   const { data } = await supabaseAdmin().from('memberships').select('user_id, role, status, created_at, profile:profiles(full_name, email)').eq('org_id', s.orgId).order('created_at');
   const members = data ?? [];
   const showLinks = s.staff && (ctx.staffRole === 'owner' || ctx.staffRole === 'manager');
@@ -30,10 +32,10 @@ export default async function Team({ searchParams }: { searchParams: Promise<Rec
   return (
     <>
       <PageHead crumb="Team" title={s.staff ? 'Your team' : `${s.orgName} team`} sub="Invite people, choose their role, and decide what each role can do." />
-      {sp.link && (
+      {flash && (
         <div className="ep-linkbox">
-          <div><p className="ep-eyebrow"><i />Private link for {sp.for}</p><p>Copy it and send it privately (WhatsApp, WeChat). It works once and is also kept on your Home page until they set their password.</p></div>
-          <CopyLink value={sp.link} />
+          <div><p className="ep-eyebrow"><i />Private link for {flash.email}</p><p>Copy it and send it privately (WhatsApp, WeChat). It works once and is also kept on your Home page until they set their password.</p></div>
+          <CopyLink value={flash.link} />
         </div>
       )}
       <div className="ep-split">
@@ -56,7 +58,7 @@ export default async function Team({ searchParams }: { searchParams: Promise<Rec
                         {locked ? roleLabel(m.role) : (
                           <form action={changeRole} className="ep-member-actions" style={{ justifyContent: 'flex-start' }}>
                             <input type="hidden" name="user" value={m.user_id} />
-                            <select name="role" defaultValue={m.role}>{s.roles.map((r) => <option key={r} value={r}>{roleLabel(r, defs)}</option>)}</select>
+                            <select name="role" defaultValue={m.role} aria-label="Role">{s.roles.map((r) => <option key={r} value={r}>{roleLabel(r, defs)}</option>)}</select>
                             <Submit className="ep-link">Save</Submit>
                           </form>
                         )}

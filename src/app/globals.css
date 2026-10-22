@@ -1061,3 +1061,77 @@ body, .ep-card, .ep-sum-card, .ep-kpi { transition: background-color .25s var(--
 .ep-pop-panel input[type="date"] { min-width: 0; width: 100%; padding-left: .6rem; padding-right: .4rem; font-size: .8rem; }
 /* Fields scrolled into view by the browser (validation) never hide under the sticky top bar. */
 input, select, textarea { scroll-margin-top: 96px; }
+
+/* ---------- Operational readiness pass: accessibility + small screens ---------- */
+/* Contrast (WCAG AA 4.5:1 for small text) */
+:root { --muted: #56667D; --warn-2: #964707; --nav-on-fg: #0657C6; }
+:root[data-theme="dark"] { --muted: #9AA8BC; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --muted: #9AA8BC; } }
+.ep-store-chip--shopify { color: #3B6020; }
+/* Links inside sentences are underlined so they aren't told apart by colour alone */
+p a:not(.ep-btn):not(.ep-chip), .ep-muted a, .ep-note a, .ep-small a { text-decoration: underline; text-underline-offset: 2px; }
+/* Focus is always visible for keyboard users */
+a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+/* Home: columns never grow wider than the screen because of a long line */
+.ep-hcol { grid-template-columns: minmax(0, 1fr); }
+.ep-hcol > *, .ep-hmain > * { min-width: 0; }
+
+/* Touch screens: every control at least 44 × 44 px (WCAG 2.5.8 needs 24; 44 is the comfortable size) */
+@media (pointer: coarse), (max-width: 900px) {
+  .ep-link, .ep-blink, .ep-back, .ep-oact, .ep-pg, .ep-tool, .ep-bulk-btn, .ep-segs a, .ep-pw button, .ep-statchip { min-height: 44px; }
+  .ep-oact, .ep-pg { min-width: 44px; }
+  .ep-link, .ep-blink, .ep-back { display: inline-flex; align-items: center; }
+  .ep-ock input, .ep-otable input[data-all] { width: 24px; height: 24px; }
+  .ep-burger { width: 44px; height: 44px; padding: 14px 11px; }
+  .ep-theme button { min-width: 40px; min-height: 40px; }
+  .ep-range a { min-height: 40px; }
+  .ep-side nav a { min-height: 44px; }
+  .ep-check { min-height: 44px; }
+}
+.ep-pw button { min-width: 44px; min-height: 32px; padding: 0 .4rem; }
+.ep-req { color: var(--warn-2); }
+b a, .ep-pending-list a { text-decoration: underline; text-underline-offset: 2px; }
+@media (max-width: 640px) { .ep-card { overflow-x: visible; } .ep-card:has(.ep-matrix) { overflow-x: auto; } }
+
+@media (max-width: 720px) {
+  .ep-searchbox { flex: 1 1 100%; order: -1; }
+  .ep-searchbox-in { flex: 1; min-width: 0; }
+  .ep-searchbox-in input { width: 100% !important; }
+  .ep-orders-tools { gap: 8px; }
+  .ep-pager { flex-wrap: wrap; }
+  .ep-pager-nav { margin-left: auto; }
+}
+
+/* Small screens: each table row is a card with labelled values */
+@media (max-width: 640px) {
+  .ep-card:has(> .ep-table.ep-stack), .ep-card:has(.ep-tablewrap > .ep-table.ep-stack) { overflow-x: visible; }
+  .ep-table.ep-stack:not(.ep-matrix):not(.ep-table--keep) { min-width: 0 !important; display: block; }
+  .ep-table.ep-stack:not(.ep-matrix):not(.ep-table--keep) thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .ep-table.ep-stack:not(.ep-matrix):not(.ep-table--keep) tbody { display: block; }
+  .ep-table.ep-stack:not(.ep-matrix):not(.ep-table--keep) tbody tr { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 14px; padding: 14px 16px; border-bottom: 1px solid var(--line-soft); }
+  .ep-table.ep-stack:not(.ep-matrix):not(.ep-table--keep) tbody tr:last-child { border-bottom: 0; }
+  .ep-table.ep-stack:not(.ep-matrix):not(.ep-table--keep) tbody td { display: block; padding: 0 !important; border: 0 !important; white-space: normal !important; text-align: left !important; min-width: 0; overflow-wrap: anywhere; }
+  .ep-table.ep-stack:not(.ep-matrix):not(.ep-table--keep) tbody td::before { content: attr(data-label); display: block; margin-bottom: 2px; font: 700 .66rem/1.2 var(--body); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .ep-table.ep-stack:not(.ep-matrix):not(.ep-table--keep) tbody td[data-label=""]::before { display: none; }
+  .ep-table.ep-stack:not(.ep-matrix):not(.ep-table--keep) tbody td:first-child { grid-column: 1 / -1; }
+  .ep-table.ep-stack:not(.ep-matrix):not(.ep-table--keep) tbody td:first-child::before { display: none; }
+  .ep-table.ep-stack tbody td.ep-inv-bar, .ep-table.ep-stack tbody td:has(> .ep-oacts), .ep-table.ep-stack tbody td:has(> .ep-member-actions), .ep-table.ep-stack tbody td:has(> form) { grid-column: 1 / -1; }
+  .ep-table.ep-stack tbody td:has(> .ep-oacts)::before { display: none; }
+  .ep-oacts { justify-content: flex-start; flex-wrap: wrap; }
+  /* Orders: the tick box sits top-right of each card, the order number leads */
+  .ep-otable.ep-stack tbody td.ep-ock { position: absolute; top: 12px; right: 12px; }
+  .ep-otable.ep-stack tbody td.ep-oid { grid-column: 1 / -1; padding-right: 44px !important; }
+  .ep-otable.ep-stack tbody td.ep-oid::before { display: none; }
+  .ep-otable.ep-stack thead { position: static !important; width: auto !important; height: auto !important; clip: auto !important; overflow: visible !important; display: block; }
+  .ep-otable.ep-stack thead tr { display: flex; align-items: center; padding: 8px 16px; }
+  .ep-otable.ep-stack thead th:not(.ep-ock) { display: none; }
+  .ep-otable.ep-stack thead th.ep-ock { display: flex; align-items: center; gap: 8px; padding: 0 !important; background: none; border: 0 !important; }
+  .ep-otable.ep-stack thead th.ep-ock::after { content: 'Select all'; font-size: .78rem; color: var(--muted); text-transform: none; letter-spacing: 0; font-weight: 600; }
+  .ep-oissue { max-width: none; white-space: normal !important; }
+  .ep-htable.ep-stack tbody td:nth-child(3), .ep-htable.ep-stack tbody td:nth-child(4) { display: block !important; }
+}
+/* Tablets: the Orders table keeps its key columns; email and channel come back on wider screens */
+@media (min-width: 641px) and (max-width: 1100px) {
+  #orders-table .col-email, #orders-table .col-channel, #orders-table .col-carrier { display: none; }
+}
+@media (max-width: 900px) { .ep-home-side { align-items: flex-start; width: 100%; } }

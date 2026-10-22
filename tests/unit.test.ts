@@ -102,3 +102,31 @@ test('CSV export: formulas from store data are neutralised, quotes escaped', asy
   assert.equal(csvCell('Paris, FR'), '"Paris, FR"');
   assert.equal(csvCell(null), '');
 });
+
+test('cron: fails closed without a secret, never trusts the user agent, needs the exact bearer secret', async () => {
+  const { cronAllowed } = await import('../src/lib/cron-auth');
+  const secret = 'x'.repeat(40);
+  assert.deepEqual(cronAllowed(null, undefined), { ok: false, reason: 'not_configured' });
+  assert.deepEqual(cronAllowed('Bearer short', 'short'), { ok: false, reason: 'not_configured' });
+  assert.equal(cronAllowed(null, secret).ok, false);
+  assert.equal(cronAllowed('vercel-cron/1.0', secret).ok, false);       // a user-agent value is not a credential
+  assert.equal(cronAllowed(`Bearer ${secret}x`, secret).ok, false);
+  assert.equal(cronAllowed(`bearer ${secret}`, secret).ok, false);
+  assert.equal(cronAllowed('Bearer ', secret).ok, false);
+  assert.deepEqual(cronAllowed(`Bearer ${secret}`, secret), { ok: true, reason: 'ok' });
+});
+
+test('invoice month: UTC by default, China time when chosen (EM-025)', async () => {
+  const { monthBounds, lastMonth, ymOf } = await import('../src/lib/billing');
+  const utc = monthBounds('2026-11', 'UTC');
+  assert.equal(utc.start.toISOString(), '2026-11-01T00:00:00.000Z');
+  assert.equal(utc.end.toISOString(), '2026-12-01T00:00:00.000Z');
+  const cn = monthBounds('2026-11', 'Asia/Shanghai');
+  assert.equal(cn.start.toISOString(), '2026-10-31T16:00:00.000Z'); // 1 Nov 00:00 in China
+  // A parcel shipped 1 Nov 06:00 China time (31 Oct 22:00 UTC) is October in UTC, November in China time.
+  const shipped = new Date('2026-10-31T22:00:00Z');
+  assert.equal(ymOf(shipped, 'UTC'), '2026-10');
+  assert.equal(ymOf(shipped, 'Asia/Shanghai'), '2026-11');
+  assert.equal(lastMonth('Asia/Shanghai', new Date('2026-12-01T01:00:00Z')), '2026-11');
+  assert.equal(lastMonth('UTC', new Date('2026-01-15T00:00:00Z')), '2025-12');
+});

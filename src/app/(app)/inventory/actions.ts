@@ -65,3 +65,16 @@ export async function updateProduct(fd: FormData) {
   await logActivity(sb, ctx.userId, data.org_id, 'product_updated', `${data.sku} · ${name}`);
   redirect(withMsg(to, `${data.sku} saved.`));
 }
+
+/** Owner only: a stock correction backed by evidence (approver, reason and proof are stored with the movement). */
+export async function reconcileStock(fd: FormData) {
+  const ctx = await getCtx();
+  const b = back(fd);
+  if (ctx?.staffRole !== 'owner') redirect(withMsg(b, 'Only the owner can approve a reconciliation.', 'err'));
+  const sb = await supabaseServer();
+  const { error } = await sb.rpc('reconcile_stock', {
+    p_product: str(fd, 'product'), p_qty: parseInt(str(fd, 'qty'), 10) || 0,
+    p_reason: str(fd, 'reason').slice(0, 300), p_evidence: str(fd, 'evidence').slice(0, 500), p_ref: str(fd, 'ref').slice(0, 60) || null,
+  });
+  redirect(withMsg(b, error ? error.message : 'Reconciliation recorded with your approval and the evidence.', error ? 'err' : 'ok'));
+}

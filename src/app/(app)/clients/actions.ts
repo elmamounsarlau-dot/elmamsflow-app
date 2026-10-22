@@ -6,6 +6,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { getOrgRoles } from '@/lib/roles-db';
 import { copyableSignInLink, emailSignInLink, inviteToOrg } from '@/lib/invite';
 import { logActivity } from '@/lib/log';
+import { flashLink } from '@/lib/link-flash';
 import { str, withMsg } from '@/lib/format';
 
 async function manager() {
@@ -28,13 +29,13 @@ export async function createClient(fd: FormData) {
   const msg = !inv.ok
     ? `${company} is created and ${email} is added as admin, but ${inv.error}.`
     : inv.emailed ? `${company} is created. We emailed ${email} their invitation. Their private link is also here to copy.` : `${company} is created. ${email} already had an account and was added straight away.`;
-  redirect(withLink(withMsg(`/clients/${org.id}`, msg, inv.ok ? 'ok' : 'warn'), inv.link, email));
+  redirect(await withLink(withMsg(`/clients/${org.id}`, msg, inv.ok ? 'ok' : 'warn'), inv.link, email));
 }
 
-/** Adds the private link to the page address so it shows in the big box straight after inviting. */
-function withLink(path: string, link: string | undefined, email: string) {
-  if (!link) return path;
-  return `${path}${path.includes('?') ? '&' : '?'}link=${encodeURIComponent(link)}&for=${encodeURIComponent(email)}`;
+/** Shows the private link in the big box on the next page (kept out of the page address). */
+async function withLink(path: string, link: string | undefined, email: string) {
+  await flashLink(link, email);
+  return path;
 }
 
 /** Add (or re-add) a person to a client workspace from the client page. */
@@ -47,7 +48,7 @@ export async function inviteClientMember(fd: FormData) {
   const role = roles.some((r) => r.key === str(fd, 'role')) ? str(fd, 'role') : 'admin';
   const inv = await inviteToOrg({ email, name: str(fd, 'name'), orgId, role, invitedBy: ctx.userId, byStaff: true });
   await logActivity(supabaseAdmin(), ctx.userId, orgId, 'member_invited', `${email} as ${role}`);
-  redirect(withLink(withMsg(`/clients/${orgId}`, inv.ok ? (inv.emailed ? `Invitation emailed to ${email}. Their private link is also here to copy.` : `${email} now has access.`) : `${email} is added, but ${inv.error}.`, inv.ok ? 'ok' : 'warn'), inv.link, email));
+  redirect(await withLink(withMsg(`/clients/${orgId}`, inv.ok ? (inv.emailed ? `Invitation emailed to ${email}. Their private link is also here to copy.` : `${email} now has access.`) : `${email} is added, but ${inv.error}.`, inv.ok ? 'ok' : 'warn'), inv.link, email));
 }
 
 export async function updateClient(fd: FormData) {
@@ -94,9 +95,10 @@ export async function memberLink(fd: FormData) {
     const r = await copyableSignInLink(userId, p.email, orgId, ctx.userId);
     await logActivity(admin, ctx.userId, orgId, 'link_copied', p.email);
     if (!r.ok) redirect(withMsg(back, r.error ?? 'Could not create link', 'err'));
-    redirect(`${back}${back.includes('?') ? '&' : '?'}link=${encodeURIComponent(r.link!)}&for=${encodeURIComponent(p.email)}`);
+    await flashLink(r.link, p.email);
+    redirect(back);
   }
   const r = await emailSignInLink(userId, p.email, orgId, ctx.userId);
   await logActivity(admin, ctx.userId, orgId, 'link_emailed', p.email);
-  redirect(withLink(withMsg(back, r.ok ? `A new link was emailed to ${p.email}.` : `Email failed: ${r.error}`, r.ok ? 'ok' : 'warn'), linkable ? r.link : undefined, p.email));
+  redirect(await withLink(withMsg(back, r.ok ? `A new link was emailed to ${p.email}.` : `Email failed: ${r.error}`, r.ok ? 'ok' : 'warn'), linkable ? r.link : undefined, p.email));
 }

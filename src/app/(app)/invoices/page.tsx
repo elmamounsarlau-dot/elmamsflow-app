@@ -4,7 +4,7 @@ import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
 import { orgNames } from '@/lib/data';
 import { fmtDate } from '@/lib/format';
-import { CATEGORY, computeCharges, getRateCard, INVOICE_STATUS, isOverdue, lastMonth, money, monthBounds, ymOf } from '@/lib/billing';
+import { CATEGORY, computeCharges, getRateCard, INVOICE_STATUS, invoiceTz, isOverdue, lastMonth, money, monthBounds, ymOf } from '@/lib/billing';
 import { Arrow, Badge, Empty } from '@/components/ui';
 import { Submit } from '@/components/client';
 import { createAllInvoices } from './actions';
@@ -41,11 +41,12 @@ export default async function Invoices({ searchParams }: { searchParams: Promise
   // This month so far (clients, and staff viewing as a client).
   let running: Awaited<ReturnType<typeof computeCharges>> | null = null;
   let runCur = 'USD';
-  const ym = ymOf(new Date());
+  const tz = await invoiceTz();
+  const ym = ymOf(new Date(), tz);
   if (ctx.org) {
     const rates = await getRateCard(ctx.org.id);
     if (rates) {
-      const { start } = monthBounds(ym);
+      const { start } = monthBounds(ym, tz);
       running = await computeCharges(ctx.org.id, rates, start, new Date());
       runCur = rates.currency;
     }
@@ -76,8 +77,8 @@ export default async function Invoices({ searchParams }: { searchParams: Promise
           {manage && staff && <Link className="ep-btn ep-btn--ghost" href="/settings/billing">Billing details</Link>}
           {manage && staff && (
             <form action={createAllInvoices} className="ep-inline">
-              <input type="hidden" name="month" value={lastMonth()} />
-              <Submit confirm={`Create draft invoices for ${monthBounds(lastMonth()).label} for every client with a price list?`}>Create {monthBounds(lastMonth()).label} invoices <Arrow /></Submit>
+              <input type="hidden" name="month" value={lastMonth(tz)} />
+              <Submit confirm={`Create draft invoices for ${monthBounds(lastMonth(tz)).label} for every client with a price list?`}>Create {monthBounds(lastMonth(tz)).label} invoices <Arrow /></Submit>
             </form>
           )}
         </div>
