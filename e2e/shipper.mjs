@@ -12,11 +12,17 @@ const sql = (q) => execFileSync('psql', ['-X', '-At', '-d', process.env.LOCAL_DB
 // 1×1 PNG
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 
-process.on('uncaughtException', (e) => { console.log(`::error title=shipper e2e::${String(e?.message ?? e).split('\n').slice(0, 6).join(' | ')}`); process.exit(1); });
+let current = null;
+process.on('uncaughtException', async (e) => {
+  let where = '';
+  try { if (current) where = ` || at ${current.url()} || ${(await current.locator('main').innerText()).replace(/\s+/g, ' ').slice(0, 500)}`; } catch { /* page gone */ }
+  console.log(`::error title=shipper e2e::${String(e?.message ?? e).split('\n').slice(0, 4).join(' | ')}${where}`); process.exit(1);
+});
 process.on('unhandledRejection', (e) => { console.log(`::error title=shipper e2e::${String(e?.message ?? e).split('\n').slice(0, 6).join(' | ')}`); process.exit(1); });
 const browser = await chromium.launch();
 const as = async (email) => { const c = await browser.newContext(); await c.addCookies(await cookiesFor(email, BASE)); return c.newPage(); };
 const p = await as('shipper@local.test');
+current = p;
 
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
 assert.equal(new URL(p.url()).pathname, '/shipping', 'shipper lands on the shipping queue');
