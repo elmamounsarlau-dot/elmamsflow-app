@@ -121,7 +121,7 @@ export function shopifyToExt(o: ShopOrder): ExtOrder {
     zip: a?.zip ?? null,
     country: a?.countryCodeV2 ?? '',
     lines: o.lineItems.nodes.filter((l) => l.requiresShipping !== false).map((l) => ({ sku: l.sku ?? '', name: l.name, qty: l.currentQuantity ?? l.quantity, ref: l.variant?.id })),
-    shippable: paid && open && !!a,
+    shippable: paid && open, // no address yet: still imported, then held as "address incomplete"
     cancelled: !!o.cancelledAt,
   };
 }
