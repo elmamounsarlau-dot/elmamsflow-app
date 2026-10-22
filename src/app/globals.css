@@ -1056,3 +1056,4 @@ body, .ep-card, .ep-sum-card, .ep-kpi { transition: background-color .25s var(--
   .ep-htable th:nth-child(3), .ep-htable td:nth-child(3), .ep-htable th:nth-child(4), .ep-htable td:nth-child(4) { display: none; }
   .ep-hbest li { grid-template-columns: 24px minmax(0, 1fr) auto; } .ep-hbest .ep-meter--thin { display: none; }
 }
+.ep-app .ep-otable td.ep-ock, .ep-app .ep-otable th.ep-ock { min-width: 0; width: 1%; padding-right: .25rem !important; }
