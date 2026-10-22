@@ -21,7 +21,8 @@ process.on('uncaughtException', async (e) => {
   console.log(`::error title=shipper e2e::${String(e?.message ?? e).split('\n').slice(0, 4).join(' | ')}${where.slice(0, 400)}${log}`); process.exit(1);
 });
 process.on('unhandledRejection', (e) => { console.log(`::error title=shipper e2e::${String(e?.message ?? e).split('\n').slice(0, 6).join(' | ')}`); process.exit(1); });
-const browser = await chromium.launch();
+// Full Chromium (new headless), not the stripped headless shell: the label file field needs a real browser.
+const browser = await chromium.launch({ channel: 'chromium' });
 const as = async (email) => { const c = await browser.newContext(); await c.addCookies(await cookiesFor(email, BASE)); return c.newPage(); };
 const p = await as('shipper@local.test');
 // Submit the ship form and wait for the server's answer (flash message in the address); on slow machines the first
