@@ -18,13 +18,19 @@ process.on('uncaughtException', async (e) => {
   try { if (current) where = ` || at ${current.url()} || ${String(await current.evaluate(() => document.body.innerText)).replace(/\s+/g, ' ').slice(0, 900)}`; } catch (x) { where = ` || (no page text: ${x?.message})`; }
   let log = '';
   try { const { readFileSync, existsSync } = await import('node:fs'); const f = process.env.APP_LOG ?? 'app.log'; if (existsSync(f)) log = ` || APP LOG: ${readFileSync(f, 'utf8').slice(-1500).replace(/\s+/g, ' ')}`; } catch { /* none */ }
-  console.log(`::error title=shipper e2e::${String(e?.message ?? e).split('\n').slice(0, 4).join(' | ')}${where.slice(0, 400)}${log}`); process.exit(1);
+  console.log(`::error title=shipper e2e::${String(e?.message ?? e).split('\n').slice(0, 2).join(' | ')} || NET: ${(globalThis.__net ?? []).join(' ; ')}${log.slice(0, 600)}`); process.exit(1);
 });
 process.on('unhandledRejection', (e) => { console.log(`::error title=shipper e2e::${String(e?.message ?? e).split('\n').slice(0, 6).join(' | ')}`); process.exit(1); });
 // Full Chromium (new headless), not the stripped headless shell: the label file field needs a real browser.
 const browser = await chromium.launch({ channel: 'chromium' });
 const as = async (email) => { const c = await browser.newContext(); await c.addCookies(await cookiesFor(email, BASE)); return c.newPage(); };
 const p = await as('shipper@local.test');
+const net = []; globalThis.__net = net;
+p.on('request', (r) => { if (r.method() === 'POST') net.push(`REQ ${r.url().replace(BASE, '')} ${r.headers()['content-type']?.slice(0, 30)}`); });
+p.on('requestfinished', async (r) => { if (r.method() === 'POST') { const res = await r.response(); net.push(`DONE ${res?.status()} ${res?.headers()['x-action-redirect'] ?? ''}`); } });
+p.on('requestfailed', (r) => { if (r.method() === 'POST') net.push(`FAIL ${r.failure()?.errorText}`); });
+p.on('pageerror', (e) => net.push(`PAGEERR ${e.message.slice(0, 120)}`));
+p.on('console', (m) => { if (m.type() === 'error') net.push(`CONSOLE ${m.text().slice(0, 160)}`); });
 // Submit the ship form and wait for the server's answer (flash message in the address); on slow machines the first
 // click can land before the page is interactive, so it is retried once.
 const save = async () => {
