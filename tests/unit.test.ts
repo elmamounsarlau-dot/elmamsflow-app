@@ -167,3 +167,22 @@ test('17TRACK: tracking info is normalised (status whitelist, newest event first
   assert.equal(normalize({ latest_status: { status: 'DROP TABLE' } }).status, null); // unknown status never stored
   assert.equal(normalize(null).events.length, 0);
 });
+
+test('orders CSV: rows group into orders, countries resolve, bad rows are flagged', async () => {
+  const { groupOrders, parseCsv, resolveCountry } = await import('../src/lib/csv');
+  assert.equal(resolveCountry('france'), 'FR');
+  assert.equal(resolveCountry('de'), 'DE');
+  assert.equal(resolveCountry('UK'), 'GB');
+  assert.equal(resolveCountry('Narnia'), '');
+  const csv = 'Order;Customer;Address;City;Country;SKU;Qty\n#1042;Camille;12 Rue;Paris;France;lemon;2\n1042;Camille;12 Rue;Paris;France;LEMON;1\n1042;Camille;12 Rue;Paris;France;BERRY;1\n1043;;Hauptstr 5;Berlin;Narnia;NOPE;0\n';
+  const orders = groupOrders(parseCsv(csv).rows, new Set(['LEMON', 'BERRY']));
+  assert.equal(orders.length, 2);
+  assert.deepEqual(orders[0].lines, [{ sku: 'LEMON', qty: 3 }, { sku: 'BERRY', qty: 1 }]); // same SKU summed, "#" dropped
+  assert.equal(orders[0].ref, '1042');
+  assert.equal(orders[0].country, 'FR');
+  assert.equal(orders[0].errors.length, 0);
+  assert.ok(orders[1].errors.some((e) => /Customer missing/.test(e)));
+  assert.ok(orders[1].errors.some((e) => /Unknown country/.test(e)));
+  assert.ok(orders[1].errors.some((e) => /NOPE is not one of your products/.test(e)));
+  assert.ok(orders[1].errors.some((e) => /quantity/.test(e)));
+});
