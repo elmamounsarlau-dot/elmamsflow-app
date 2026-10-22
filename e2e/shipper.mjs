@@ -35,13 +35,15 @@ p.on('console', (m) => { if (m.type() === 'error') net.push(`CONSOLE ${m.text().
 // click can land before the page is interactive, so it is retried once.
 const save = async () => {
   for (let attempt = 0; attempt < 2; attempt++) {
+    await ready();
     const before = p.url();
     await p.click('#ship form button.ep-btn--full');
     try { await p.waitForURL((u) => u.toString() !== before && /[?&](ok|warn|err)=/.test(u.toString()), { timeout: 15000, waitUntil: 'commit' }); return; } catch { /* retry */ }
   }
   throw new Error('the ship form did not submit');
 };
-const openOrder = async (oid) => { await p.goto(`${BASE}/orders/${oid}`, { waitUntil: 'networkidle' }); await p.waitForFunction(() => document.readyState === 'complete'); await p.waitForTimeout(300); };
+const ready = () => p.locator('#ship form button.ep-btn--full[data-ready="1"]').waitFor({ timeout: 30000 });
+const openOrder = async (oid) => { await p.goto(`${BASE}/orders/${oid}`, { waitUntil: 'networkidle' }); await ready(); };
 current = p;
 
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
@@ -62,6 +64,7 @@ await openOrder(id);
 const options = await p.locator('#ship select[name=status] option').allInnerTexts();
 assert.ok(!options.includes('On hold') && !options.includes('Cancelled'), 'no hold/cancel for the shipper');
 
+await ready();
 await p.selectOption('#ship select[name=status]', 'shipped');
 await p.fill('#ship input[name=carrier]', 'YunExpress');
 await p.fill('#ship input[name=tracking]', 'YT2299000001');
@@ -70,6 +73,7 @@ await p.getByText(/Add the label photo/).waitFor();
 assert.equal(sql(`select status from orders where id = '${id}'`), 'packed');
 console.log('ok  cannot mark in transit without the label');
 
+await ready();
 await p.selectOption('#ship select[name=status]', 'shipped');
 await p.fill('#ship input[name=tracking]', 'YT2299000001');
 await p.setInputFiles('#ship input[name=label]', { name: 'label.txt.png', mimeType: 'image/png', buffer: Buffer.from('not an image at all') });
@@ -77,6 +81,7 @@ await save();
 await p.getByText(/must be a photo/).waitFor();
 console.log('ok  a file that is not really an image or PDF is refused');
 
+await ready();
 await p.selectOption('#ship select[name=status]', 'shipped');
 await p.fill('#ship input[name=carrier]', 'YunExpress');
 await p.fill('#ship input[name=tracking]', 'YT2299000001');
