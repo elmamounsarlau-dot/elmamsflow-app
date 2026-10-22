@@ -16,7 +16,9 @@ let current = null;
 process.on('uncaughtException', async (e) => {
   let where = '';
   try { if (current) where = ` || at ${current.url()} || ${String(await current.evaluate(() => document.body.innerText)).replace(/\s+/g, ' ').slice(0, 900)}`; } catch (x) { where = ` || (no page text: ${x?.message})`; }
-  console.log(`::error title=shipper e2e::${String(e?.message ?? e).split('\n').slice(0, 4).join(' | ')}${where}`); process.exit(1);
+  let log = '';
+  try { const { readFileSync, existsSync } = await import('node:fs'); const f = process.env.APP_LOG ?? 'app.log'; if (existsSync(f)) log = ` || APP LOG: ${readFileSync(f, 'utf8').slice(-1500).replace(/\s+/g, ' ')}`; } catch { /* none */ }
+  console.log(`::error title=shipper e2e::${String(e?.message ?? e).split('\n').slice(0, 4).join(' | ')}${where.slice(0, 400)}${log}`); process.exit(1);
 });
 process.on('unhandledRejection', (e) => { console.log(`::error title=shipper e2e::${String(e?.message ?? e).split('\n').slice(0, 6).join(' | ')}`); process.exit(1); });
 const browser = await chromium.launch();
