@@ -17,7 +17,7 @@ export const SEARCH_FIELDS: [string, string][] = [
   ['tracking', 'Tracking'],
 ];
 
-export const CHANNELS: Record<string, string> = { manual: 'Manual', shopify: 'Shopify', woocommerce: 'WooCommerce' };
+export const CHANNELS: Record<string, string> = { manual: 'Manual', csv: 'CSV import', shopify: 'Shopify', woocommerce: 'WooCommerce' };
 export const PER_PAGE = [10, 25, 50, 100];
 
 export type OrderFilters = {

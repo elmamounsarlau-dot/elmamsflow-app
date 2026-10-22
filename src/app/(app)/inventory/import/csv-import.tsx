@@ -3,44 +3,12 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { applyStockCount, importProducts } from './actions';
+import { parseCsv, pick, sha256 } from '@/lib/csv';
 
 type P = { id: string; sku: string; name: string; org: string; code: string; on_hand: number; quarantined: number };
 type Org = { id: string; name: string; code: string };
 
-/** Small CSV reader: commas or semicolons, quoted values, header row. */
-function parseCsv(text: string): { headers: string[]; rows: Record<string, string>[] } {
-  const clean = text.replace(/^﻿/, '');
-  const first = clean.split(/\r?\n/)[0] ?? '';
-  const sep = (first.match(/;/g)?.length ?? 0) > (first.match(/,/g)?.length ?? 0) ? ';' : ',';
-  const out: string[][] = [];
-  let row: string[] = [];
-  let cell = '';
-  let q = false;
-  for (let i = 0; i < clean.length; i++) {
-    const c = clean[i];
-    if (q) {
-      if (c === '"' && clean[i + 1] === '"') { cell += '"'; i++; }
-      else if (c === '"') q = false;
-      else cell += c;
-    } else if (c === '"') q = true;
-    else if (c === sep) { row.push(cell); cell = ''; }
-    else if (c === '\n' || c === '\r') {
-      if (c === '\r' && clean[i + 1] === '\n') i++;
-      row.push(cell); out.push(row); row = []; cell = '';
-    } else cell += c;
-  }
-  if (cell || row.length) { row.push(cell); out.push(row); }
-  const lines = out.filter((r) => r.some((v) => v.trim() !== ''));
-  const headers = (lines.shift() ?? []).map((h) => h.trim().toLowerCase().replace(/[\s-]+/g, '_'));
-  return { headers, rows: lines.map((r) => Object.fromEntries(headers.map((h, i) => [h, (r[i] ?? '').trim()]))) };
-}
 
-async function sha256(text: string) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-const pick = (r: Record<string, string>, keys: string[]) => keys.map((k) => r[k]).find((v) => v !== undefined && v !== '') ?? '';
 
 export function CsvImport({ canCount, canProducts, fixedOrg, clients, products: allProducts, warehouses, atWarehouse }: { canCount: boolean; canProducts: boolean; fixedOrg: Org | null; clients: Org[]; products: P[]; warehouses: { id: string; name: string }[]; atWarehouse: Record<string, Record<string, { on_hand: number; quarantined: number }>> }) {
   const [warehouse, setWarehouse] = useState(warehouses.length === 1 ? warehouses[0].id : '');

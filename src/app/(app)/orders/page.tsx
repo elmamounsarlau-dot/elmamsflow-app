@@ -103,6 +103,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
         </div>
         {canCreate && (
           <div className="ep-actions">
+            <Link className="ep-btn ep-btn--ghost" href="/orders/import">Import CSV</Link>
             <Link className="ep-btn" href="/orders/new">New order <Arrow /></Link>
           </div>
         )}
@@ -214,12 +215,12 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
                     <th>Customer name</th>
                     {issueTab ? <th>Issue</th> : <th className="col-email">Customer email</th>}
                     <th className="col-dest">Destination</th>
-                    <th className="col-wh">Warehouse</th>
+                    {ctx.backOffice && <th className="col-wh">Warehouse</th>}
                     <th className="col-channel">Channel</th>
                     <th className="col-carrier">Carrier</th>
                     <th className="col-date">Order date</th>
                     {issueTab && <th>On hold since</th>}
-                    <th className="ep-right">Actions</th>
+                    <th className="ep-right ep-oacts-cell">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -236,6 +237,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
                         <td className="ep-oid">
                           <Link href={`/orders/${o.id}`}>#{o.number}</Link>
                           {o.store_ref && <small>{o.store_ref}</small>}
+                          <small className="ep-oid-date">{fmtDate(o.created_at)}</small>
                         </td>
                         {ctx.backOffice && <td className="ep-muted">{names[o.org_id] ?? '—'}</td>}
                         <td>
@@ -244,17 +246,17 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
                             : <span className={`ep-st ep-st--${tone}`} title={o.status === 'on_hold' && o.hold_reason ? o.hold_reason : undefined}>{o.status === 'on_hold' && kind ? kind[1] : statusLabel}</span>}
                         </td>
                         <td className="col-items">{items} item{items === 1 ? '' : 's'}</td>
-                        <td className="ep-ocust">{o.customer}</td>
+                        <td className="ep-ocust">{o.customer}{o.email && <small className="ep-ocust-email">{o.email}</small>}</td>
                         {issueTab
                           ? <td className="ep-oissue" title={o.hold_reason ?? ''}>{o.hold_reason ?? '—'}</td>
                           : <td className="col-email ep-muted">{o.email ?? '—'}</td>}
                         <td className="col-dest"><span className="ep-flag" aria-hidden="true">{flag(o.country)}</span>{[o.city, o.country !== 'XX' ? o.country : null].filter(Boolean).join(', ') || '—'}</td>
-                        <td className="col-wh">{o.warehouse_id ? whLabel(whOf.get(o.warehouse_id)) : <span className="ep-warn">Not set</span>}</td>
+                        {ctx.backOffice && <td className="col-wh">{o.warehouse_id ? whLabel(whOf.get(o.warehouse_id)) : <span className="ep-warn">Not set</span>}</td>}
                         <td className="col-channel">{o.source && o.source !== 'manual' ? <span className={`ep-store-chip ep-store-chip--${o.source}`}>{CHANNELS[o.source] ?? o.source}</span> : <span className="ep-muted">Manual</span>}</td>
                         <td className="col-carrier ep-muted">{o.carrier || (o.service === 'ddp' ? 'DDP' : 'Express')}</td>
                         <td className="col-date">{fmtDate(o.created_at)}</td>
                         {issueTab && <td className="ep-muted">{fmtDate(o.held_at, true)}</td>}
-                        <td>
+                        <td className="ep-oacts-cell">
                           <div className="ep-oacts">
                             <Link className="ep-oact" href={`/orders/${o.id}`} title={`Open order #${o.number}`}><Ico d="open" s={15} /></Link>
                             {storeUrl && st && <a className="ep-oact ep-oact--go" href={storeUrl} target="_blank" rel="noreferrer" title={`View in ${CHANNELS[st.kind]}`}><Ico d="store" s={15} /></a>}

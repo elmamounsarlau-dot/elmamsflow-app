@@ -953,7 +953,7 @@ body, .ep-card, .ep-sum-card, .ep-kpi { transition: background-color .25s var(--
 .ep-oact--err { color: var(--err-2); } .ep-oact--err:hover { background: var(--err-bg); border-color: transparent; }
 .ep-oact:disabled { opacity: .5; }
 #orders-table[data-hide~="items"] .col-items, #orders-table[data-hide~="email"] .col-email, #orders-table[data-hide~="dest"] .col-dest,
-#orders-table[data-hide~="channel"] .col-channel, #orders-table[data-hide~="carrier"] .col-carrier, #orders-table[data-hide~="date"] .col-date { display: none; }
+#orders-table[data-hide~="channel"] .col-channel, #orders-table[data-hide~="wh"] .col-wh, #orders-table[data-hide~="carrier"] .col-carrier, #orders-table[data-hide~="date"] .col-date { display: none; }
 
 .ep-pager { display: flex; align-items: center; justify-content: flex-end; gap: 18px; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid var(--line-soft); font-size: .82rem; color: var(--ink); }
 .ep-pager > .ep-muted { margin-right: auto; }
@@ -1192,3 +1192,21 @@ a.ep-notice-body:hover b { text-decoration: underline; }
   .ep-notice-list li > .ep-btn { grid-column: 2; justify-self: start; }
 }
 .ep-notice-list .ep-more a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; }
+.ep-store-chip--csv { background: var(--ice); color: var(--blue-d); }
+
+/* Orders list on laptop screens: the whole row fits, actions always visible.
+   Email moves under the customer name when its own column is hidden (by width or by the user). */
+.ep-ocust-email { display: none; font-size: .75rem; color: var(--muted); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#orders-table[data-hide~="email"] .ep-ocust-email { display: block; }
+#orders-table td.col-email { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#orders-table .ep-oid-date { display: none; }
+#orders-table[data-hide~="date"] .ep-oid-date { display: block; }
+@media (min-width: 641px) and (max-width: 1599px) {
+  #orders-table .col-email, #orders-table .col-date { display: none; }
+  #orders-table .ep-ocust-email, #orders-table .ep-oid-date { display: block; }
+}
+@media (min-width: 641px) {
+  #orders-table .ep-oacts-cell { position: sticky; right: 0; background: var(--surface); box-shadow: -10px 0 12px -10px rgba(10, 30, 60, .18); z-index: 1; }
+  #orders-table thead .ep-oacts-cell { background: var(--surface-2); }
+  #orders-table tbody tr:hover .ep-oacts-cell { background: var(--surface-2, var(--surface)); }
+}

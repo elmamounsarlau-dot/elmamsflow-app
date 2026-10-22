@@ -68,7 +68,7 @@ export function Act({ children, className, confirm, name = 'act', value, title, 
 }
 
 const COLS: [string, string][] = [
-  ['items', 'Items'], ['email', 'Email'], ['dest', 'Destination'], ['channel', 'Channel'], ['carrier', 'Carrier'], ['date', 'Order date'],
+  ['items', 'Items'], ['email', 'Email'], ['dest', 'Destination'], ['wh', 'Warehouse'], ['channel', 'Channel'], ['carrier', 'Carrier'], ['date', 'Order date'],
 ];
 
 /** "View" menu: show or hide columns; remembered in this browser. */
