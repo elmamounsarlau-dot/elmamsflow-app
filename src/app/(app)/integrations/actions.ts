@@ -99,15 +99,18 @@ export async function syncNow(fd: FormData) {
 
 export async function importStoreProducts(fd: FormData) {
   const { ctx, i } = await guard(str(fd, 'id'));
-  if (!ctx.can('products.edit')) redirect(withMsg(`/integrations/${i.id}`, 'Your role can’t add products.', 'err'));
+  const back = str(fd, 'back').startsWith('/inventory') ? str(fd, 'back') : `/integrations/${i.id}`;
+  if (!ctx.can('products.edit')) redirect(withMsg(back, 'Your role can’t add products.', 'err'));
   let msg: string;
   try {
     const r = await importProducts(i);
-    msg = r.added ? `${r.added} product${r.added === 1 ? '' : 's'} added from the store. Add the HS code and customs value so orders don’t get held.` : `All ${r.found} store SKUs are already in Elmamsflow.`;
+    msg = r.added
+      ? `${r.added} product${r.added === 1 ? '' : 's'} imported from ${i.name ?? KIND_LABEL[i.kind]}. Add the HS code and customs value so orders don’t get held.`
+      : r.found ? `All ${r.found} SKUs from ${i.name ?? KIND_LABEL[i.kind]} are already in Elmamsflow.` : `No products with a SKU were found in ${i.name ?? KIND_LABEL[i.kind]}. Add SKUs to your products in the store first.`;
   } catch (e) {
-    redirect(withMsg(`/integrations/${i.id}`, (e as Error).message, 'err'));
+    redirect(withMsg(back, (e as Error).message, 'err'));
   }
-  redirect(withMsg(`/integrations/${i.id}`, msg!));
+  redirect(withMsg(back, msg!, 'ok'));
 }
 
 export async function saveStoreSettings(fd: FormData) {

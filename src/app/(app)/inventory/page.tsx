@@ -4,6 +4,10 @@ import { available, getProducts, orgNames, type ProductRow } from '@/lib/data';
 import { fmtDays, HEALTH, runway, salesByProduct, type Health } from '@/lib/insights';
 import { fmtDate } from '@/lib/format';
 import { Arrow, Empty } from '@/components/ui';
+import { Submit } from '@/components/client';
+import { supabaseAdmin } from '@/lib/supabase/admin';
+import { KIND_LABEL } from '@/lib/integrations/core';
+import { importStoreProducts } from '../integrations/actions';
 
 export const metadata = { title: 'Inventory' };
 
@@ -33,6 +37,27 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
     ctx.backOffice ? orgNames() : Promise.resolve({} as Record<string, string>),
     salesByProduct(ctx, 30),
   ]);
+
+  // Connected stores this person can import products from.
+  let storesQ = supabaseAdmin().from('integrations').select('id, kind, name, org_id').neq('status', 'paused');
+  if (ctx.org) storesQ = storesQ.eq('org_id', ctx.org.id);
+  const { data: storeRows } = ctx.can('products.edit') ? await storesQ : { data: [] };
+  const stores = ((storeRows ?? []) as { id: string; kind: 'shopify' | 'woocommerce'; name: string | null; org_id: string }[]).filter((st) => ctx.org || ctx.backOffice);
+  const canConnect = ctx.can('integrations.manage') && !!ctx.org;
+  const storeImport = (
+    <>
+      {stores.map((st) => (
+        <form key={st.id} action={importStoreProducts}>
+          <input type="hidden" name="id" value={st.id} />
+          <input type="hidden" name="back" value="/inventory" />
+          <Submit className="ep-btn ep-btn--ghost ep-btn--store" confirm={`Import every product with a SKU from ${st.name ?? KIND_LABEL[st.kind]}? Products already here are not changed.`}>
+            <span className={`ep-store-dot ep-store-dot--${st.kind}`} aria-hidden="true" />Import from {ctx.backOffice ? `${st.name ?? KIND_LABEL[st.kind]}` : KIND_LABEL[st.kind]}
+          </Submit>
+        </form>
+      ))}
+      {!stores.length && canConnect && <Link className="ep-btn ep-btn--ghost ep-btn--store" href="/integrations"><span className="ep-store-dot ep-store-dot--shopify" aria-hidden="true" /><span className="ep-store-dot ep-store-dot--woocommerce" aria-hidden="true" />Import from Shopify / WooCommerce</Link>}
+    </>
+  );
 
   const rows = products.map((p) => ({ p, r: runway(p, sales.get(p.id) ?? 0) }));
   const match = (f: string, x: (typeof rows)[number]) =>
@@ -85,6 +110,7 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
           <p>Every unit we hold for {ctx.backOffice ? 'your clients' : 'you'}, what is sellable, and how long it will last.</p>
         </div>
         <div className="ep-actions">
+          {storeImport}
           {(ctx.can('stock.adjust') || ctx.can('products.edit')) && <Link className="ep-btn ep-btn--ghost" href="/inventory/import">Import CSV</Link>}
           <a className="ep-btn ep-btn--ghost" href={exportHref}>Export</a>
           {ctx.can('products.edit') && <Link className="ep-btn" href="/inventory/new">Add product <Arrow /></Link>}
@@ -146,8 +172,8 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
         </div>
 
         {list.length === 0 ? (
-          <Empty title={products.length ? 'Nothing matches' : 'No products yet'} text={products.length ? 'Try another filter or search.' : 'Add your first product, or import your list from a CSV file.'}>
-            {!products.length && ctx.can('products.edit') && <Link className="ep-btn" href="/inventory/new">Add product <Arrow /></Link>}
+          <Empty title={products.length ? 'Nothing matches' : 'No products yet'} text={products.length ? 'Try another filter or search.' : stores.length ? 'Bring your whole catalogue in from your store in one click, or add products one by one.' : canConnect ? 'Connect your Shopify or WooCommerce store to import your catalogue in one click — or add products one by one, or from a CSV file.' : 'Add your first product, or import your list from a CSV file.'}>
+            {!products.length && ctx.can('products.edit') && <div className="ep-actions" style={{ justifyContent: 'center', marginTop: '.4rem' }}>{storeImport}<Link className="ep-btn" href="/inventory/new">Add product <Arrow /></Link></div>}
           </Empty>
         ) : (
           <div className="ep-tablewrap">
