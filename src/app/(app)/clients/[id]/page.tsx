@@ -15,6 +15,7 @@ import type { AccessLink } from '@/lib/invite';
 import { Fragment } from 'react';
 import { inviteClientMember, memberLink, toggleClient, updateClient } from '../actions';
 import { viewAs } from '../../view-as';
+import { getWarehouses, shippingWarehouses } from '@/lib/warehouses';
 
 export default async function ClientPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string>> }) {
   const { id } = await params;
@@ -35,6 +36,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
   const billingOn = !!ctx.staffRole && ctx.can('billing.manage');
   const rates = billingOn ? await getRateCard(id) : null;
   const tz = await invoiceTz();
+  const whs = shippingWarehouses(await getWarehouses());
   const running = rates ? await computeCharges(id, rates, monthBounds(ymOf(new Date(), tz), tz).start, new Date()) : null;
   const groups = [...new Set(RATE_FIELDS.map((f) => f.group))];
   const linkFor = new Map(((links ?? []) as AccessLink[]).map((l) => [l.user_id, l]));
@@ -166,6 +168,13 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
                   <label>Phone<input name="phone" defaultValue={org.phone ?? ''} /></label>
                   <label>Country<select name="country" defaultValue={org.country ?? ''}><option value="">—</option>{Object.entries(COUNTRIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
                 </div>
+                <label>Ships from by default
+                  <select name="default_warehouse" defaultValue={org.default_warehouse_id ?? ''}>
+                    <option value="">Not set — staff choose per order</option>
+                    {whs.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                  </select>
+                  <small className="ep-muted">New orders from this client (manual, CSV and stores) start at this warehouse.</small>
+                </label>
                 <label>Internal notes<textarea name="notes" rows={3} defaultValue={org.notes ?? ''} placeholder="Only your team sees this" /></label>
                 <Submit className="ep-btn ep-btn--full">Save details</Submit>
               </form>

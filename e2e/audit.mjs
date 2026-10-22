@@ -19,7 +19,7 @@ const PRODUCT = 'a0000000-0000-0000-0000-000000000003';
 const INBOUND = '1c000000-0000-0000-0000-000000000005';
 const ATLAS = '11111111-1111-1111-1111-111111111111';
 
-const STAFF_PAGES = ['/', '/clients', `/clients/${ATLAS}`, '/orders', '/orders?t=attention', `/orders/${ORDER}`, `/orders/${HELD}`, '/orders/new', '/inventory', `/inventory/${PRODUCT}`, '/inventory/new', '/inventory/import', '/inbounds', `/inbounds/${INBOUND}`, '/inbounds/new', '/tracking', '/support', '/support/7a000000-0000-0000-0000-000000000002', '/support/new', '/invoices', '/invoices/1a000000-0000-0000-0000-000000000002', '/integrations', '/integrations/1e000000-0000-0000-0000-000000000001', '/integrations/new', '/team', '/activity', '/settings', '/settings/billing'];
+const STAFF_PAGES = ['/', '/clients', `/clients/${ATLAS}`, '/orders', '/orders?t=attention', `/orders/${ORDER}`, `/orders/${HELD}`, '/orders/new', '/inventory', `/inventory/${PRODUCT}`, '/inventory/new', '/inventory/import', '/inbounds', `/inbounds/${INBOUND}`, '/inbounds/new', '/tracking', '/support', '/support/7a000000-0000-0000-0000-000000000002', '/support/new', '/invoices', '/invoices/1a000000-0000-0000-0000-000000000002', '/integrations', '/integrations/1e000000-0000-0000-0000-000000000001', '/integrations/new', '/warehouses', '/transfers', '/transfers/new', '/transfers/new?kind=allocation', '/transfers/:first', '/team', '/activity', '/settings', '/settings/billing'];
 const CLIENT_PAGES = ['/', '/orders', `/orders/${ORDER}`, '/orders/new', '/inventory', `/inventory/${PRODUCT}`, '/inbounds', '/inbounds/new', '/tracking', '/support', '/support/new', '/invoices', '/invoices/1a000000-0000-0000-0000-000000000002', '/integrations', '/team', '/settings'];
 const ROLES = [
   { key: 'owner', email: 'owner@local.test', pages: STAFF_PAGES },
@@ -29,7 +29,7 @@ const ROLES = [
 ];
 const WIDTHS = [{ name: '375', width: 375, height: 812, mobile: true }, { name: '768', width: 768, height: 1024, mobile: true }, { name: 'desktop', width: 1440, height: 900, mobile: false }];
 
-const slug = (p) => (p === '/' ? 'home' : p.replace(/^\//, '').replace(/[/?=&]/g, '_'));
+const slug = (p) => (p === '/' ? 'home' : p.replace(/^\//, '').replace(/[/?=&:]/g, '_'));
 const report = [];
 const browser = await chromium.launch({ ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}) });
 
@@ -48,7 +48,12 @@ for (const role of ROLES) {
       const onFail = (r) => failed.push(`${r.failure()?.errorText} ${r.url().replace(BASE, '')}`);
       const onResp = (r) => { if (r.status() >= 500) failed.push(`${r.status()} ${r.url().replace(BASE, '')}`); };
       page.on('console', onConsole); page.on('pageerror', onPageError); page.on('requestfailed', onFail); page.on('response', onResp);
-      const res = await page.goto(BASE + path, { waitUntil: 'networkidle' });
+      let target = path;
+      if (path === '/transfers/:first') {
+        await page.goto(BASE + '/transfers', { waitUntil: 'networkidle' });
+        target = (await page.locator('a[href^="/transfers/"]:not([href="/transfers/new"])').first().getAttribute('href')) ?? '/transfers';
+      }
+      const res = await page.goto(BASE + target, { waitUntil: 'networkidle' });
       const status = res?.status();
       const finalPath = new URL(page.url()).pathname;
       const dir = `${OUT}/${role.key}/${w.name}`;
@@ -73,6 +78,8 @@ for (const role of ROLES) {
           const s = getComputedStyle(el);
           if (!r.width || !r.height || s.visibility === 'hidden' || s.display === 'none') continue;
           if (el.closest('table') && el.tagName === 'A' && !el.className) continue; // inline text links in cells
+          // WCAG 2.5.8 "inline" exception: a link inside a sentence is sized by the line of text.
+          if (el.tagName === 'A' && s.display === 'inline' && el.parentElement && /[A-Za-z]{3}/.test((el.parentElement.textContent || '').replace(el.textContent || '', ''))) continue;
           const label = (el.getAttribute('aria-label') || el.textContent || el.getAttribute('name') || el.tagName).trim().replace(/\s+/g, ' ').slice(0, 40);
           const id = `${el.tagName.toLowerCase()}${el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : ''} "${label}" ${Math.round(r.width)}×${Math.round(r.height)}`;
           if (r.width < 24 || r.height < 24) tiny.push(id); else if (r.width < 44 || r.height < 44) small.push(id);

@@ -7,6 +7,7 @@ import { Arrow, Back, Badge, TeamOnly } from '@/components/ui';
 import { Submit } from '@/components/client';
 import { cancelOrder, reverseShipment, updateOrder } from '../actions';
 import { rematchProducts, resendTracking } from '../../integrations/actions';
+import { getWarehouses, shippingWarehouses, whLabel } from '@/lib/warehouses';
 
 export default async function OrderPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireCtx();
@@ -16,7 +17,9 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   if (ctx.org) q = q.eq('org_id', ctx.org.id);
   const { data: o } = await q.maybeSingle();
   if (!o) notFound();
-  const { data: items } = await sb.from('order_items').select('qty, products(sku, name)').eq('order_id', id);
+  const [{ data: items }, whs] = await Promise.all([sb.from('order_items').select('qty, products(sku, name)').eq('order_id', id), getWarehouses()]);
+  const wh = whs.find((w) => w.id === o.warehouse_id);
+  const canMove = ['new', 'on_hold'].includes(o.status);
   const steps: [string, string | null, boolean][] = [
     ['Received', o.created_at, true],
     ['Packed', null, ['packed', 'shipped', 'delivered'].includes(o.status)],
@@ -52,7 +55,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
         <div className="ep-card--grow">
           <div className="ep-track-head">
             <div><small>Shipment</small><b>#{o.number}</b></div>
-            <div><small>From</small><b>China</b></div>
+            <div><small>Ships from</small><b>{wh ? whLabel(wh) : 'Not chosen'}</b></div>
             <div><small>To</small><b>{[o.city, COUNTRIES[o.country] ?? o.country].filter(Boolean).join(', ')}</b></div>
             <div><small>Service</small><b>{o.service === 'ddp' ? 'DDP Express' : 'Express'}</b></div>
           </div>
@@ -83,6 +86,15 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
               <TeamOnly />
               <form action={updateOrder} className="ep-form">
                 <input type="hidden" name="id" value={o.id} />
+                <input type="hidden" name="current_warehouse_id" value={o.warehouse_id ?? ''} />
+                {ctx.can('orders.warehouse') && (
+                  <label>Ships from
+                    <select name="warehouse_id" defaultValue={wh?.kind === 'physical' ? wh.id : ''} disabled={!canMove}>
+                      <option value="" disabled>Choose the warehouse</option>
+                      {shippingWarehouses(whs).map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    </select>
+                  </label>
+                )}
                 <label>Status<select name="status" defaultValue={o.status}>{statuses.map((k) => <option key={k} value={k}>{ORDER_STATUS[k][0]}</option>)}</select></label>
                 <label>Hold reason<input name="hold_reason" defaultValue={o.hold_reason ?? ''} placeholder="Only when on hold" /></label>
                 {ctx.can('orders.warehouse') && (

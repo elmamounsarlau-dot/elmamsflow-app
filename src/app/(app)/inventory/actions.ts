@@ -25,23 +25,24 @@ export async function addProduct(fd: FormData) {
 }
 
 const back = (fd: FormData) => (str(fd, 'back').startsWith('/inventory') ? str(fd, 'back') : '/inventory');
+const wh = (fd: FormData) => (/^[0-9a-f-]{36}$/.test(str(fd, 'warehouse_id')) ? str(fd, 'warehouse_id') : null);
 
 export async function adjustStock(fd: FormData) {
   const sb = await supabaseServer();
-  const { error } = await sb.rpc('adjust_stock', { p_product: str(fd, 'product'), p_qty: parseInt(str(fd, 'qty'), 10) || 0, p_reason: str(fd, 'reason') || 'Adjustment' });
+  const { error } = await sb.rpc('adjust_stock', { p_product: str(fd, 'product'), p_qty: parseInt(str(fd, 'qty'), 10) || 0, p_reason: str(fd, 'reason') || 'Adjustment', p_warehouse: wh(fd) });
   redirect(withMsg(back(fd), error ? error.message : 'Stock updated.', error ? 'err' : 'ok'));
 }
 
 export async function quarantineStock(fd: FormData) {
   const sb = await supabaseServer();
-  const { error } = await sb.rpc('quarantine_stock', { p_product: str(fd, 'product'), p_qty: parseInt(str(fd, 'qty'), 10) || 0, p_reason: str(fd, 'reason') });
+  const { error } = await sb.rpc('quarantine_stock', { p_product: str(fd, 'product'), p_qty: parseInt(str(fd, 'qty'), 10) || 0, p_reason: str(fd, 'reason'), p_warehouse: wh(fd) });
   redirect(withMsg(back(fd), error ? error.message : 'Units moved to quarantine. They are no longer available to sell.', error ? 'err' : 'ok'));
 }
 
 export async function releaseStock(fd: FormData) {
   const sb = await supabaseServer();
   const writeOff = str(fd, 'mode') === 'writeoff';
-  const { error } = await sb.rpc('release_stock', { p_product: str(fd, 'product'), p_qty: parseInt(str(fd, 'qty'), 10) || 0, p_reason: str(fd, 'reason'), p_write_off: writeOff });
+  const { error } = await sb.rpc('release_stock', { p_product: str(fd, 'product'), p_qty: parseInt(str(fd, 'qty'), 10) || 0, p_reason: str(fd, 'reason'), p_write_off: writeOff, p_warehouse: wh(fd) });
   redirect(withMsg(back(fd), error ? error.message : writeOff ? 'Written off and removed from stock.' : 'Released back to available stock.', error ? 'err' : 'ok'));
 }
 
@@ -74,7 +75,7 @@ export async function reconcileStock(fd: FormData) {
   const sb = await supabaseServer();
   const { error } = await sb.rpc('reconcile_stock', {
     p_product: str(fd, 'product'), p_qty: parseInt(str(fd, 'qty'), 10) || 0,
-    p_reason: str(fd, 'reason').slice(0, 300), p_evidence: str(fd, 'evidence').slice(0, 500), p_ref: str(fd, 'ref').slice(0, 60) || null,
+    p_reason: str(fd, 'reason').slice(0, 300), p_evidence: str(fd, 'evidence').slice(0, 500), p_ref: str(fd, 'ref').slice(0, 60) || null, p_warehouse: wh(fd),
   });
   redirect(withMsg(b, error ? error.message : 'Reconciliation recorded with your approval and the evidence.', error ? 'err' : 'ok'));
 }

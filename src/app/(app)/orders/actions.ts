@@ -42,6 +42,12 @@ export async function updateOrder(fd: FormData) {
   if (!ctx?.can('orders.hold')) redirect(withMsg(`/orders/${id}`, 'You don’t have access to that.', 'err'));
   const sb = await supabaseServer();
   const weight = parseInt(str(fd, 'weight_g'), 10);
+  // Warehouse first (only allowed before packing), then the status change checks stock at that warehouse.
+  const wh = str(fd, 'warehouse_id');
+  if (/^[0-9a-f-]{36}$/.test(wh) && wh !== str(fd, 'current_warehouse_id')) {
+    const { error: we } = await sb.rpc('assign_order_warehouse', { p_orders: [id], p_warehouse: wh });
+    if (we) redirect(withMsg(`/orders/${id}`, we.message, 'err'));
+  }
   const { error } = await sb.rpc('set_order_status', {
     p_order: id, p_status: str(fd, 'status'), p_carrier: str(fd, 'carrier') || null, p_tracking: str(fd, 'tracking') || null,
     p_weight: Number.isFinite(weight) ? weight : null, p_hold_reason: str(fd, 'hold_reason') || null,
@@ -78,6 +84,14 @@ export async function ordersListAction(fd: FormData) {
     const verb = act === 'hold' ? 'put on hold' : 'released';
     const why = act === 'hold' ? 'only new orders the warehouse hasn’t started can be held' : 'held for a product, customs or address problem — fix that and they release by themselves';
     redirect(withMsg(back, done === n ? `${s(done)} ${verb}.` : `${s(done)} ${verb}; ${n - done} skipped (${why}).`, done === n ? 'ok' : 'warn'));
+  }
+  if (act === 'assign') {
+    const w = str(fd, 'warehouse');
+    if (!/^[0-9a-f-]{36}$/.test(w)) redirect(withMsg(back, 'Choose the warehouse first.', 'warn'));
+    const { data, error } = await sb.rpc('assign_order_warehouse', { p_orders: ids, p_warehouse: w });
+    if (error) redirect(withMsg(back, error.message, 'err'));
+    const done = Number(data ?? 0);
+    redirect(withMsg(back, done === n ? `${s(done)} will ship from the new warehouse.` : `${s(done)} changed; ${n - done} skipped (already packed or shipped, or already there).`, done === n ? 'ok' : 'warn'));
   }
   if (act === 'cancel') {
     let done = 0;

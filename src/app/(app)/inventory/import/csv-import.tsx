@@ -42,13 +42,16 @@ async function sha256(text: string) {
 
 const pick = (r: Record<string, string>, keys: string[]) => keys.map((k) => r[k]).find((v) => v !== undefined && v !== '') ?? '';
 
-export function CsvImport({ canCount, canProducts, fixedOrg, clients, products }: { canCount: boolean; canProducts: boolean; fixedOrg: Org | null; clients: Org[]; products: P[] }) {
+export function CsvImport({ canCount, canProducts, fixedOrg, clients, products: allProducts, warehouses, atWarehouse }: { canCount: boolean; canProducts: boolean; fixedOrg: Org | null; clients: Org[]; products: P[]; warehouses: { id: string; name: string }[]; atWarehouse: Record<string, Record<string, { on_hand: number; quarantined: number }>> }) {
+  const [warehouse, setWarehouse] = useState(warehouses.length === 1 ? warehouses[0].id : '');
+  // A count is per warehouse: compare with what that warehouse holds, not the total.
+  const products = useMemo(() => allProducts.map((p) => ({ ...p, ...(atWarehouse[warehouse]?.[p.id] ?? { on_hand: 0, quarantined: 0 }) })), [allProducts, atWarehouse, warehouse]);
   const router = useRouter();
   const [kind, setKind] = useState<'stock_count' | 'products'>(canCount ? 'stock_count' : 'products');
   const [file, setFile] = useState<{ name: string; text: string; hash: string } | null>(null);
   const [orgId, setOrgId] = useState(fixedOrg?.id ?? '');
   const [confirmedOn, setConfirmedOn] = useState(new Date().toISOString().slice(0, 10));
-  const [confirmedBy, setConfirmedBy] = useState('China warehouse (WeChat)');
+  const [confirmedBy, setConfirmedBy] = useState('Warehouse team (WeChat)');
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [pending, start] = useTransition();
 
@@ -105,14 +108,14 @@ export function CsvImport({ canCount, canProducts, fixedOrg, clients, products }
     return { missing, rows, errors: rows.filter((r) => r.error).length, fresh: rows.filter((r) => !r.error && r.status === 'new').length };
   }, [parsed, kind, products, fixedOrg, orgId]);
 
-  const blocked = !parsed || (count ? count.missing.length > 0 || count.errors > 0 || count.rows.length === 0 : false) || (prods ? prods.missing.length > 0 || prods.errors > 0 || prods.fresh === 0 || !(fixedOrg || orgId) : false);
+  const blocked = !parsed || (count ? !warehouse || count.missing.length > 0 || count.errors > 0 || count.rows.length === 0 : false) || (prods ? prods.missing.length > 0 || prods.errors > 0 || prods.fresh === 0 || !(fixedOrg || orgId) : false);
 
   const commit = () =>
     start(async () => {
       if (!file) return;
       const r =
         kind === 'stock_count' && count
-          ? await applyStockCount(JSON.stringify({ rows: count.rows.map((x) => ({ product_id: x.product!.id, counted: x.counted, note: x.note })), file: file.name, hash: file.hash, confirmedOn, confirmedBy }))
+          ? await applyStockCount(JSON.stringify({ rows: count.rows.map((x) => ({ product_id: x.product!.id, counted: x.counted, note: x.note })), file: file.name, hash: file.hash, confirmedOn, confirmedBy, warehouse }))
           : prods
             ? await importProducts(JSON.stringify({ orgId, rows: prods.rows.filter((x) => x.status === 'new'), file: file.name, hash: file.hash }))
             : { ok: false, message: 'Nothing to import.' };
@@ -138,6 +141,7 @@ export function CsvImport({ canCount, canProducts, fixedOrg, clients, products }
             )}
             {kind === 'stock_count' && (
               <div className="ep-row2">
+                <label>Warehouse that counted<select value={warehouse} onChange={(e) => { setWarehouse(e.target.value); setResult(null); }} required><option value="">Choose the warehouse…</option>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
                 <label>Counted on<input type="date" value={confirmedOn} onChange={(e) => setConfirmedOn(e.target.value)} /></label>
                 <label>Confirmed by<input value={confirmedBy} onChange={(e) => setConfirmedBy(e.target.value)} placeholder="Who sent the count" /></label>
               </div>

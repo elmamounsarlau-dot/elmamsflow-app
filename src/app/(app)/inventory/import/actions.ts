@@ -9,7 +9,7 @@ type Result = { ok: boolean; message: string };
 export async function applyStockCount(payload: string): Promise<Result> {
   const ctx = await getCtx();
   if (!ctx?.can('stock.adjust')) return { ok: false, message: 'You don’t have access to that.' };
-  let data: { rows: { product_id: string; counted: number; note?: string }[]; file: string; hash: string; confirmedOn: string; confirmedBy: string };
+  let data: { rows: { product_id: string; counted: number; note?: string }[]; file: string; hash: string; confirmedOn: string; confirmedBy: string; warehouse: string };
   try {
     data = JSON.parse(payload);
   } catch {
@@ -17,8 +17,10 @@ export async function applyStockCount(payload: string): Promise<Result> {
   }
   if (!Array.isArray(data.rows) || data.rows.length === 0 || data.rows.length > 5000) return { ok: false, message: 'Nothing to import.' };
   if (data.rows.some((r) => !/^[0-9a-f-]{36}$/.test(r.product_id) || !Number.isInteger(r.counted) || r.counted < 0)) return { ok: false, message: 'Some rows are invalid. Check the preview.' };
+  if (!/^[0-9a-f-]{36}$/.test(String(data.warehouse ?? ''))) return { ok: false, message: 'Choose the warehouse that did the count.' };
   const sb = await supabaseServer();
   const { data: res, error } = await sb.rpc('apply_stock_count', {
+    p_warehouse: data.warehouse,
     p_rows: data.rows, p_file: String(data.file).slice(0, 200), p_hash: String(data.hash).slice(0, 128),
     p_confirmed_on: /^\d{4}-\d{2}-\d{2}$/.test(data.confirmedOn) ? data.confirmedOn : null, p_confirmed_by: String(data.confirmedBy ?? '').slice(0, 120) || null,
   });

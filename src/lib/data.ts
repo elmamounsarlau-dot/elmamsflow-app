@@ -5,7 +5,7 @@ import type { Ctx } from './session';
 export type ProductRow = {
   id: string; org_id: string; sku: string; name: string; barcode: string | null; weight_g: number; hs_code: string | null;
   customs_value: number; low_stock: number; on_hand: number; reserved: number; incoming: number; quarantined: number;
-  last_movement_at: string | null;
+  last_movement_at: string | null; in_transfer?: number; unallocated?: number;
 };
 
 /** Sellable now: on hand − quarantined − reserved for open orders. */

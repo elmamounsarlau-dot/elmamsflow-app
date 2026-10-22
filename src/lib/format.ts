@@ -7,6 +7,13 @@ export const ORDER_STATUS: Record<string, [string, string]> = {
   cancelled: ['Cancelled', 'mute'],
 };
 
+export const TRANSFER_STATUS: Record<string, [string, string]> = {
+  requested: ['Requested', 'mute'],
+  in_transit: ['On the way', 'go'],
+  received: ['Received', 'ok'],
+  cancelled: ['Cancelled', 'mute'],
+};
+
 export const INBOUND_STATUS: Record<string, [string, string]> = {
   announced: ['Booked', 'mute'],
   in_transit: ['Picked up', 'go'],

@@ -8,6 +8,7 @@ import { applyScope, applyTab, CHANNELS, flag, HOLD_KIND, ordersHref, parseFilte
 import { Arrow, Empty } from '@/components/ui';
 import { Act, AutoSubmit, BulkBar, ColumnsMenu } from '@/components/orders';
 import { ordersListAction } from './actions';
+import { getWarehouses, shippingWarehouses, whLabel } from '@/lib/warehouses';
 
 export const metadata = { title: 'Orders' };
 
@@ -23,7 +24,7 @@ const STATUS_HELP: Record<string, string> = {
 type Row = {
   id: string; number: string; store_ref: string | null; customer: string; email: string | null; city: string | null; country: string;
   created_at: string; status: string; org_id: string; carrier: string | null; tracking: string | null; service: string; source: string | null;
-  integration_id: string | null; external_id: string | null; hold_kind: string | null; hold_reason: string | null; held_at: string | null;
+  integration_id: string | null; external_id: string | null; hold_kind: string | null; hold_reason: string | null; held_at: string | null; warehouse_id: string | null;
   order_items: { qty: number }[];
 };
 
@@ -56,20 +57,23 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
 
   const from = (f.p - 1) * f.per;
   const listQ = applyTab(applyScope(
-    sb.from('orders').select('id, number, store_ref, customer, email, city, country, created_at, status, org_id, carrier, tracking, service, source, integration_id, external_id, hold_kind, hold_reason, held_at, order_items(qty)', { count: 'exact' }),
+    sb.from('orders').select('id, number, store_ref, customer, email, city, country, created_at, status, org_id, carrier, tracking, service, source, integration_id, external_id, hold_kind, hold_reason, held_at, warehouse_id, order_items(qty)', { count: 'exact' }),
     f, orgId,
   ), f).order(f.t ? 'held_at' : 'created_at', { ascending: false, nullsFirst: false }).range(from, from + f.per - 1);
 
   const statusKeys = Object.keys(ORDER_STATUS);
   const kindKeys = Object.keys(HOLD_KIND);
-  const [list, statusCounts, kindCounts, allCount, names, countriesRes] = await Promise.all([
+  const [list, statusCounts, kindCounts, allCount, names, countriesRes, whs] = await Promise.all([
     listQ,
     Promise.all(statusKeys.map((k) => count((q) => q.eq('status', k)))),
     Promise.all(kindKeys.map((k) => count((q) => q.eq('status', 'on_hold').eq('hold_kind', k)))),
     count((q) => q),
     ctx.backOffice ? orgNames() : Promise.resolve({} as Record<string, string>),
     applyScope(sb.from('orders').select('country'), scopeOnly, orgId).order('created_at', { ascending: false }).limit(2000),
+    getWarehouses(),
   ]);
+  const whOf = new Map(whs.map((w) => [w.id, w]));
+  const canAssign = !!ctx.staffRole && ctx.can('orders.warehouse');
   const rows = (list.data ?? []) as unknown as Row[];
   const total = list.count ?? 0;
   const pages = Math.max(1, Math.ceil(total / f.per));
@@ -180,6 +184,15 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
             {canHold && <Act className="ep-bulk-btn" value="hold" confirm="Put the selected orders on hold?"><Ico d="hold" s={13} />Hold</Act>}
             {canHold && <Act className="ep-bulk-btn" value="release"><Ico d="release" s={13} />Release</Act>}
             <Act className="ep-bulk-btn" formAction="/orders/export" formMethod="get" value="export"><Ico d="down" s={13} />Export</Act>
+            {canAssign && (
+              <span className="ep-bulk-wh">
+                <select name="warehouse" aria-label="Warehouse to ship from" defaultValue="">
+                  <option value="" disabled>Ship from…</option>
+                  {shippingWarehouses(whs).map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                </select>
+                <Act className="ep-bulk-btn" value="assign">Set warehouse</Act>
+              </span>
+            )}
             {canCreate && <Act className="ep-bulk-btn ep-bulk-btn--err" value="cancel" confirm="Cancel the selected orders? Only orders not packed yet can be cancelled."><Ico d="cancel" s={13} />Cancel</Act>}
           </BulkBar>
 
@@ -201,6 +214,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
                     <th>Customer name</th>
                     {issueTab ? <th>Issue</th> : <th className="col-email">Customer email</th>}
                     <th className="col-dest">Destination</th>
+                    <th className="col-wh">Warehouse</th>
                     <th className="col-channel">Channel</th>
                     <th className="col-carrier">Carrier</th>
                     <th className="col-date">Order date</th>
@@ -235,6 +249,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
                           ? <td className="ep-oissue" title={o.hold_reason ?? ''}>{o.hold_reason ?? '—'}</td>
                           : <td className="col-email ep-muted">{o.email ?? '—'}</td>}
                         <td className="col-dest"><span className="ep-flag" aria-hidden="true">{flag(o.country)}</span>{[o.city, o.country !== 'XX' ? o.country : null].filter(Boolean).join(', ') || '—'}</td>
+                        <td className="col-wh">{o.warehouse_id ? whLabel(whOf.get(o.warehouse_id)) : <span className="ep-warn">Not set</span>}</td>
                         <td className="col-channel">{o.source && o.source !== 'manual' ? <span className={`ep-store-chip ep-store-chip--${o.source}`}>{CHANNELS[o.source] ?? o.source}</span> : <span className="ep-muted">Manual</span>}</td>
                         <td className="col-carrier ep-muted">{o.carrier || (o.service === 'ddp' ? 'DDP' : 'Express')}</td>
                         <td className="col-date">{fmtDate(o.created_at)}</td>
