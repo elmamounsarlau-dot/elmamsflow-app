@@ -243,7 +243,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
 
       <div className="ep-hmain">
         <div className="ep-hcol">
-{billing && invoiceCard}
+          {billing && invoiceCard}
           {latestCard}
 
           <section className="ep-bcard">
