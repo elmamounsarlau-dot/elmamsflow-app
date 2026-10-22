@@ -15,7 +15,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 let current = null;
 process.on('uncaughtException', async (e) => {
   let where = '';
-  try { if (current) where = ` || at ${current.url()} || ${(await current.locator('main').innerText()).replace(/\s+/g, ' ').slice(0, 500)}`; } catch { /* page gone */ }
+  try { if (current) where = ` || at ${current.url()} || ${String(await current.evaluate(() => document.body.innerText)).replace(/\s+/g, ' ').slice(0, 900)}`; } catch (x) { where = ` || (no page text: ${x?.message})`; }
   console.log(`::error title=shipper e2e::${String(e?.message ?? e).split('\n').slice(0, 4).join(' | ')}${where}`); process.exit(1);
 });
 process.on('unhandledRejection', (e) => { console.log(`::error title=shipper e2e::${String(e?.message ?? e).split('\n').slice(0, 6).join(' | ')}`); process.exit(1); });
