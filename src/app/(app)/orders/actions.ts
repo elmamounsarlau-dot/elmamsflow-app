@@ -8,6 +8,7 @@ import { itemsFromForm } from '@/lib/data';
 import { logActivity } from '@/lib/log';
 import { str, withMsg } from '@/lib/format';
 import { pushTracking } from '@/lib/integrations/service';
+import { refreshOrders, registerOrders, syncTracking, trackKey, trackShippedOrder } from '@/lib/track17';
 
 export async function createOrder(fd: FormData) {
   const ctx = await getCtx();
@@ -54,7 +55,10 @@ export async function updateOrder(fd: FormData) {
   });
   if (error) redirect(withMsg(`/orders/${id}`, error.message, 'err'));
   // Shipped with a tracking number: tell the client's store (Shopify / WooCommerce).
-  const pushed = ['shipped', 'delivered'].includes(str(fd, 'status')) ? await pushTracking(id).catch((e) => (e as Error).message) : null;
+  const shipped = ['shipped', 'delivered'].includes(str(fd, 'status'));
+  const pushed = shipped ? await pushTracking(id).catch((e) => (e as Error).message) : null;
+  // Start live tracking with 17TRACK (a failure here is retried by the daily sync).
+  if (shipped) await trackShippedOrder(id).catch(() => null);
   redirect(withMsg(`/orders/${id}`, pushed === 'ok' ? 'Order saved. Tracking sent to the client’s store.' : pushed ? `Order saved, but tracking couldn’t be sent to the store: ${pushed}` : 'Order saved.', pushed && pushed !== 'ok' ? 'warn' : 'ok'));
 }
 
@@ -113,4 +117,41 @@ export async function reverseShipment(fd: FormData) {
   const sb = await supabaseServer();
   const { error } = await sb.rpc('reverse_shipment', { p_order: id, p_reason: str(fd, 'reason').slice(0, 300), p_evidence: str(fd, 'evidence').slice(0, 500) });
   redirect(withMsg(`/orders/${id}`, error ? error.message : 'Shipment reversed. The units are back in stock and the order is cancelled. Both steps are in the history.', error ? 'err' : 'ok'));
+}
+
+/** Staff: fetch the latest carrier data for one order now (registers it first if 17TRACK doesn't know it yet). */
+export async function refreshTracking(fd: FormData) {
+  const id = str(fd, 'id');
+  const ctx = await getCtx();
+  if (!ctx?.staffRole) redirect(withMsg(`/orders/${id}`, 'You don’t have access to that.', 'err'));
+  if (!trackKey()) redirect(withMsg(`/orders/${id}`, '17TRACK isn’t connected yet. Add TRACK17_API_KEY in Vercel.', 'warn'));
+  const { data: o } = await supabaseAdmin().from('orders').select('id, tracking, status, tracking_registered_at').eq('id', id).maybeSingle();
+  if (!o?.tracking || !['shipped', 'delivered'].includes(o.status)) redirect(withMsg(`/orders/${id}`, 'Add a tracking number and mark it shipped first.', 'warn'));
+  let msg = '';
+  try {
+    if (!o.tracking_registered_at) {
+      const r = await registerOrders([{ id: o.id, tracking: o.tracking }]);
+      msg = r.accepted ? 'Sent to 17TRACK. The first carrier update usually arrives within minutes to a few hours.' : 'Not accepted by 17TRACK. Check the tracking number.';
+    } else {
+      const r = await refreshOrders([{ id: o.id, tracking: o.tracking }]);
+      msg = r.delivered ? 'Carrier confirms delivery: order marked Delivered.' : 'Tracking refreshed.';
+    }
+  } catch (e) {
+    redirect(withMsg(`/orders/${id}`, (e as Error).message, 'err'));
+  }
+  redirect(withMsg(`/orders/${id}`, msg));
+}
+
+/** Staff: run the tracking sync now (same as the daily job). */
+export async function syncTrackingNow() {
+  const ctx = await getCtx();
+  if (!ctx?.staffRole) redirect(withMsg('/tracking', 'You don’t have access to that.', 'err'));
+  let msg = '';
+  try {
+    const r = await syncTracking();
+    msg = !r.configured ? '17TRACK isn’t connected yet. Add TRACK17_API_KEY in Vercel.' : `Sync done: ${r.registered} parcel${r.registered === 1 ? '' : 's'} sent to 17TRACK, ${r.refreshed} refreshed, ${r.delivered} newly delivered${r.rejected ? `, ${r.rejected} not accepted (check the numbers)` : ''}.`;
+  } catch (e) {
+    redirect(withMsg('/tracking', (e as Error).message, 'err'));
+  }
+  redirect(withMsg('/tracking', msg));
 }

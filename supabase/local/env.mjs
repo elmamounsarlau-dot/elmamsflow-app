@@ -9,4 +9,6 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=${sign({ role: 'anon', iss: 'local', exp })}
 SUPABASE_SERVICE_ROLE_KEY=${sign({ role: 'service_role', iss: 'local', exp })}
 NEXT_PUBLIC_SITE_URL=http://127.0.0.1:3000
 INTEGRATIONS_KEY=local-test-integrations-key
-CRON_SECRET=local-cron-secret-for-tests-only-0123456789`);
+CRON_SECRET=local-cron-secret-for-tests-only-0123456789
+TRACK17_API_KEY=local-fake-17track-key-0123456789
+TRACK17_API_URL=http://127.0.0.1:3017`);

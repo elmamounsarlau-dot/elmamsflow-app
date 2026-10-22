@@ -130,3 +130,40 @@ test('invoice month: UTC by default, China time when chosen (EM-025)', async () 
   assert.equal(lastMonth('Asia/Shanghai', new Date('2026-12-01T01:00:00Z')), '2026-11');
   assert.equal(lastMonth('UTC', new Date('2026-01-15T00:00:00Z')), '2025-12');
 });
+
+test('17TRACK: push signature must match the API key (raw body form and event/data form)', async () => {
+  const { validSignature } = await import('../src/lib/track17');
+  const { createHash } = await import('node:crypto');
+  const key = 'test-17track-key-0123456789';
+  const body = '{"event":"TRACKING_UPDATED","data":{"number":"YT1234567890","tag":"x"}}';
+  const sha = (s: string) => createHash('sha256').update(s).digest('hex');
+  assert.equal(validSignature(body, sha(`${body}/${key}`), key), true);
+  assert.equal(validSignature(body, sha(`TRACKING_UPDATED/{"number":"YT1234567890","tag":"x"}/${key}`), key), true);
+  assert.equal(validSignature(body, sha(`${body}/wrong-key-0000000000`), key), false);
+  assert.equal(validSignature(body.replace('YT', 'XX'), sha(`${body}/${key}`), key), false); // body changed after signing
+  assert.equal(validSignature(body, null, key), false);
+  assert.equal(validSignature(body, 'not-hex', key), false);
+  assert.equal(validSignature(body, sha(`${body}/${key}`), null), false); // not configured → refuse
+});
+
+test('17TRACK: tracking info is normalised (status whitelist, newest event first, dates in UTC)', async () => {
+  const { normalize } = await import('../src/lib/track17');
+  const n = normalize({
+    latest_status: { status: 'Delivered', sub_status: 'Delivered_Other' },
+    latest_event: { time_utc: '2026-10-20T08:15:00Z', description: 'Delivered, in mailbox', location: 'Paris, FR' },
+    time_metrics: { estimated_delivery_date: { from: '2026-10-19T00:00:00Z', to: '2026-10-21T00:00:00Z' } },
+    tracking: { providers: [{ events: [
+      { time_utc: '2026-10-15T02:00:00Z', description: 'Departed from Guangzhou', location: 'Guangzhou, CN' },
+      { time_utc: '2026-10-20T08:15:00Z', description: 'Delivered, in mailbox', location: 'Paris, FR' },
+      { time_utc: '2026-10-18T10:00:00Z', description: '   ' },
+    ] }] },
+  });
+  assert.equal(n.status, 'Delivered');
+  assert.equal(n.last_event, 'Delivered, in mailbox');
+  assert.equal(n.last_event_at, '2026-10-20T08:15:00.000Z');
+  assert.equal(n.eta, '2026-10-21');
+  assert.equal(n.events.length, 2);                       // blank event dropped
+  assert.equal(n.events[0].description, 'Delivered, in mailbox');
+  assert.equal(normalize({ latest_status: { status: 'DROP TABLE' } }).status, null); // unknown status never stored
+  assert.equal(normalize(null).events.length, 0);
+});

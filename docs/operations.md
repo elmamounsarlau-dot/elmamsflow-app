@@ -89,3 +89,27 @@ All three run automatically on GitHub for every push and pull request (`.github/
   Totals don't change and nothing is guessed. Those units can't ship until the owner makes an
   **allocation** (Transfers → New → *Allocate*) with evidence of where they physically are.
 - A warehouse can be closed only when it holds no stock and has no open orders, inbounds or transfers.
+
+## 7. Live carrier tracking (17TRACK, migration 0015)
+
+Every order that ships with a tracking number is followed automatically:
+
+1. **Ship it** (order page → status *In transit* + tracking number). The app registers the number with 17TRACK at once
+   (carrier auto-detected; the order id rides along as the tag).
+2. **17TRACK pushes each carrier scan** to `/api/tracking/17track`. Only pushes signed with your API key are accepted
+   (`sign` header, SHA-256). The order shows the live status, latest scan, ETA and full history — clients see it too.
+3. **Delivered closes itself**: the order turns *Delivered* with the carrier's delivery date (logged as
+   "Delivered (carrier confirmed)"). *Problem*, *Delivery failed* and *No updates* show in Tracking → Problems.
+4. **Daily safety net** (`/api/cron/tracking`, 02:00 UTC, needs `CRON_SECRET`): registers anything missed and refreshes
+   parcels that went quiet. Staff can run it any time with **Sync now** on the Tracking page, or **Refresh now** on an order.
+
+**Set up (once):**
+
+1. Create an account at <https://api.17track.net>, open **Settings → Security** and copy the **Security Key**.
+   The free plan includes a small number of tracking numbers; each parcel uses 1. Buy a plan that matches your volume.
+2. Vercel → elmamsflow-app → Settings → Environment Variables → add `TRACK17_API_KEY` (Production, Sensitive) → Redeploy.
+3. In the app: **Stores** page → *Carrier tracking · 17TRACK* shows *Connected* and the quota. Copy the **webhook URL**
+   (`https://<your app>/api/tracking/17track`) into 17TRACK → **Settings → Webhook**, version v2.4, and save.
+4. Ship one real parcel and check its order page: *Carrier updates* appears within minutes to a few hours of the first scan.
+
+The key is never stored in the database or shown in the app. Changing an order's tracking number restarts tracking for the new number.

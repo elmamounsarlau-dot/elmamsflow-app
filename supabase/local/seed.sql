@@ -100,6 +100,23 @@ select public.dispatch_transfer(public.create_transfer('11111111-1111-1111-1111-
   jsonb_build_array(jsonb_build_object('product_id', 'a0000000-0000-0000-0000-000000000001', 'qty', 30)), 'Stock for EU express orders packed in Guangzhou'), 'SF Express', 'SF1400000000001');
 select set_config('request.jwt.claim.sub', '', false);
 
+-- Live carrier tracking (as 17TRACK would have pushed it) on the parcels in transit and delivered.
+update public.orders o set
+  tracking_registered_at = o.shipped_at + interval '5 minutes',
+  tracking_checked_at = now() - interval '2 hours',
+  tracking_status = case when o.status = 'delivered' then 'Delivered' else (array['InTransit','InTransit','OutForDelivery','Exception','InfoReceived','AvailableForPickup','DeliveryFailure'])[1 + right(o.number, 2)::int % 7] end,
+  tracking_last_event = case when o.status = 'delivered' then 'Delivered, in mailbox' else (array['Arrived at destination hub','Departed from origin facility','Out for delivery','Customs inspection: held for documents','Shipment information received','Available for pickup at service point','Delivery attempted: recipient not available'])[1 + right(o.number, 2)::int % 7] end,
+  tracking_last_location = o.city || ', ' || o.country,
+  tracking_last_event_at = coalesce(o.delivered_at, now() - interval '6 hours'),
+  tracking_eta = case when o.status = 'shipped' then (now() + interval '3 days')::date end
+where o.status in ('shipped', 'delivered') and o.tracking is not null;
+insert into public.tracking_events (order_id, tracking, at, description, location)
+select o.id, o.tracking, o.shipped_at + interval '8 hours', 'Departed from origin facility', 'Ningbo, CN' from public.orders o where o.tracking_status is not null
+union all
+select o.id, o.tracking, o.shipped_at + interval '2 days', 'Arrived at destination country', o.country from public.orders o where o.tracking_status is not null
+union all
+select o.id, o.tracking, o.tracking_last_event_at, o.tracking_last_event, o.tracking_last_location from public.orders o where o.tracking_status is not null;
+
 -- Support, billing, a connected store
 insert into public.tickets (id, org_id, subject, order_ref, status, created_by, updated_at) values
   ('7a000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Parcel to Dublin shows no movement for 5 days', 'EM-20020', 'open', '00000000-0000-0000-0000-0000000000b1', now() - interval '3 hours'),

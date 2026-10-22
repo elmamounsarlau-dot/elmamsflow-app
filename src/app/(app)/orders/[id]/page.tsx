@@ -2,10 +2,10 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
-import { COUNTRIES, fmtDate, ORDER_STATUS } from '@/lib/format';
+import { CARRIER_PROBLEM, CARRIER_STATUS, COUNTRIES, fmtDate, ORDER_STATUS } from '@/lib/format';
 import { Arrow, Back, Badge, TeamOnly } from '@/components/ui';
 import { Submit } from '@/components/client';
-import { cancelOrder, reverseShipment, updateOrder } from '../actions';
+import { cancelOrder, refreshTracking, reverseShipment, updateOrder } from '../actions';
 import { rematchProducts, resendTracking } from '../../integrations/actions';
 import { getWarehouses, shippingWarehouses, whLabel } from '@/lib/warehouses';
 
@@ -17,7 +17,11 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   if (ctx.org) q = q.eq('org_id', ctx.org.id);
   const { data: o } = await q.maybeSingle();
   if (!o) notFound();
-  const [{ data: items }, whs] = await Promise.all([sb.from('order_items').select('qty, products(sku, name)').eq('order_id', id), getWarehouses()]);
+  const [{ data: items }, whs, { data: events }] = await Promise.all([
+    sb.from('order_items').select('qty, products(sku, name)').eq('order_id', id),
+    getWarehouses(),
+    o.tracking ? sb.from('tracking_events').select('at, description, location').eq('order_id', id).eq('tracking', o.tracking).order('at', { ascending: false }).limit(60) : Promise.resolve({ data: [] as { at: string | null; description: string; location: string | null }[] }),
+  ]);
   const wh = whs.find((w) => w.id === o.warehouse_id);
   const canMove = ['new', 'on_hold'].includes(o.status);
   const steps: [string, string | null, boolean][] = [
@@ -66,6 +70,33 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
             </ol>
             {o.tracking && <p className="ep-track">{o.carrier ? `${o.carrier} · ` : ''}<b>{o.tracking}</b> <a className="ep-link" target="_blank" rel="noopener noreferrer" href={`https://t.17track.net/en#nums=${encodeURIComponent(o.tracking)}`}>Track parcel <Arrow /></a></p>}
           </section>
+          {o.tracking && ['shipped', 'delivered'].includes(o.status) && (
+            <section className="ep-card" id="carrier">
+              <div className="ep-card-head">
+                <h2>Carrier updates</h2>
+                {o.tracking_status ? <Badge map={CARRIER_STATUS} value={o.tracking_status} /> : <span className="ep-muted ep-small">{o.tracking_registered_at ? 'Waiting for the first carrier scan' : o.tracking_error ? 'Not tracked' : 'Starting live tracking…'}</span>}
+              </div>
+              {o.tracking_error && !o.tracking_status && <p className="ep-note ep-note--warn">17TRACK couldn’t track this number: {o.tracking_error}</p>}
+              {o.tracking_status && CARRIER_PROBLEM.includes(o.tracking_status) && <p className="ep-note ep-note--warn">The carrier reports a problem. Check the latest update{ctx.backOffice ? ' and contact the carrier if needed' : '; our team is notified'}.</p>}
+              {o.tracking_last_event && (
+                <p className="ep-small" style={{ marginBottom: '.6rem' }}>
+                  <b>{o.tracking_last_event}</b>{o.tracking_last_location ? ` · ${o.tracking_last_location}` : ''}
+                  <br /><span className="ep-muted">{o.tracking_last_event_at ? fmtDate(o.tracking_last_event_at, true) : ''}{o.tracking_eta && o.status !== 'delivered' ? ` · Expected by ${fmtDate(o.tracking_eta)}` : ''}</span>
+                </p>
+              )}
+              {(events ?? []).length > 0 && (
+                <ol className="ep-events">
+                  {(events ?? []).map((e, i) => (
+                    <li key={i}><span className="ep-muted ep-small">{e.at ? fmtDate(e.at, true) : '—'}</span><b>{e.description}</b>{e.location && <small>{e.location}</small>}</li>
+                  ))}
+                </ol>
+              )}
+              <p className="ep-small ep-muted" style={{ marginTop: '.6rem' }}>Live from the carrier via 17TRACK{o.tracking_checked_at ? ` · last checked ${fmtDate(o.tracking_checked_at, true)}` : ''}.</p>
+              {ctx.staffRole && (
+                <form action={refreshTracking} style={{ marginTop: '.6rem' }}><input type="hidden" name="id" value={o.id} /><Submit className="ep-btn ep-btn--sm ep-btn--ghost">{o.tracking_registered_at ? 'Refresh now' : 'Start tracking now'}</Submit></form>
+              )}
+            </section>
+          )}
           <section className="ep-card">
             <h2>Items</h2>
             <table className="ep-table">
