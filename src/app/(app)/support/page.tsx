@@ -3,7 +3,7 @@ import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
 import { orgNames } from '@/lib/data';
 import { fmtDate, TICKET_STATUS } from '@/lib/format';
-import { Arrow, Badge, Empty } from '@/components/ui';
+import { Arrow, Badge, Empty, PageHead } from '@/components/ui';
 
 export const metadata = { title: 'Support' };
 
@@ -17,7 +17,7 @@ export default async function Support() {
   const list = (data ?? []).sort((a, b) => order[a.status] - order[b.status]);
   return (
     <>
-      <h1 className="ep-page-title">Support</h1>
+      <PageHead crumb="Support" title="Support" sub="Ask us anything about an order, stock or billing — answers stay here with the history." />
       <div className="ep-bar"><p className="ep-muted">{ctx.backOffice ? 'Questions from every client.' : 'Questions about an order, your stock or an invoice.'}</p>{!ctx.backOffice && ctx.can('support.reply') && <Link className="ep-btn" href="/support/new">New ticket <Arrow /></Link>}</div>
       <section className="ep-card">
         {list.length === 0 ? <Empty title="No tickets yet" text="Messages and answers stay together in one thread." /> : (

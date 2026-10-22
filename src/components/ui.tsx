@@ -51,3 +51,17 @@ export function Back({ href, children }: { href: string; children: ReactNode }) 
 export function TeamOnly() {
   return <p className="ep-teamtag">Only your team sees this</p>;
 }
+
+/** The same page header everywhere: small label, title, one line of explanation, actions on the right. */
+export function PageHead({ crumb, title, sub, children }: { crumb: string; title: ReactNode; sub?: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="ep-head">
+      <div>
+        <p className="ep-crumb">{crumb}</p>
+        <h1>{title}</h1>
+        {sub && <p>{sub}</p>}
+      </div>
+      {children && <div className="ep-actions">{children}</div>}
+    </div>
+  );
+}

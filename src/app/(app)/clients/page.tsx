@@ -1,7 +1,7 @@
 import { requirePerm } from '@/lib/guard';
 import { supabaseServer } from '@/lib/supabase/server';
 import { COUNTRIES, fmtDate } from '@/lib/format';
-import { Arrow, Empty } from '@/components/ui';
+import { Arrow, Empty, PageHead } from '@/components/ui';
 import { Submit } from '@/components/client';
 import { createClient } from './actions';
 
@@ -14,7 +14,7 @@ export default async function Clients() {
   const list = orgs ?? [];
   return (
     <>
-      <h1 className="ep-page-title">Clients</h1>
+      <PageHead crumb="Back office" title="Clients" sub="Every brand you work for, who has access, and since when." />
       <div className="ep-split">
         <section className="ep-card ep-card--grow">
           <div className="ep-card-head"><h2>All clients</h2><span className="ep-muted">{list.length} workspaces</span></div>

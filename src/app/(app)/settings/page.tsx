@@ -4,6 +4,7 @@ import { PasswordField, Submit } from '@/components/client';
 import { changePassword, saveProfile } from './actions';
 import { ThemeSwitch } from '@/components/theme';
 import { themeMode } from '@/lib/theme';
+import { PageHead } from '@/components/ui';
 
 export const metadata = { title: 'Settings' };
 
@@ -13,7 +14,7 @@ export default async function Settings() {
   const { data: p } = await sb.from('profiles').select('full_name, phone').eq('id', ctx.userId).maybeSingle();
   return (
     <>
-      <h1 className="ep-page-title">Settings</h1>
+      <PageHead crumb="Settings" title="Settings" sub="Your profile, password and how Elmamsflow looks for you." />
       <div className="ep-split">
         <section className="ep-card ep-card--grow ep-card--narrow">
           <h2>Your profile</h2>

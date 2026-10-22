@@ -1059,3 +1059,5 @@ body, .ep-card, .ep-sum-card, .ep-kpi { transition: background-color .25s var(--
 .ep-app .ep-otable td.ep-ock, .ep-app .ep-otable th.ep-ock { min-width: 0; width: 1%; padding-right: .25rem !important; }
 .ep-pop-panel .ep-row2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
 .ep-pop-panel input[type="date"] { min-width: 0; width: 100%; padding-left: .6rem; padding-right: .4rem; font-size: .8rem; }
+/* Fields scrolled into view by the browser (validation) never hide under the sticky top bar. */
+input, select, textarea { scroll-margin-top: 96px; }

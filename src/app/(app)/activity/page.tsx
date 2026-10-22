@@ -3,7 +3,7 @@ import { supabaseServer } from '@/lib/supabase/server';
 import { orgNames } from '@/lib/data';
 import { fmtDate } from '@/lib/format';
 import { ACTIVITY_LABELS } from '@/lib/log';
-import { Empty } from '@/components/ui';
+import { Empty, PageHead } from '@/components/ui';
 
 export const metadata = { title: 'Activity' };
 
@@ -15,7 +15,7 @@ export default async function Activity() {
   const [{ data }, names] = await Promise.all([q, ctx.backOffice ? orgNames() : Promise.resolve({} as Record<string, string>)]);
   return (
     <>
-      <h1 className="ep-page-title">Activity</h1>
+      <PageHead crumb="Activity" title="Activity" sub="Who did what, and when — every change to orders, stock, people and billing." />
       <section className="ep-card ep-card--narrow">
         {(data ?? []).length === 0 ? <Empty title="Nothing yet" text="Every action shows here: who did what, and when." /> : (
           <ul className="ep-activity">

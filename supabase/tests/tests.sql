@@ -321,3 +321,14 @@ insert into public.orders (org_id, customer, address, country, source, integrati
   ('11111111-1111-1111-1111-111111111111', 'S1', 'x', 'FR', 'shopify', '1e000000-0000-0000-0000-000000000001', 'gid://shopify/Order/1');
 select t.raises('store orders: same store order cannot be inserted twice',
   $q$insert into public.orders (org_id, customer, address, country, source, integration_id, external_id) values ('11111111-1111-1111-1111-111111111111', 'S1', 'x', 'FR', 'shopify', '1e000000-0000-0000-0000-000000000001', 'gid://shopify/Order/1')$q$);
+
+-- =====================================================================
+-- 5. An order without products can't be shipped (migration 0011)
+-- =====================================================================
+reset role;
+insert into public.orders (id, org_id, customer, address, country) values
+  ('0a000000-0000-0000-0000-0000000000e1', '11111111-1111-1111-1111-111111111111', 'Empty', 'x', 'FR');
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000a3');
+select t.raises('ship: an order with no products is refused', $q$select public.set_order_status('0a000000-0000-0000-0000-0000000000e1', 'shipped', 'X', 'E1')$q$);
+reset role;

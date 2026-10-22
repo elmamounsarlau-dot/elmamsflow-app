@@ -1,7 +1,7 @@
 import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
 import { fmtDate, ORDER_STATUS } from '@/lib/format';
-import { Badge, Empty, Kpi } from '@/components/ui';
+import { Badge, Empty, Kpi, PageHead } from '@/components/ui';
 
 export const metadata = { title: 'Tracking' };
 
@@ -16,7 +16,7 @@ export default async function Tracking() {
   const avg = done.length ? done.reduce((a, o) => a + (Date.parse(o.delivered_at!) - Date.parse(o.shipped_at!)) / 864e5, 0) / done.length : 0;
   return (
     <>
-      <div className="ep-title-row"><h1 className="ep-page-title">Tracking</h1>{avg > 0 && <span className="ep-st ep-st--ok">Avg. {avg.toFixed(1)} days door to door</span>}</div>
+      <PageHead crumb="Tracking" title="Tracking" sub="Parcels that left the warehouse. Statuses are set by our team when the carrier confirms — they are not live carrier data yet.">{avg > 0 && <span className="ep-st ep-st--ok">Avg. {avg.toFixed(1)} days door to door</span>}</PageHead>
       <div className="ep-kpis ep-kpis--3">
         <Kpi label="In transit" value={rows.filter((o) => o.status === 'shipped').length} />
         <Kpi label="Delivered" value={done.length} />

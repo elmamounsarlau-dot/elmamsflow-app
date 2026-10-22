@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { requireCtx } from '@/lib/session';
 import { getClients, getProducts } from '@/lib/data';
-import { Back } from '@/components/ui';
+import { Back, PageHead } from '@/components/ui';
 import { CsvImport } from './csv-import';
 
 export const metadata = { title: 'Import CSV' };
@@ -16,7 +16,7 @@ export default async function ImportPage() {
   return (
     <>
       <Back href="/inventory">Inventory</Back>
-      <h1 className="ep-page-title">Import CSV</h1>
+      <PageHead crumb="Inventory" title="Import CSV" sub="Add many products at once, or apply a warehouse stock count." />
       <CsvImport
         canCount={canCount}
         canProducts={canProducts}
