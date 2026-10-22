@@ -7,8 +7,10 @@ import { fmtDate } from '@/lib/format';
 import { Back, Empty, TeamOnly } from '@/components/ui';
 import { Submit } from '@/components/client';
 import { adjustStock, quarantineStock, reconcileStock, releaseStock, updateProduct } from '../actions';
+import Link from 'next/link';
+import { getWarehouses, shippingWarehouses, type WarehouseStock } from '@/lib/warehouses';
 
-const TYPES: Record<string, string> = { inbound: 'Received', order: 'Shipped', adjust: 'Correction', count: 'Warehouse count', quarantine: 'To quarantine', release: 'Out of quarantine' };
+const TYPES: Record<string, string> = { inbound: 'Received', order: 'Shipped', adjust: 'Correction', count: 'Warehouse count', quarantine: 'To quarantine', release: 'Out of quarantine', transfer_out: 'Transfer out', transfer_in: 'Transfer in' };
 const SOURCE: Record<string, string> = { manual: 'Entered in app', csv: 'CSV import', warehouse: 'Warehouse confirmed', reconciliation: 'Reconciliation (owner)' };
 
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
@@ -20,11 +22,27 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
   const { data } = await q.maybeSingle();
   if (!data) notFound();
   const p = data as ProductRow;
-  const [{ data: moves }, sales, { data: org }] = await Promise.all([
+  const [{ data: moves }, sales, { data: org }, whs, { data: perWh }] = await Promise.all([
     sb.from('stock_moves').select('*').eq('product_id', id).order('created_at', { ascending: false }).limit(100),
     salesByProduct(ctx, 30),
     ctx.backOffice ? sb.from('organizations').select('name').eq('id', p.org_id).maybeSingle() : Promise.resolve({ data: null }),
+    getWarehouses(),
+    sb.from('warehouse_stock').select('*').eq('product_id', id),
   ]);
+  const byWh = (perWh ?? []) as WarehouseStock[];
+  const whName = new Map(whs.map((w) => [w.id, w]));
+  const real = shippingWarehouses(whs);
+  const stocked = byWh.filter((w) => w.on_hand !== 0 || w.quarantined !== 0 || w.reserved !== 0);
+  const unalloc = p.unallocated ?? 0;
+  const whSelect = (opts: { holding?: boolean; name?: string } = {}) => (
+    <label>Warehouse
+      <select name={opts.name ?? 'warehouse_id'} required defaultValue={stocked.find((w) => w.warehouse_kind === 'physical')?.warehouse_id ?? ''}>
+        <option value="" disabled>Choose</option>
+        {real.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+        {opts.holding && unalloc !== 0 && whs.filter((w) => w.kind === 'holding').map((w) => <option key={w.id} value={w.id}>Unallocated pool</option>)}
+      </select>
+    </label>
+  );
   const r = runway(p, sales.get(p.id) ?? 0);
   const [hl, tone] = HEALTH[r.health];
   const av = available(p);
@@ -64,6 +82,25 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
         <div className="ep-bar3 ep-bar3--big"><i className="a" style={{ width: `${(av / max) * 100}%` }} /><i className="r" style={{ width: `${(p.reserved / max) * 100}%` }} /><i className="q" style={{ width: `${(p.quarantined / max) * 100}%` }} /><i className="n" style={{ width: `${(p.incoming / max) * 100}%` }} /></div>
       </section>
 
+      <section className="ep-card ep-card--flush">
+        <div className="ep-card-head ep-pad"><h2>By warehouse</h2><span className="ep-muted ep-small">{(p.in_transfer ?? 0) > 0 ? `${p.in_transfer} units on the way between warehouses` : 'Sellable = in warehouse − quarantine − reserved'}</span></div>
+        {stocked.length === 0 ? <p className="ep-pad ep-muted ep-small" style={{ paddingBottom: '1.1rem' }}>No stock in any warehouse yet.</p> : (
+          <div className="ep-tablewrap">
+            <table className="ep-table">
+              <thead><tr><th>Warehouse</th><th className="ep-right">In warehouse</th><th className="ep-right">Quarantine</th><th className="ep-right">Reserved</th><th className="ep-right">Sellable</th></tr></thead>
+              <tbody>{stocked.map((w) => (
+                <tr key={w.warehouse_id}>
+                  <td><b>{w.warehouse_kind === 'holding' ? 'Unallocated pool' : w.warehouse_name}</b>{w.warehouse_kind === 'holding' && <small>Recorded before warehouses — can’t ship until allocated</small>}</td>
+                  <td className="ep-right">{w.on_hand.toLocaleString('en')}</td><td className="ep-right">{w.quarantined}</td><td className="ep-right">{w.reserved}</td>
+                  <td className="ep-right"><b>{w.warehouse_kind === 'holding' ? '—' : Math.max(0, w.on_hand - w.quarantined - w.reserved).toLocaleString('en')}</b></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+        {unalloc !== 0 && ctx.staffRole === 'owner' && <p className="ep-pad" style={{ paddingBottom: '1.1rem' }}><Link className="ep-btn ep-btn--ghost ep-btn--sm" href="/transfers/new?kind=allocation">Allocate the {unalloc} unallocated units</Link></p>}
+      </section>
+
       {tools && (
         <div className="ep-tools">
           <section className="ep-card ep-card--team">
@@ -72,6 +109,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
             <p className="ep-small ep-muted" style={{ marginBottom: '.8rem' }}>Set aside damaged or doubtful units. They stay in the warehouse but can’t be sold.</p>
             <form action={quarantineStock} className="ep-form">
               <input type="hidden" name="product" value={p.id} /><input type="hidden" name="back" value={back} />
+              {whSelect()}
               <div className="ep-row2"><label>Units<input type="number" name="qty" min={1} max={av + p.reserved} required /></label><label>Reason<input name="reason" required placeholder="e.g. Crushed boxes" /></label></div>
               <Submit className="ep-btn ep-btn--ghost ep-btn--full">Move to quarantine</Submit>
             </form>
@@ -82,6 +120,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
               <TeamOnly />
               <form action={releaseStock} className="ep-form">
                 <input type="hidden" name="product" value={p.id} /><input type="hidden" name="back" value={back} />
+                {whSelect()}
                 <div className="ep-row2"><label>Units<input type="number" name="qty" min={1} max={p.quarantined} required /></label><label>Decision<select name="mode"><option value="release">Back to sellable</option><option value="writeoff">Write off (remove)</option></select></label></div>
                 <label>Reason<input name="reason" required placeholder="e.g. Checked OK / Unsellable" /></label>
                 <Submit className="ep-btn ep-btn--ghost ep-btn--full">Confirm</Submit>
@@ -93,6 +132,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
             <TeamOnly />
             <form action={adjustStock} className="ep-form">
               <input type="hidden" name="product" value={p.id} /><input type="hidden" name="back" value={back} />
+              {whSelect({ holding: true })}
               <div className="ep-row2"><label>Units (+ or −)<input type="number" name="qty" required placeholder="-2" /></label><label>Reason<select name="reason"><option>Cycle count</option><option>Damaged</option><option>Found</option><option>Opening stock</option><option>Other</option></select></label></div>
               <Submit className="ep-btn ep-btn--ghost ep-btn--full">Save correction</Submit>
             </form>
@@ -104,6 +144,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
               <p className="ep-small ep-muted" style={{ marginBottom: '.8rem' }}>For differences you’ve investigated. Your approval, the reason and the evidence are stored with the movement.</p>
               <form action={reconcileStock} className="ep-form">
                 <input type="hidden" name="product" value={p.id} /><input type="hidden" name="back" value={back} />
+                {whSelect({ holding: true })}
                 <div className="ep-row2"><label>Units (+ or −)<input type="number" name="qty" required /></label><label>Reference<input name="ref" maxLength={60} placeholder="e.g. EM-20005" /></label></div>
                 <label>Reason<input name="reason" required maxLength={300} /></label>
                 <label>Evidence<input name="evidence" required maxLength={500} placeholder="What proves it: count sheet, photo, message" /></label>
@@ -139,8 +180,8 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
         {(moves ?? []).length === 0 ? <Empty title="No movement yet" text="Stock arrives through inbounds and leaves with orders." /> : (
           <div className="ep-tablewrap">
             <table className="ep-table">
-              <thead><tr><th>Date</th><th>Movement</th><th>Reference</th><th>Note</th><th>Source</th><th className="ep-right">Units</th></tr></thead>
-              <tbody>{(moves ?? []).map((m) => <tr key={m.id}><td><small>{fmtDate(m.created_at, true)}</small></td><td>{TYPES[m.type] ?? m.type}</td><td>{m.ref || '—'}</td><td><small>{m.note || '—'}{m.evidence ? <><br />Evidence: {m.evidence}</> : null}</small></td><td><small>{SOURCE[m.source] ?? m.source}</small></td><td className="ep-right"><b className={['quarantine', 'release'].includes(m.type) ? 'ep-q' : m.qty < 0 ? 'ep-neg' : 'ep-pos'}>{m.qty > 0 ? '+' : ''}{m.qty}</b></td></tr>)}</tbody>
+              <thead><tr><th>Date</th><th>Movement</th><th>Warehouse</th><th>Reference</th><th>Note</th><th>Source</th><th className="ep-right">Units</th></tr></thead>
+              <tbody>{(moves ?? []).map((m) => <tr key={m.id}><td><small>{fmtDate(m.created_at, true)}</small></td><td>{TYPES[m.type] ?? m.type}</td><td>{whName.get(m.warehouse_id)?.kind === 'holding' ? 'Unallocated' : whName.get(m.warehouse_id)?.code ?? '—'}</td><td>{m.ref || '—'}</td><td><small>{m.note || '—'}{m.evidence ? <><br />Evidence: {m.evidence}</> : null}</small></td><td><small>{SOURCE[m.source] ?? m.source}</small></td><td className="ep-right"><b className={['quarantine', 'release'].includes(m.type) ? 'ep-q' : m.qty < 0 ? 'ep-neg' : 'ep-pos'}>{m.qty > 0 ? '+' : ''}{m.qty}</b></td></tr>)}</tbody>
             </table>
           </div>
         )}

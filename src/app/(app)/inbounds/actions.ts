@@ -19,7 +19,8 @@ export async function createInbound(fd: FormData) {
   if (!prods || prods.length !== items.length || prods.some((p) => p.org_id !== orgId)) redirect(withMsg('/inbounds/new', 'Those products don’t belong to this client.', 'err'));
   const eta = str(fd, 'eta');
   const { data: ib, error } = await sb.from('inbounds').insert({
-    org_id: orgId, cartons: Math.max(0, parseInt(str(fd, 'cartons'), 10) || 0), eta: /^\d{4}-\d{2}-\d{2}$/.test(eta) ? eta : null,
+    org_id: orgId, warehouse_id: /^[0-9a-f-]{36}$/.test(str(fd, 'warehouse_id')) ? str(fd, 'warehouse_id') : null,
+    cartons: Math.max(0, parseInt(str(fd, 'cartons'), 10) || 0), eta: /^\d{4}-\d{2}-\d{2}$/.test(eta) ? eta : null,
     supplier: str(fd, 'supplier') || null, notes: str(fd, 'notes') || null, created_by: ctx.userId,
   }).select('id, ref').single();
   if (error || !ib) redirect(withMsg('/inbounds/new', error?.message ?? 'Could not save.', 'err'));
@@ -42,16 +43,17 @@ export async function updateInbound(fd: FormData) {
   const counts: Record<string, number> = {};
   for (const [k, v] of fd.entries()) if (k.startsWith('rcv_')) counts[k.slice(4)] = Math.max(0, parseInt(String(v), 10) || 0);
   const sb = await supabaseServer();
+  const wh = /^[0-9a-f-]{36}$/.test(str(fd, 'warehouse_id')) ? str(fd, 'warehouse_id') : null;
   if (status === 'received') {
-    const { error } = await sb.rpc('receive_inbound', { p_inbound: id, p_counts: counts });
+    const { error } = await sb.rpc('receive_inbound', { p_inbound: id, p_counts: counts, p_warehouse: wh });
     redirect(withMsg(`/inbounds/${id}`, error ? error.message : 'Done. The units are available in stock now.', error ? 'err' : 'ok'));
   }
   if (status === 'counted') {
-    const { error } = await sb.rpc('count_inbound', { p_inbound: id, p_counts: counts });
+    const { error } = await sb.rpc('count_inbound', { p_inbound: id, p_counts: counts, p_warehouse: wh });
     redirect(withMsg(`/inbounds/${id}`, error ? (/count_inbound/.test(error.message) ? 'Run the “Counted” database update first.' : error.message) : 'Count saved. Check it, then choose “Available” to add the units to stock.', error ? 'err' : 'ok'));
   }
   if (!['announced', 'in_transit', 'receiving'].includes(status)) redirect(`/inbounds/${id}`);
-  const { data, error } = await sb.from('inbounds').update({ status }).eq('id', id).neq('status', 'received').select('org_id, ref').single();
+  const { data, error } = await sb.from('inbounds').update({ status, ...(wh ? { warehouse_id: wh } : {}) }).eq('id', id).neq('status', 'received').select('org_id, ref').single();
   if (data) await logActivity(sb, ctx.userId, data.org_id, 'inbound_status', `${data.ref} → ${status}`);
   redirect(withMsg(`/inbounds/${id}`, error ? error.message : 'Inbound updated.', error ? 'err' : 'ok'));
 }

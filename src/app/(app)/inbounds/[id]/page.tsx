@@ -6,6 +6,7 @@ import { Arrow, Back, Badge, TeamOnly } from '@/components/ui';
 import { Submit } from '@/components/client';
 import { STEPS, STEP_OF } from '@/components/steps';
 import { updateInbound } from '../actions';
+import { getWarehouses, shippingWarehouses, whLabel } from '@/lib/warehouses';
 
 const STATUS_OF_STEP = ['announced', 'in_transit', 'receiving', 'counted', 'received'];
 
@@ -17,10 +18,12 @@ export default async function InboundPage({ params }: { params: Promise<{ id: st
   if (ctx.org) q = q.eq('org_id', ctx.org.id);
   const { data: b } = await q.maybeSingle();
   if (!b) notFound();
-  const [{ data: items }, { data: logs }] = await Promise.all([
+  const [{ data: items }, { data: logs }, whs] = await Promise.all([
     sb.from('inbound_items').select('id, expected, received, products(id, sku, name)').eq('inbound_id', id),
     sb.from('activity_log').select('action, detail, created_at').eq('org_id', b.org_id).in('action', ['inbound_created', 'inbound_status', 'inbound_counted', 'inbound_received']).like('detail', `${b.ref}%`).order('created_at'),
+    getWarehouses(),
   ]);
+  const dest = whs.find((w) => w.id === b.warehouse_id);
 
   // Date each step was reached (from the activity log).
   const reached: (string | null)[] = [b.created_at, null, null, null, b.received_at];
@@ -71,6 +74,7 @@ export default async function InboundPage({ params }: { params: Promise<{ id: st
           <h2>Shipment information</h2>
           <dl className="ep-dl">
             {ctx.backOffice && <><dt>Client</dt><dd>{client}</dd></>}
+            <dt>Warehouse</dt><dd>{dest ? whLabel(dest) : <em className="ep-warn">Not chosen yet</em>}</dd>
             <dt>Supplier</dt><dd>{b.supplier || '—'}</dd>
             <dt>Reference</dt><dd className="ep-mono">{b.ref}</dd>
             <dt>Cartons</dt><dd>{b.cartons || '—'}</dd>
@@ -118,6 +122,13 @@ export default async function InboundPage({ params }: { params: Promise<{ id: st
           {receiving && (
             <div className="ep-pad">
               <div className="ep-inbound-actions">
+                <label className="ep-inbound-status">
+                  <span>Received at</span>
+                  <select name="warehouse_id" required defaultValue={dest?.kind === 'physical' ? dest.id : ''}>
+                    <option value="" disabled>Choose the warehouse</option>
+                    {shippingWarehouses(whs).map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                  </select>
+                </label>
                 <label className="ep-inbound-status">
                   <span>Move to</span>
                   <select name="status" defaultValue={b.status === 'counted' ? 'received' : order[Math.min(order.indexOf(b.status) + 1, order.length - 1)]}>

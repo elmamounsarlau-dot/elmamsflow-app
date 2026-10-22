@@ -43,6 +43,8 @@ create function t.rows(p_sql text) returns bigint language plpgsql as $$
 declare n bigint;
 begin execute 'select count(*) from (' || p_sql || ') x' into n; return n; end $$;
 
+create function t.gz() returns uuid language sql stable security definer as $$ select id from public.warehouses where code = 'GZ' $$;
+create function t.nb() returns uuid language sql stable security definer as $$ select id from public.warehouses where code = 'NB' $$;
 create function t.owner_org() returns uuid language sql security definer as $$ select id from public.organizations where kind = 'owner' limit 1 $$;
 create function t.login(p_user uuid) returns void language sql as $$ select set_config('request.jwt.claim.sub', p_user::text, false) $$;
 
@@ -72,6 +74,8 @@ insert into public.organizations (id, kind, name) values
   ('11111111-1111-1111-1111-111111111111', 'client', 'Client A'),
   ('22222222-2222-2222-2222-222222222222', 'client', 'Client B');
 
+update public.organizations set default_warehouse_id = t.gz() where id = '11111111-1111-1111-1111-111111111111';
+update public.organizations set default_warehouse_id = t.nb() where id = '22222222-2222-2222-2222-222222222222';
 insert into public.memberships (org_id, user_id, role, status)
 select o.id, u.id::uuid, u.role, 'active' from (values
   ('00000000-0000-0000-0000-0000000000a1', 'owner'),
@@ -102,8 +106,8 @@ insert into public.invoices (id, org_id, period_start, period_end, currency, sta
   ('1a000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', '2026-09-01', '2026-09-30', 'USD', 'draft', 10),
   ('1a000000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', '2026-08-01', '2026-08-31', 'USD', 'open', 20),
   ('1b000000-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', '2026-09-01', '2026-09-30', 'USD', 'open', 30);
-insert into public.inbounds (id, org_id, ref, status) values
-  ('1c000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'IB-T1', 'announced');
+insert into public.inbounds (id, org_id, ref, status, warehouse_id) values
+  ('1c000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'IB-T1', 'announced', t.gz());
 insert into public.inbound_items (id, inbound_id, product_id, expected) values
   ('1d000000-0000-0000-0000-000000000001', '1c000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 100);
 
@@ -143,7 +147,7 @@ select t.denied('writes: client A cannot delete orders',
   $q$delete from public.orders where id = '0a000000-0000-0000-0000-000000000001'$q$);
 select t.denied('writes: client A cannot delete products',
   $q$delete from public.products where id = 'a0000000-0000-0000-0000-000000000001'$q$);
-select t.raises('writes: client A cannot adjust stock', $q$select public.adjust_stock('a0000000-0000-0000-0000-000000000001', 500, 'x')$q$);
+select t.raises('writes: client A cannot adjust stock', $q$select public.adjust_stock('a0000000-0000-0000-0000-000000000001', 500, 'x', t.gz())$q$);
 select t.raises('writes: client A cannot receive an inbound', $q$select public.receive_inbound('1c000000-0000-0000-0000-000000000001', '{}'::jsonb)$q$);
 select t.raises('writes: client A cannot ship an order', $q$select public.set_order_status('0a000000-0000-0000-0000-000000000001', 'shipped')$q$);
 select t.raises('writes: client A cannot cancel client B order', $q$select public.cancel_order('0b000000-0000-0000-0000-000000000001')$q$);
@@ -219,7 +223,7 @@ select t.ok('anonymous: sees no products', t.rows('select 1 from public.products
 select t.ok('anonymous: sees no orders', t.rows('select 1 from public.orders') = 0);
 select t.ok('anonymous: sees no organisations', t.rows('select 1 from public.organizations') = 0);
 select t.ok('anonymous: sees no profiles', t.rows('select 1 from public.profiles') = 0);
-select t.raises('anonymous: cannot run warehouse functions', $q$select public.adjust_stock('a0000000-0000-0000-0000-000000000001', 5, 'x')$q$);
+select t.raises('anonymous: cannot run warehouse functions', $q$select public.adjust_stock('a0000000-0000-0000-0000-000000000001', 5, 'x', t.gz())$q$);
 reset role;
 
 -- =====================================================================
@@ -243,27 +247,27 @@ select t.denied('inbound: a received line cannot be edited afterwards',
   $q$update public.inbound_items set received = 5000 where inbound_id = '1c000000-0000-0000-0000-000000000001'$q$);
 
 select t.ok('reserved: open order (2 + 1 lines) reserves units', (select reserved from t.stock('a0000000-0000-0000-0000-000000000001')) = 2);
-select t.raises('adjust: cannot go below zero', $q$select public.adjust_stock('a0000000-0000-0000-0000-000000000001', -99, 'x')$q$);
-select t.works('quarantine: 10 units', $q$select public.quarantine_stock('a0000000-0000-0000-0000-000000000001', 10, 'damaged')$q$);
+select t.raises('adjust: cannot go below zero', $q$select public.adjust_stock('a0000000-0000-0000-0000-000000000001', -99, 'x', t.gz())$q$);
+select t.works('quarantine: 10 units', $q$select public.quarantine_stock('a0000000-0000-0000-0000-000000000001', 10, 'damaged', t.gz())$q$);
 select t.ok('quarantine: excluded from available (98 - 10 - 2 = 86)', (select available from t.stock('a0000000-0000-0000-0000-000000000001')) = 86,
   (select available from t.stock('a0000000-0000-0000-0000-000000000001'))::text);
 select t.ok('quarantine: on hand unchanged', (select on_hand from t.stock('a0000000-0000-0000-0000-000000000001')) = 98);
-select t.raises('quarantine: cannot quarantine more than on hand', $q$select public.quarantine_stock('a0000000-0000-0000-0000-000000000001', 89, 'x')$q$);
-select t.raises('quarantine: reason required', $q$select public.quarantine_stock('a0000000-0000-0000-0000-000000000001', 1, '  ')$q$);
-select t.raises('adjust: cannot drop on hand below quarantined units', $q$select public.adjust_stock('a0000000-0000-0000-0000-000000000001', -90, 'x')$q$);
-select t.works('release: 4 back to sellable', $q$select public.release_stock('a0000000-0000-0000-0000-000000000001', 4, 'checked ok')$q$);
-select t.works('release: write off 3', $q$select public.release_stock('a0000000-0000-0000-0000-000000000001', 3, 'broken', true)$q$);
+select t.raises('quarantine: cannot quarantine more than on hand', $q$select public.quarantine_stock('a0000000-0000-0000-0000-000000000001', 89, 'x', t.gz())$q$);
+select t.raises('quarantine: reason required', $q$select public.quarantine_stock('a0000000-0000-0000-0000-000000000001', 1, '  ', t.gz())$q$);
+select t.raises('adjust: cannot drop on hand below quarantined units', $q$select public.adjust_stock('a0000000-0000-0000-0000-000000000001', -90, 'x', t.gz())$q$);
+select t.works('release: 4 back to sellable', $q$select public.release_stock('a0000000-0000-0000-0000-000000000001', 4, 'checked ok', false, t.gz())$q$);
+select t.works('release: write off 3', $q$select public.release_stock('a0000000-0000-0000-0000-000000000001', 3, 'broken', true, t.gz())$q$);
 select t.ok('release: balances after release + write-off (on hand 95, quarantine 3)',
   (select on_hand = 95 and quarantined = 3 from t.stock('a0000000-0000-0000-0000-000000000001')),
   (select on_hand || '/' || quarantined from t.stock('a0000000-0000-0000-0000-000000000001')));
-select t.raises('release: cannot release more than quarantined', $q$select public.release_stock('a0000000-0000-0000-0000-000000000001', 4, 'x')$q$);
-select t.raises('adjust: zero adjustment refused', $q$select public.adjust_stock('a0000000-0000-0000-0000-000000000001', 0, 'x')$q$);
+select t.raises('release: cannot release more than quarantined', $q$select public.release_stock('a0000000-0000-0000-0000-000000000001', 4, 'x', false, t.gz())$q$);
+select t.raises('adjust: zero adjustment refused', $q$select public.adjust_stock('a0000000-0000-0000-0000-000000000001', 0, 'x', t.gz())$q$);
 select t.ok('audit: every movement records who did it',
   t.rows($q$select 1 from public.stock_moves where user_id is null$q$) = 0);
 select t.ok('audit: stock view equals the sum of movements', (select on_hand from t.stock('a0000000-0000-0000-0000-000000000001')) = t.moves_sum('a0000000-0000-0000-0000-000000000001'));
 
 -- Shipping takes stock out exactly once
-select t.works('adjust: A-2 gets 5 units', $q$select public.adjust_stock('a0000000-0000-0000-0000-000000000002', 5, 'found in count')$q$);
+select t.works('adjust: A-2 gets 5 units', $q$select public.adjust_stock('a0000000-0000-0000-0000-000000000002', 5, 'found in count', t.gz())$q$);
 select t.works('ship: order shipped', $q$select public.set_order_status('0a000000-0000-0000-0000-000000000001', 'shipped', 'YunExpress', 'YT123', 300)$q$);
 select t.ok('ship: on hand 95 - 2 = 93', (select on_hand from t.stock('a0000000-0000-0000-0000-000000000001')) = 93,
   (select on_hand from t.stock('a0000000-0000-0000-0000-000000000001'))::text);
@@ -287,10 +291,10 @@ select t.ok('ship: no negative stock created', (select on_hand from t.stock('a00
   (select on_hand from t.stock('a0000000-0000-0000-0000-000000000002'))::text);
 
 -- Stock count import: same file twice
-select t.works('count CSV: applied', $q$select public.apply_stock_count('[{"product_id":"a0000000-0000-0000-0000-000000000001","counted":90}]'::jsonb, 'count.csv', 'hash-1', current_date, 'WH')$q$);
-select t.raises('count CSV: same file refused the second time', $q$select public.apply_stock_count('[{"product_id":"a0000000-0000-0000-0000-000000000001","counted":90}]'::jsonb, 'count.csv', 'hash-1', current_date, 'WH')$q$);
+select t.works('count CSV: applied', $q$select public.apply_stock_count('[{"product_id":"a0000000-0000-0000-0000-000000000001","counted":90}]'::jsonb, 'count.csv', 'hash-1', current_date, 'WH', t.gz())$q$);
+select t.raises('count CSV: same file refused the second time', $q$select public.apply_stock_count('[{"product_id":"a0000000-0000-0000-0000-000000000001","counted":90}]'::jsonb, 'count.csv', 'hash-1', current_date, 'WH', t.gz())$q$);
 select t.ok('count CSV: on hand set to counted value', (select on_hand from t.stock('a0000000-0000-0000-0000-000000000001')) = 90);
-select t.raises('count CSV: negative count refused (whole file rolled back)', $q$select public.apply_stock_count('[{"product_id":"a0000000-0000-0000-0000-000000000002","counted":5},{"product_id":"a0000000-0000-0000-0000-000000000001","counted":-1}]'::jsonb, 'bad.csv', 'hash-2', current_date, 'WH')$q$);
+select t.raises('count CSV: negative count refused (whole file rolled back)', $q$select public.apply_stock_count('[{"product_id":"a0000000-0000-0000-0000-000000000002","counted":5},{"product_id":"a0000000-0000-0000-0000-000000000001","counted":-1}]'::jsonb, 'bad.csv', 'hash-2', current_date, 'WH', t.gz())$q$);
 select t.ok('count CSV: rollback left A-2 untouched (4)', (select on_hand from t.stock('a0000000-0000-0000-0000-000000000002')) = 4, (select on_hand from t.stock('a0000000-0000-0000-0000-000000000002'))::text);
 select t.ok('count CSV: rollback left no import record', t.rows($q$select 1 from public.imports where file_hash = 'hash-2'$q$) = 0);
 
@@ -346,9 +350,9 @@ select t.works('reconcile: warehouse ships a test order', $q$select public.set_o
 select t.raises('reconcile: warehouse cannot reverse a shipment', $q$select public.reverse_shipment('0a000000-0000-0000-0000-0000000000f1', 'test', 'evidence')$q$);
 select t.login('00000000-0000-0000-0000-0000000000a2');
 select t.raises('reconcile: a manager cannot reverse a shipment', $q$select public.reverse_shipment('0a000000-0000-0000-0000-0000000000f1', 'test', 'evidence')$q$);
-select t.raises('reconcile: a manager cannot reconcile stock', $q$select public.reconcile_stock('a0000000-0000-0000-0000-000000000002', 3, 'x', 'y')$q$);
+select t.raises('reconcile: a manager cannot reconcile stock', $q$select public.reconcile_stock('a0000000-0000-0000-0000-000000000002', 3, 'x', 'y', null, t.gz())$q$);
 select t.login('00000000-0000-0000-0000-0000000000b1');
-select t.raises('reconcile: a client admin cannot reconcile stock', $q$select public.reconcile_stock('a0000000-0000-0000-0000-000000000002', 3, 'x', 'y')$q$);
+select t.raises('reconcile: a client admin cannot reconcile stock', $q$select public.reconcile_stock('a0000000-0000-0000-0000-000000000002', 3, 'x', 'y', null, t.gz())$q$);
 select t.login('00000000-0000-0000-0000-0000000000a1');
 select t.raises('reconcile: evidence is required', $q$select public.reverse_shipment('0a000000-0000-0000-0000-0000000000f1', 'test shipment', '  ')$q$);
 select t.ok('reconcile: before reversal A-2 = 2', (select on_hand from t.stock('a0000000-0000-0000-0000-000000000002')) = 2, (select on_hand from t.stock('a0000000-0000-0000-0000-000000000002'))::text);
@@ -360,7 +364,123 @@ select t.ok('reconcile: original shipment movement kept, reversal recorded with 
   t.rows($q$select 1 from public.stock_moves where ref = (select number from public.orders where id = '0a000000-0000-0000-0000-0000000000f1') and type = 'order'$q$) = 1
   and t.rows($q$select 1 from public.stock_moves where source = 'reconciliation' and approved_by = '00000000-0000-0000-0000-0000000000a1' and evidence is not null$q$) = 1);
 select t.raises('reconcile: a reversed order cannot be reversed again', $q$select public.reverse_shipment('0a000000-0000-0000-0000-0000000000f1', 'again', 'again')$q$);
-select t.raises('reconcile: cannot reconcile below zero', $q$select public.reconcile_stock('a0000000-0000-0000-0000-000000000002', -50, 'x', 'y')$q$);
-select t.works('reconcile: owner records a receipt with evidence', $q$select public.reconcile_stock('a0000000-0000-0000-0000-000000000002', 3, 'Units received without inbound', 'Warehouse photo WeChat 22 Oct', 'EM-TEST')$q$);
+select t.raises('reconcile: cannot reconcile below zero', $q$select public.reconcile_stock('a0000000-0000-0000-0000-000000000002', -50, 'x', 'y', null, t.gz())$q$);
+select t.works('reconcile: owner records a receipt with evidence', $q$select public.reconcile_stock('a0000000-0000-0000-0000-000000000002', 3, 'Units received without inbound', 'Warehouse photo WeChat 22 Oct', 'EM-TEST', t.gz())$q$);
 select t.ok('reconcile: balance 7 = sum of movements', (select on_hand from t.stock('a0000000-0000-0000-0000-000000000002')) = 7 and t.moves_sum('a0000000-0000-0000-0000-000000000002') = 7);
 reset role;
+
+-- =====================================================================
+-- 7. Warehouses (migration 0014): balances per warehouse, shipping, transfers, legacy stock
+-- =====================================================================
+reset role;
+insert into public.products (id, org_id, sku, name, hs_code, customs_value) values
+  ('a0000000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'A-3', 'Product A3', '630790', 2),
+  ('a0000000-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'A-4', 'Legacy pooled', '630790', 2);
+insert into public.inbounds (id, org_id, ref, warehouse_id) values ('1c000000-0000-0000-0000-0000000000a3', '11111111-1111-1111-1111-111111111111', 'IB-NB', t.nb());
+insert into public.inbound_items (id, inbound_id, product_id, expected) values ('1d000000-0000-0000-0000-0000000000a3', '1c000000-0000-0000-0000-0000000000a3', 'a0000000-0000-0000-0000-000000000003', 50);
+insert into public.orders (id, org_id, customer, address, country) values ('0a000000-0000-0000-0000-0000000000a3', '11111111-1111-1111-1111-111111111111', 'WH order', 'x', 'FR');
+insert into public.order_items (order_id, product_id, qty) values ('0a000000-0000-0000-0000-0000000000a3', 'a0000000-0000-0000-0000-000000000003', 10);
+create function t.wh(p_product uuid, p_code text) returns int language sql security definer as $$
+  select coalesce((select on_hand from public.warehouse_stock where product_id = p_product and warehouse_code = p_code), 0) $$;
+grant execute on function t.wh to authenticated;
+select t.ok('warehouses: Guangzhou, Ningbo and the unallocated pool exist', (select count(*) from public.warehouses) = 3);
+select t.ok('warehouses: new orders take the client default warehouse (Guangzhou)', (select warehouse_id from public.orders where id = '0a000000-0000-0000-0000-0000000000a3') = t.gz());
+select t.ok('warehouses: every stock movement has a warehouse', (select count(*) from public.stock_moves where warehouse_id is null) = 0);
+
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000a3');
+select t.works('warehouses: receive 50 units at Ningbo', $q$select public.receive_inbound('1c000000-0000-0000-0000-0000000000a3', '{"1d000000-0000-0000-0000-0000000000a3": 50}'::jsonb)$q$);
+select t.ok('warehouses: Ningbo 50, Guangzhou 0', t.wh('a0000000-0000-0000-0000-000000000003', 'NB') = 50 and t.wh('a0000000-0000-0000-0000-000000000003', 'GZ') = 0);
+select t.raises('warehouses: an order at Guangzhou cannot ship stock that is only in Ningbo',
+  $q$select public.set_order_status('0a000000-0000-0000-0000-0000000000a3', 'shipped', 'X', 'W1')$q$);
+select t.raises('warehouses: cannot receive into the unallocated pool',
+  $q$select public.adjust_stock('a0000000-0000-0000-0000-000000000003', 5, 'x', (select id from public.warehouses where code = 'UNALLOC'))$q$);
+select t.ok('warehouses: assign the order to Ningbo', (select public.assign_order_warehouse(array['0a000000-0000-0000-0000-0000000000a3'::uuid], t.nb())) = 1);
+select t.works('warehouses: ship from Ningbo', $q$select public.set_order_status('0a000000-0000-0000-0000-0000000000a3', 'shipped', 'X', 'W1')$q$);
+select t.ok('warehouses: Ningbo 40 after shipping 10', t.wh('a0000000-0000-0000-0000-000000000003', 'NB') = 40);
+select t.ok('warehouses: a shipped order can no longer change warehouse', (select public.assign_order_warehouse(array['0a000000-0000-0000-0000-0000000000a3'::uuid], t.gz())) = 0);
+
+-- Transfers
+select t.works('transfer: create Ningbo → Guangzhou 15 units',
+  $q$select public.create_transfer('11111111-1111-1111-1111-111111111111', t.nb(), t.gz(), '[{"product_id":"a0000000-0000-0000-0000-000000000003","qty":15}]'::jsonb, 'Rebalance for EU orders')$q$);
+select t.ok('transfer: nothing moves until it is dispatched', t.wh('a0000000-0000-0000-0000-000000000003', 'NB') = 40);
+select t.works('transfer: dispatch', $q$select public.dispatch_transfer((select id from public.transfers where reason = 'Rebalance for EU orders'), 'SF Express', 'SF123')$q$);
+select t.ok('transfer: out of Ningbo, not yet in Guangzhou, shown as in transfer',
+  t.wh('a0000000-0000-0000-0000-000000000003', 'NB') = 25 and t.wh('a0000000-0000-0000-0000-000000000003', 'GZ') = 0
+  and (select in_transfer from public.product_stock where id = 'a0000000-0000-0000-0000-000000000003') = 15);
+select t.raises('transfer: cannot be dispatched twice', $q$select public.dispatch_transfer((select id from public.transfers where reason = 'Rebalance for EU orders'), null, null)$q$);
+select t.raises('transfer: cannot receive more than sent',
+  $q$select public.receive_transfer((select id from public.transfers where reason = 'Rebalance for EU orders'), jsonb_build_object((select id::text from public.transfer_items where qty = 15), 16))$q$);
+select t.works('transfer: receive 14 of 15 (1 lost on the way)',
+  $q$select public.receive_transfer((select id from public.transfers where reason = 'Rebalance for EU orders'), jsonb_build_object((select id::text from public.transfer_items where qty = 15), 14))$q$);
+select t.ok('transfer: Guangzhou 14, Ningbo 25, nothing in transit',
+  t.wh('a0000000-0000-0000-0000-000000000003', 'GZ') = 14 and t.wh('a0000000-0000-0000-0000-000000000003', 'NB') = 25
+  and (select in_transfer from public.product_stock where id = 'a0000000-0000-0000-0000-000000000003') = 0);
+select t.ok('transfer: the missing unit is recorded', t.rows($q$select 1 from public.activity_log where action = 'transfer_received' and detail like '%1 units missing%'$q$) = 1);
+select t.raises('transfer: cannot be received twice', $q$select public.receive_transfer((select id from public.transfers where reason = 'Rebalance for EU orders'), null)$q$);
+
+-- Reserved stock and quarantine can't be sent away
+reset role;
+insert into public.orders (id, org_id, customer, address, country, warehouse_id) values ('0a000000-0000-0000-0000-0000000000a4', '11111111-1111-1111-1111-111111111111', 'NB reserve', 'x', 'FR', t.nb());
+insert into public.order_items (order_id, product_id, qty) values ('0a000000-0000-0000-0000-0000000000a4', 'a0000000-0000-0000-0000-000000000003', 20);
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000a3');
+select t.works('transfer: request 10 more from Ningbo', $q$select public.create_transfer('11111111-1111-1111-1111-111111111111', t.nb(), t.gz(), '[{"product_id":"a0000000-0000-0000-0000-000000000003","qty":10}]'::jsonb, 'Second move')$q$);
+select t.raises('transfer: units reserved for orders at Ningbo cannot be sent (25 on hand − 20 reserved = 5 free)',
+  $q$select public.dispatch_transfer((select id from public.transfers where reason = 'Second move'), null, null)$q$);
+select t.works('transfer: a transfer that has not left can be cancelled', $q$select public.cancel_transfer((select id from public.transfers where reason = 'Second move'), 'not needed')$q$);
+select t.works('quarantine: 3 units at Guangzhou', $q$select public.quarantine_stock('a0000000-0000-0000-0000-000000000003', 3, 'dented', t.gz())$q$);
+select t.raises('quarantine: cannot quarantine in Ningbo what is only in Guangzhou', $q$select public.quarantine_stock('a0000000-0000-0000-0000-000000000003', 26, 'x', t.nb())$q$);
+
+-- Holds block packing and shipping
+reset role;
+insert into public.orders (id, org_id, customer, address, country, status, hold_reason, warehouse_id) values ('0a000000-0000-0000-0000-0000000000a5', '11111111-1111-1111-1111-111111111111', 'Held', 'x', 'FR', 'on_hold', 'Customer asked to wait', t.nb());
+insert into public.order_items (order_id, product_id, qty) values ('0a000000-0000-0000-0000-0000000000a5', 'a0000000-0000-0000-0000-000000000003', 1);
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000a3');
+select t.raises('holds: an order on hold cannot be shipped without releasing it', $q$select public.set_order_status('0a000000-0000-0000-0000-0000000000a5', 'shipped', 'X', 'H1')$q$);
+
+-- Client and permission rules
+select t.login('00000000-0000-0000-0000-0000000000b1');
+select t.raises('transfer: a client cannot create transfers', $q$select public.create_transfer('11111111-1111-1111-1111-111111111111', t.nb(), t.gz(), '[{"product_id":"a0000000-0000-0000-0000-000000000003","qty":1}]'::jsonb, 'x')$q$);
+select t.raises('warehouses: a client cannot assign warehouses', $q$select public.assign_order_warehouse(array['0a000000-0000-0000-0000-0000000000a4'::uuid], t.gz())$q$);
+select t.ok('transfer: client A sees its own transfers', t.rows('select 1 from public.transfers') >= 2);
+select t.login('00000000-0000-0000-0000-0000000000c1');
+select t.ok('transfer: client B cannot see client A transfers', t.rows('select 1 from public.transfers') = 0);
+select t.ok('warehouses: client B cannot see client A per-warehouse stock', t.rows($q$select 1 from public.warehouse_stock where org_id = '11111111-1111-1111-1111-111111111111'$q$) = 0);
+select t.login('00000000-0000-0000-0000-0000000000a3');
+select t.raises('transfer: a client B product cannot travel on a client A transfer',
+  $q$select public.create_transfer('11111111-1111-1111-1111-111111111111', t.nb(), t.gz(), '[{"product_id":"b0000000-0000-0000-0000-000000000001","qty":1}]'::jsonb, 'x')$q$);
+
+-- Stock recorded before warehouses: kept in the unallocated pool until the owner allocates it with evidence
+reset role;
+-- Simulates a receipt recorded before 0014 (the migration labels those rows as unallocated; triggers don't run on them).
+set session_replication_role = replica;
+insert into public.stock_moves (product_id, org_id, warehouse_id, qty, type, ref, user_id)
+values ('a0000000-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', (select id from public.warehouses where code = 'UNALLOC'), 30, 'inbound', 'PRE-WH', null);
+set session_replication_role = origin;
+insert into public.orders (id, org_id, customer, address, country, warehouse_id) values ('0a000000-0000-0000-0000-0000000000a6', '11111111-1111-1111-1111-111111111111', 'Legacy', 'x', 'FR', t.gz());
+insert into public.order_items (order_id, product_id, qty) values ('0a000000-0000-0000-0000-0000000000a6', 'a0000000-0000-0000-0000-000000000004', 5);
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000a3');
+select t.raises('legacy: unallocated stock cannot ship', $q$select public.set_order_status('0a000000-0000-0000-0000-0000000000a6', 'shipped', 'X', 'L1')$q$);
+select t.raises('legacy: the warehouse team cannot allocate the pool',
+  $q$select public.create_transfer('11111111-1111-1111-1111-111111111111', (select id from public.warehouses where code = 'UNALLOC'), t.gz(), '[{"product_id":"a0000000-0000-0000-0000-000000000004","qty":30}]'::jsonb, 'x', 'allocation', 'y')$q$);
+select t.login('00000000-0000-0000-0000-0000000000a1');
+select t.raises('legacy: an allocation needs evidence',
+  $q$select public.create_transfer('11111111-1111-1111-1111-111111111111', (select id from public.warehouses where code = 'UNALLOC'), t.gz(), '[{"product_id":"a0000000-0000-0000-0000-000000000004","qty":30}]'::jsonb, 'Physical count', 'allocation', ' ')$q$);
+select t.raises('legacy: cannot allocate more than is in the pool',
+  $q$select public.create_transfer('11111111-1111-1111-1111-111111111111', (select id from public.warehouses where code = 'UNALLOC'), t.gz(), '[{"product_id":"a0000000-0000-0000-0000-000000000004","qty":31}]'::jsonb, 'Physical count', 'allocation', 'GZ count sheet 22 Oct')$q$);
+select t.works('legacy: owner allocates 30 units to Guangzhou with evidence',
+  $q$select public.create_transfer('11111111-1111-1111-1111-111111111111', (select id from public.warehouses where code = 'UNALLOC'), t.gz(), '[{"product_id":"a0000000-0000-0000-0000-000000000004","qty":30}]'::jsonb, 'Physical count', 'allocation', 'GZ count sheet 22 Oct')$q$);
+select t.ok('legacy: pool 0, Guangzhou 30, total unchanged (30)',
+  t.wh('a0000000-0000-0000-0000-000000000004', 'UNALLOC') = 0 and t.wh('a0000000-0000-0000-0000-000000000004', 'GZ') = 30
+  and (select on_hand from public.product_stock where id = 'a0000000-0000-0000-0000-000000000004') = 30);
+select t.ok('legacy: allocation recorded with approver and evidence', t.rows($q$select 1 from public.stock_moves where type = 'transfer_in' and source = 'reconciliation' and approved_by = '00000000-0000-0000-0000-0000000000a1' and evidence = 'GZ count sheet 22 Oct'$q$) = 1);
+select t.login('00000000-0000-0000-0000-0000000000a3');
+select t.works('legacy: once allocated, the order ships from Guangzhou', $q$select public.set_order_status('0a000000-0000-0000-0000-0000000000a6', 'shipped', 'X', 'L1')$q$);
+reset role;
+select t.ok('invariant: per-warehouse balances add up to each product total',
+  not exists (select 1 from public.product_stock p
+              where p.on_hand <> coalesce((select sum(on_hand) from public.warehouse_stock w where w.product_id = p.id), 0)));
+select t.ok('invariant: no warehouse balance is negative', not exists (select 1 from public.warehouse_stock where on_hand < 0 or quarantined < 0 or quarantined > on_hand));

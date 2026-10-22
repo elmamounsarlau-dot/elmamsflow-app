@@ -75,3 +75,17 @@ All three run automatically on GitHub for every push and pull request (`.github/
   It does not change the order in Shopify/WooCommerce.
 - **Reconcile stock** (product page → *Reconcile*): a + or − correction with a reference, a reason and the evidence
   (count sheet, warehouse message, photo). Stored with your approval.
+
+## 6. Warehouses (migration 0014)
+
+- Stock is kept per product **and per warehouse** (Guangzhou `GZ`, Ningbo `NB`; add more on **Warehouses**).
+  Every inbound, movement, order and count names its warehouse. An order ships only from free stock
+  (on hand − quarantine − reserved) at its own warehouse; otherwise it's refused.
+- Clients have a default warehouse (client page → *Ships from by default*); new orders start there.
+  Staff can change it per order (order page, or several at once on Orders → *Set warehouse*) until packed.
+- **Transfers** move stock between warehouses in two steps: *sent* (leaves the sender) and *received*
+  (counted in at the receiver; shortages are recorded). Cancelling before dispatch moves nothing.
+- **Existing stock**: 0014 puts every movement recorded before it in *Unallocated (before warehouses)*.
+  Totals don't change and nothing is guessed. Those units can't ship until the owner makes an
+  **allocation** (Transfers → New → *Allocate*) with evidence of where they physically are.
+- A warehouse can be closed only when it holds no stock and has no open orders, inbounds or transfers.

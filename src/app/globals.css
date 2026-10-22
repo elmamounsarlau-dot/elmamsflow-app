@@ -1135,3 +1135,12 @@ b a, .ep-pending-list a { text-decoration: underline; text-underline-offset: 2px
   #orders-table .col-email, #orders-table .col-channel, #orders-table .col-carrier { display: none; }
 }
 @media (max-width: 900px) { .ep-home-side { align-items: flex-start; width: 100%; } }
+
+/* Touch targets: every checkbox, radio and disclosure row at least 24 px (WCAG 2.5.8), 44 px rows on touch. */
+@media (pointer: coarse), (max-width: 900px) {
+  input[type='checkbox'], input[type='radio'], .ep-form input[type='checkbox'], .ep-form input[type='radio'] { width: 24px; height: 24px; min-width: 24px; }
+  .ep-fixlink { padding: .3rem .65rem; min-height: 24px; }
+  details > summary { min-height: 44px; display: flex; align-items: center; }
+  .ep-bulk-wh { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+}
+.ep-bulk-wh select { min-height: 36px; }

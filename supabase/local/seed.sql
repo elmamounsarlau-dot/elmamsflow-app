@@ -8,9 +8,9 @@ insert into auth.users (id, email, last_sign_in_at, email_confirmed_at, raw_user
   ('00000000-0000-0000-0000-0000000000b3', 'new@atlas.local.test', null, null, '{"full_name":"Nadia New"}'),
   ('00000000-0000-0000-0000-0000000000c1', 'admin@nova.local.test', now(), now(), '{"full_name":"Nora Nova"}');
 
-insert into public.organizations (id, kind, name, country, phone) values
-  ('11111111-1111-1111-1111-111111111111', 'client', 'Atlas Home Goods', 'FR', '+33 1 23 45 67 89'),
-  ('22222222-2222-2222-2222-222222222222', 'client', 'Nova Skincare Ltd', 'GB', '+44 20 7946 0000');
+insert into public.organizations (id, kind, name, country, phone, default_warehouse_id) values
+  ('11111111-1111-1111-1111-111111111111', 'client', 'Atlas Home Goods', 'FR', '+33 1 23 45 67 89', (select id from public.warehouses where code = 'NB')),
+  ('22222222-2222-2222-2222-222222222222', 'client', 'Nova Skincare Ltd', 'GB', '+44 20 7946 0000', (select id from public.warehouses where code = 'GZ'));
 
 insert into public.memberships (org_id, user_id, role, status)
 select o.id, u.id::uuid, u.role, 'active' from (values
@@ -44,6 +44,7 @@ insert into public.inbounds (id, org_id, ref, status, cartons, eta, supplier, re
   ('1c000000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'IB-0003', 'in_transit', 12, current_date + 6, 'Ningbo Textile Co.', null, now() - interval '5 days'),
   ('1c000000-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'IB-0004', 'announced', 4, current_date - 3, 'Yiwu Home Deco', null, now() - interval '12 days'),
   ('1c000000-0000-0000-0000-000000000005', '22222222-2222-2222-2222-222222222222', 'IB-0005', 'counted', 6, current_date - 1, 'Guangzhou Beauty Lab', null, now() - interval '9 days');
+update public.inbounds b set warehouse_id = o.default_warehouse_id from public.organizations o where o.id = b.org_id;
 insert into public.inbound_items (inbound_id, product_id, expected, received)
 select '1c000000-0000-0000-0000-000000000001', id, 300, case when sku = 'ATL-010' then 0 else 300 end from public.products where org_id = '11111111-1111-1111-1111-111111111111';
 insert into public.inbound_items (inbound_id, product_id, expected, received)
@@ -51,11 +52,16 @@ select '1c000000-0000-0000-0000-000000000002', id, 500, 500 from public.products
 insert into public.inbound_items (inbound_id, product_id, expected) select '1c000000-0000-0000-0000-000000000003', id, 150 from public.products where sku in ('ATL-001', 'ATL-002', 'ATL-005');
 insert into public.inbound_items (inbound_id, product_id, expected) select '1c000000-0000-0000-0000-000000000004', id, 80 from public.products where sku in ('ATL-007');
 insert into public.inbound_items (inbound_id, product_id, expected, received) select '1c000000-0000-0000-0000-000000000005', id, 200, 196 from public.products where sku in ('NOVA-001', 'NOVA-003');
-insert into public.stock_moves (product_id, org_id, qty, type, ref, user_id, source, created_at)
-select i.product_id, b.org_id, i.received, 'inbound', b.ref, '00000000-0000-0000-0000-0000000000a3', 'warehouse', b.received_at
+insert into public.stock_moves (product_id, org_id, qty, type, ref, user_id, source, created_at, warehouse_id)
+select i.product_id, b.org_id, i.received, 'inbound', b.ref, '00000000-0000-0000-0000-0000000000a3', 'warehouse', b.received_at, b.warehouse_id
 from public.inbound_items i join public.inbounds b on b.id = i.inbound_id where b.status = 'received' and i.received > 0;
-insert into public.stock_moves (product_id, org_id, qty, type, note, user_id, created_at)
-select id, org_id, 12, 'quarantine', 'Crushed cartons on arrival', '00000000-0000-0000-0000-0000000000a3', now() - interval '20 days' from public.products where sku = 'ATL-003';
+insert into public.stock_moves (product_id, org_id, qty, type, note, user_id, created_at, warehouse_id)
+select id, org_id, 12, 'quarantine', 'Crushed cartons on arrival', '00000000-0000-0000-0000-0000000000a3', now() - interval '20 days', (select id from public.warehouses where code = 'NB') from public.products where sku = 'ATL-003';
+-- Stock recorded before warehouses existed (what 0014 does to old movements): 40 units, place unknown.
+set session_replication_role = replica;
+insert into public.stock_moves (product_id, org_id, qty, type, ref, user_id, source, created_at, warehouse_id)
+select id, org_id, 40, 'inbound', 'LEGACY', '00000000-0000-0000-0000-0000000000a3', 'warehouse', now() - interval '60 days', public.holding_warehouse() from public.products where sku = 'ATL-004';
+set session_replication_role = origin;
 
 -- Orders: 45 across every status and hold reason, from Shopify and manual
 insert into public.orders (id, org_id, customer, email, phone, address, city, zip, country, service, status, hold_reason, carrier, tracking, weight_g, source, store_ref, created_at, shipped_at, delivered_at)
@@ -84,9 +90,15 @@ from public.orders o
 join lateral (select id from public.products where org_id = o.org_id and sku <> 'ATL-010' order by md5(o.id::text || id::text) limit 1 + (substr(o.id::text, 33, 4)::int % 2)) p on true
 where o.number not in (select number from public.orders where hold_reason like 'Not in Elmamsflow%');
 update public.orders set stock_out = true where status in ('shipped', 'delivered');
-insert into public.stock_moves (product_id, org_id, qty, type, ref, user_id, created_at)
-select i.product_id, o.org_id, -i.qty, 'order', o.number, '00000000-0000-0000-0000-0000000000a3', o.shipped_at
+insert into public.stock_moves (product_id, org_id, qty, type, ref, user_id, created_at, warehouse_id)
+select i.product_id, o.org_id, -i.qty, 'order', o.number, '00000000-0000-0000-0000-0000000000a3', o.shipped_at, o.warehouse_id
 from public.order_items i join public.orders o on o.id = i.order_id where o.stock_out;
+-- Two open orders not yet given a warehouse, and one transfer on the way Ningbo → Guangzhou (through the real functions).
+update public.orders set warehouse_id = null where number in (select number from public.orders where status = 'new' order by number limit 2);
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select public.dispatch_transfer(public.create_transfer('11111111-1111-1111-1111-111111111111', (select id from public.warehouses where code = 'NB'), (select id from public.warehouses where code = 'GZ'),
+  jsonb_build_array(jsonb_build_object('product_id', 'a0000000-0000-0000-0000-000000000001', 'qty', 30)), 'Stock for EU express orders packed in Guangzhou'), 'SF Express', 'SF1400000000001');
+select set_config('request.jwt.claim.sub', '', false);
 
 -- Support, billing, a connected store
 insert into public.tickets (id, org_id, subject, order_ref, status, created_by, updated_at) values

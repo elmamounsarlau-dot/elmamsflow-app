@@ -55,7 +55,14 @@ export async function updateClient(fd: FormData) {
   const ctx = await manager();
   const id = str(fd, 'org');
   const admin = supabaseAdmin();
-  await admin.from('organizations').update({ name: str(fd, 'company'), phone: str(fd, 'phone') || null, country: str(fd, 'country') || null, notes: str(fd, 'notes') || null }).eq('id', id).eq('kind', 'client');
+  const wh = str(fd, 'default_warehouse');
+  let defaultWh: string | null = null;
+  if (wh) {
+    const { data: w } = await admin.from('warehouses').select('id').eq('id', wh).eq('kind', 'physical').eq('active', true).maybeSingle();
+    if (!w) redirect(withMsg(`/clients/${id}`, 'Choose an active warehouse.', 'err'));
+    defaultWh = w.id;
+  }
+  await admin.from('organizations').update({ name: str(fd, 'company'), phone: str(fd, 'phone') || null, country: str(fd, 'country') || null, notes: str(fd, 'notes') || null, default_warehouse_id: defaultWh }).eq('id', id).eq('kind', 'client');
   await logActivity(admin, ctx.userId, id, 'client_updated');
   redirect(withMsg(`/clients/${id}`, 'Client details saved.'));
 }

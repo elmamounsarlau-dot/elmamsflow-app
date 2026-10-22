@@ -15,7 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (ctx.backOffice) {
     items.push({ href: '/', label: 'Overview', icon: 'home' });
     if (ctx.can('clients.view')) items.push({ href: '/clients', label: 'Clients', icon: 'clients' });
-    items.push({ href: '/orders', label: 'Orders', icon: 'orders' }, { href: '/inventory', label: 'Inventory', icon: 'inventory' }, { href: '/inbounds', label: 'Stock inbounds', icon: 'inbounds' }, { href: '/tracking', label: 'Tracking', icon: 'tracking' });
+    items.push({ href: '/orders', label: 'Orders', icon: 'orders' }, { href: '/inventory', label: 'Inventory', icon: 'inventory' }, { href: '/inbounds', label: 'Stock inbounds', icon: 'inbounds' }, { href: '/transfers', label: 'Transfers', icon: 'transfers' }, { href: '/warehouses', label: 'Warehouses', icon: 'warehouses' }, { href: '/tracking', label: 'Tracking', icon: 'tracking' });
     if (ctx.can('support.reply')) items.push({ href: '/support', label: 'Support', icon: 'support' });
     if (ctx.can('invoices.view')) items.push({ href: '/invoices', label: 'Invoices', icon: 'invoices' });
     if (ctx.can('integrations.manage')) items.push({ href: '/integrations', label: 'Stores', icon: 'stores' });
