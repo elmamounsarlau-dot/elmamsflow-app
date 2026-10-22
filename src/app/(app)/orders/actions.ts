@@ -6,6 +6,7 @@ import { supabaseServer } from '@/lib/supabase/server';
 import { itemsFromForm } from '@/lib/data';
 import { logActivity } from '@/lib/log';
 import { str, withMsg } from '@/lib/format';
+import { pushTracking } from '@/lib/integrations/service';
 
 export async function createOrder(fd: FormData) {
   const ctx = await getCtx();
@@ -39,7 +40,10 @@ export async function updateOrder(fd: FormData) {
     p_order: id, p_status: str(fd, 'status'), p_carrier: str(fd, 'carrier') || null, p_tracking: str(fd, 'tracking') || null,
     p_weight: Number.isFinite(weight) ? weight : null, p_hold_reason: str(fd, 'hold_reason') || null,
   });
-  redirect(withMsg(`/orders/${id}`, error ? error.message : 'Order saved.', error ? 'err' : 'ok'));
+  if (error) redirect(withMsg(`/orders/${id}`, error.message, 'err'));
+  // Shipped with a tracking number: tell the client's store (Shopify / WooCommerce).
+  const pushed = ['shipped', 'delivered'].includes(str(fd, 'status')) ? await pushTracking(id).catch((e) => (e as Error).message) : null;
+  redirect(withMsg(`/orders/${id}`, pushed === 'ok' ? 'Order saved. Tracking sent to the client’s store.' : pushed ? `Order saved, but tracking couldn’t be sent to the store: ${pushed}` : 'Order saved.', pushed && pushed !== 'ok' ? 'warn' : 'ok'));
 }
 
 export async function cancelOrder(fd: FormData) {

@@ -17,7 +17,8 @@ export type Perm =
   | 'support.reply'
   | 'activity.view'
   | 'invoices.view'
-  | 'billing.manage';
+  | 'billing.manage'
+  | 'integrations.manage';
 
 /** Every permission, in the order shown. `staffOnly` ones can only be given to Elmamsflow team roles. */
 export const PERMS: { key: Perm; label: string; staffOnly?: boolean }[] = [
@@ -34,6 +35,7 @@ export const PERMS: { key: Perm; label: string; staffOnly?: boolean }[] = [
   { key: 'support.reply', label: 'Support tickets' },
   { key: 'activity.view', label: 'Activity log' },
   { key: 'invoices.view', label: 'See invoices and pay them' },
+  { key: 'integrations.manage', label: 'Connect Shopify / WooCommerce stores' },
   { key: 'billing.manage', label: 'Price lists, create invoices, record payments', staffOnly: true },
 ];
 

@@ -11,12 +11,13 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
   const ctx = await requireCtx();
   const sp = await searchParams;
   const sb = await supabaseServer();
-  let q = sb.from('orders').select('id, number, store_ref, customer, city, country, created_at, status, org_id, carrier, service, order_items(qty)').order('created_at', { ascending: false }).limit(300);
+  let q = sb.from('orders').select('id, number, store_ref, customer, city, country, created_at, status, org_id, carrier, service, source, order_items(qty)').order('created_at', { ascending: false }).limit(300);
   if (ctx.org) q = q.eq('org_id', ctx.org.id);
   const [{ data }, names] = await Promise.all([q, ctx.backOffice ? orgNames() : Promise.resolve({} as Record<string, string>)]);
   const all = data ?? [];
   const f = sp.s && ORDER_STATUS[sp.s] ? sp.s : '';
-  const list = f ? all.filter((o) => o.status === f) : all;
+  const src = ['shopify', 'woocommerce', 'manual'].includes(sp.src ?? '') ? sp.src : '';
+  const list = all.filter((o) => (!f || o.status === f) && (!src || o.source === src));
   return (
     <>
       <div className="ep-title-row"><h1 className="ep-page-title">Orders</h1><span className="ep-muted ep-small">{all.length.toLocaleString('en')} orders</span></div>
@@ -36,7 +37,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
             <tbody>
               {list.map((o) => (
                 <tr key={o.id} data-href={`/orders/${o.id}`}>
-                  <td><b>#{o.number}</b>{o.store_ref && <small>{o.store_ref}</small>}</td>
+                  <td><b>#{o.number}</b>{o.store_ref && <small>{o.source !== 'manual' && <span className={`ep-store-chip ep-store-chip--${o.source}`}>{o.source === 'shopify' ? 'Shopify' : 'Woo'}</span>} {o.store_ref}</small>}</td>
                   {ctx.backOffice && <td>{names[o.org_id]}</td>}
                   <td>{o.customer}</td>
                   <td className="ep-right">{(o.order_items as { qty: number }[]).reduce((a, i) => a + i.qty, 0)}</td>

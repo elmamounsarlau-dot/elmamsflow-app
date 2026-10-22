@@ -842,3 +842,30 @@ body, .ep-card, .ep-sum-card, .ep-kpi { transition: background-color .25s var(--
 }
 .ep-tabbar a.is-on { color: var(--nav-on-fg) !important; border-bottom-color: var(--nav-mark) !important; }
 .ep-range a i { background: var(--nav-mark) !important; box-shadow: 0 0 0 3px rgba(255,145,0,.2) !important; }
+
+/* ===== Stores (Shopify / WooCommerce) ===== */
+.ep-connect-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+.ep-connect { display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: center; padding: 1.15rem 1.25rem; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); color: inherit !important; transition: border-color .18s var(--ease), transform .18s var(--ease), box-shadow .18s var(--ease); }
+.ep-connect:hover { border-color: var(--line-hover); transform: translateY(-1px); box-shadow: 0 14px 30px -22px rgba(10,60,140,.5); }
+.ep-connect b { display: block; font: 600 1.05rem var(--display); color: var(--navy); }
+.ep-connect small { font-size: .82rem; }
+.ep-store-mark { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 13px; font: 700 1.2rem var(--display); color: #fff; }
+.ep-store-mark--shopify { background: linear-gradient(135deg, #5E8E3E, #95BF47); }
+.ep-store-mark--woocommerce { background: linear-gradient(135deg, #7F54B3, #A47BD6); }
+.ep-store-chip { display: inline-block; padding: .08rem .45rem; border-radius: 6px; font-size: .68rem; font-weight: 700; letter-spacing: .02em; vertical-align: 1px; }
+.ep-store-chip--shopify { background: rgba(149,191,71,.18); color: #4E7A2C; }
+.ep-store-chip--woocommerce { background: rgba(127,84,179,.16); color: #6B44A0; }
+:root[data-theme="dark"] .ep-store-chip--shopify { color: #B6DB7A; } :root[data-theme="dark"] .ep-store-chip--woocommerce { color: #C9AAF0; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ep-store-chip--shopify { color: #B6DB7A; } :root:not([data-theme="light"]) .ep-store-chip--woocommerce { color: #C9AAF0; } }
+.ep-how { list-style: none; counter-reset: h; margin: .9rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.ep-how li { counter-increment: h; display: grid; gap: .3rem; padding: 1rem; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); }
+.ep-how li::before { content: counter(h); display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: var(--sel-grad, var(--blue)); color: #fff; font-weight: 700; font-size: .8rem; }
+.ep-how b { color: var(--navy); font-size: .9rem; }
+.ep-how span { font-size: .8rem; color: var(--muted); }
+.ep-events { list-style: none; margin: 0; padding: 0 1.3rem 1rem; }
+.ep-events li { display: grid; grid-template-columns: 112px 1fr auto; gap: .8rem; align-items: center; padding: .6rem 0; border-bottom: 1px solid var(--line-soft); font-size: .86rem; color: var(--navy); }
+.ep-events li:last-child { border-bottom: 0; }
+.ep-events .ep-st { justify-self: start; }
+.ep-scopes { display: inline-block; margin-top: .3rem; padding: .25rem .45rem; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); font: 500 .74rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--navy); word-break: break-all; }
+.ep-form label small { font-weight: 400; color: var(--muted); font-size: .76rem; }
+@media (max-width: 1000px) { .ep-connect-grid, .ep-how { grid-template-columns: minmax(0, 1fr); } .ep-events li { grid-template-columns: 1fr; gap: .2rem; } }

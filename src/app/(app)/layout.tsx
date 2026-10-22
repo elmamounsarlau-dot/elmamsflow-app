@@ -18,11 +18,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     items.push({ href: '/orders', label: 'Orders', icon: 'orders' }, { href: '/inventory', label: 'Inventory', icon: 'inventory' }, { href: '/inbounds', label: 'Stock inbounds', icon: 'inbounds' }, { href: '/tracking', label: 'Tracking', icon: 'tracking' });
     if (ctx.can('support.reply')) items.push({ href: '/support', label: 'Support', icon: 'support' });
     if (ctx.can('invoices.view')) items.push({ href: '/invoices', label: 'Invoices', icon: 'invoices' });
+    if (ctx.can('integrations.manage')) items.push({ href: '/integrations', label: 'Stores', icon: 'stores' });
     if (ctx.can('team.manage')) items.push({ href: '/team', label: 'Team', icon: 'team' });
     if (ctx.can('activity.view')) items.push({ href: '/activity', label: 'Activity', icon: 'activity' });
   } else {
     items.push({ href: '/', label: 'Home', icon: 'home' }, { href: '/orders', label: 'Orders', icon: 'orders' }, { href: '/inventory', label: 'Inventory', icon: 'inventory' }, { href: '/inbounds', label: 'Stock inbounds', icon: 'inbounds' }, { href: '/tracking', label: 'Tracking', icon: 'tracking' });
     if (ctx.can('invoices.view')) items.push({ href: '/invoices', label: 'Invoices', icon: 'invoices' });
+    if (ctx.can('integrations.manage')) items.push({ href: '/integrations', label: 'Stores', icon: 'stores' });
     items.push({ href: '/support', label: 'Support', icon: 'support' });
     if ((ctx.clientRole && ctx.can('team.manage')) || ctx.viewingAs) items.push({ href: '/team', label: 'Team', icon: 'team' });
   }

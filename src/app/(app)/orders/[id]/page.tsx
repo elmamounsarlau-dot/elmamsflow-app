@@ -6,6 +6,7 @@ import { COUNTRIES, fmtDate, ORDER_STATUS } from '@/lib/format';
 import { Arrow, Back, Badge, TeamOnly } from '@/components/ui';
 import { Submit } from '@/components/client';
 import { cancelOrder, updateOrder } from '../actions';
+import { rematchProducts, resendTracking } from '../../integrations/actions';
 
 export default async function OrderPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireCtx();
@@ -33,7 +34,20 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
           <p className="ep-muted">{ctx.backOffice ? `${(o.organizations as unknown as { name: string })?.name} · ` : ''}Created {fmtDate(o.created_at, true)}{o.store_ref ? ` · ${o.store_ref}` : ''}</p>
         </div>
       </div>
-      {o.status === 'on_hold' && o.hold_reason && <p className="ep-note ep-note--warn">On hold: {o.hold_reason}</p>}
+      {o.status === 'on_hold' && o.hold_reason && (
+        <div className="ep-fixbar" style={{ cursor: 'default' }}>
+          <span><b>On hold:</b> {o.hold_reason}</span>
+          {o.external_lines && <form action={rematchProducts}><input type="hidden" name="order" value={o.id} /><Submit className="ep-btn ep-btn--sm">Match products again</Submit></form>}
+        </div>
+      )}
+      {o.source !== 'manual' && (
+        <p className="ep-note" style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
+          <span>From your {o.source === 'shopify' ? 'Shopify' : 'WooCommerce'} store{o.store_ref ? ` · ${o.store_ref}` : ''}.{' '}
+            {o.pushed_at ? `Tracking sent to the store on ${fmtDate(o.pushed_at, true)}.` : o.push_error ? `Tracking couldn’t be sent: ${o.push_error}` : ['shipped', 'delivered'].includes(o.status) ? 'Tracking will be sent to the store.' : 'Tracking goes back to the store when it ships.'}
+          </span>
+          {o.push_error && ctx.staffRole && ctx.can('orders.warehouse') && <form action={resendTracking}><input type="hidden" name="order" value={o.id} /><Submit className="ep-btn ep-btn--sm ep-btn--ghost">Send again</Submit></form>}
+        </p>
+      )}
       <div className="ep-split">
         <div className="ep-card--grow">
           <div className="ep-track-head">
