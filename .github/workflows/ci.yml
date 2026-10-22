@@ -85,22 +85,23 @@ jobs:
           for i in $(seq 1 60); do curl -sf -o /dev/null http://127.0.0.1:3000/login && break; sleep 1; done
       - run: OUT=e2e-results node e2e/audit.mjs
       - name: Live tracking (signed webhook, forged webhook, auto-delivery, daily sync) against a fake 17TRACK
-        run: node e2e/tracking.mjs
+        run: |
+          set -o pipefail; node e2e/tracking.mjs 2>&1 | tee /tmp/tracking.log || { echo "::error title=tracking::$(grep -E -A10 'not ok|Error|assert' /tmp/tracking.log | tr '\n' ' ' | cut -c1-1800)"; exit 1; }
       - name: Store address changes reach held orders (needs a fresh seed)
         run: |
           bash supabase/local/up.sh > /dev/null
           bash supabase/local/wait-rest.sh
-          npm run test:stack
+          set -o pipefail; npm run test:stack 2>&1 | tee /tmp/store-sync.log || { echo "::error title=store-sync::$(grep -E -A10 'not ok|Error|assert' /tmp/store-sync.log | tr '\n' ' ' | cut -c1-1800)"; exit 1; }
       - name: A client imports orders from a CSV (preview, confirm, no duplicates, errors block)
         run: |
           bash supabase/local/up.sh > /dev/null
           bash supabase/local/wait-rest.sh
-          node e2e/orders-import.mjs
+          set -o pipefail; node e2e/orders-import.mjs 2>&1 | tee /tmp/orders-import.log || { echo "::error title=orders-import::$(grep -E -A10 'not ok|Error|assert' /tmp/orders-import.log | tr '\n' ' ' | cut -c1-1800)"; exit 1; }
       - name: Shipper role ships with tracking + label (and sees nothing else)
         run: |
           bash supabase/local/up.sh > /dev/null
           bash supabase/local/wait-rest.sh
-          node e2e/shipper.mjs
+          set -o pipefail; node e2e/shipper.mjs 2>&1 | tee /tmp/shipper.log || { echo "::error title=shipper::$(grep -E -A10 'not ok|Error|assert' /tmp/shipper.log | tr '\n' ' ' | cut -c1-1800)"; exit 1; }
       - if: always()
         uses: actions/upload-artifact@v4
         with:
