@@ -13,7 +13,7 @@ export const metadata = { title: 'Stores' };
 export default async function Stores() {
   const ctx = await requireCtx();
   if (!ctx.can('integrations.manage')) redirect('/?err=' + encodeURIComponent('You don’t have access to stores.'));
-  let q = supabaseAdmin().from('integrations').select('id, org_id, kind, store_url, name, status, last_sync_at, last_error, orders_imported, created_at').order('created_at', { ascending: false });
+  let q = supabaseAdmin().from('integrations').select('id, org_id, kind, store_url, name, status, last_sync_at, last_error, orders_imported, created_at').neq('status', 'disconnected').order('created_at', { ascending: false });
   if (ctx.org) q = q.eq('org_id', ctx.org.id);
   const [{ data }, names] = await Promise.all([q, ctx.backOffice ? orgNames() : Promise.resolve({} as Record<string, string>)]);
   const list = (data ?? []) as Integration[];

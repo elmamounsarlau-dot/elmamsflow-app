@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 import { getCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 import { itemsFromForm } from '@/lib/data';
 import { logActivity } from '@/lib/log';
 import { str, withMsg } from '@/lib/format';
@@ -18,11 +19,16 @@ export async function createInbound(fd: FormData) {
   if (!prods || prods.length !== items.length || prods.some((p) => p.org_id !== orgId)) redirect(withMsg('/inbounds/new', 'Those products don’t belong to this client.', 'err'));
   const eta = str(fd, 'eta');
   const { data: ib, error } = await sb.from('inbounds').insert({
-    org_id: orgId, cartons: parseInt(str(fd, 'cartons'), 10) || 0, eta: /^\d{4}-\d{2}-\d{2}$/.test(eta) ? eta : null,
+    org_id: orgId, cartons: Math.max(0, parseInt(str(fd, 'cartons'), 10) || 0), eta: /^\d{4}-\d{2}-\d{2}$/.test(eta) ? eta : null,
     supplier: str(fd, 'supplier') || null, notes: str(fd, 'notes') || null, created_by: ctx.userId,
   }).select('id, ref').single();
   if (error || !ib) redirect(withMsg('/inbounds/new', error?.message ?? 'Could not save.', 'err'));
-  await sb.from('inbound_items').insert(items.map((i) => ({ inbound_id: ib.id, product_id: i.product_id, expected: i.qty })));
+  const { error: itemsErr } = await sb.from('inbound_items').insert(items.map((i) => ({ inbound_id: ib.id, product_id: i.product_id, expected: i.qty })));
+  if (itemsErr) {
+    // Never leave an inbound without its products.
+    await supabaseAdmin().from('inbounds').delete().eq('id', ib.id);
+    redirect(withMsg('/inbounds/new', `The inbound wasn’t saved: ${itemsErr.message}`, 'err'));
+  }
   await logActivity(sb, ctx.userId, orgId, 'inbound_created', `${ib.ref} · ${items.reduce((a, b) => a + b.qty, 0)} units`);
   redirect(withMsg(`/inbounds/${ib.id}`, `Inbound ${ib.ref} announced. Write this reference on every carton.`));
 }

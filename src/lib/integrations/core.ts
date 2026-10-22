@@ -46,7 +46,7 @@ export const STORE_STATUS: Record<string, [string, string]> = { active: ['Connec
 export const KIND_LABEL: Record<Kind, string> = { shopify: 'Shopify', woocommerce: 'WooCommerce' };
 
 export async function loadIntegration(id: string) {
-  const { data } = await supabaseAdmin().from('integrations').select('*').eq('id', id).maybeSingle();
+  const { data } = await supabaseAdmin().from('integrations').select('*').eq('id', id).neq('status', 'disconnected').maybeSingle();
   return (data as Integration) ?? null;
 }
 

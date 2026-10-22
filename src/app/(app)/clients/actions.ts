@@ -23,7 +23,7 @@ export async function createClient(fd: FormData) {
   const admin = supabaseAdmin();
   const { data: org, error } = await admin.from('organizations').insert({ kind: 'client', name: company, country: str(fd, 'country') || null, phone: str(fd, 'phone') || null }).select('id, code').single();
   if (error || !org) redirect(withMsg('/clients', error?.message ?? 'Could not create the client.', 'err'));
-  const inv = await inviteToOrg({ email, name, orgId: org.id, role: 'admin', invitedBy: ctx.userId });
+  const inv = await inviteToOrg({ email, name, orgId: org.id, role: 'admin', invitedBy: ctx.userId, byStaff: true });
   await logActivity(admin, ctx.userId, org.id, 'client_created', `${company} (${email})`);
   const msg = !inv.ok
     ? `${company} is created and ${email} is added as admin, but ${inv.error}.`
@@ -45,7 +45,7 @@ export async function inviteClientMember(fd: FormData) {
   if (!/^\S+@\S+\.\S+$/.test(email)) redirect(withMsg(`/clients/${orgId}`, 'Add a valid email.', 'err'));
   const { roles } = await getOrgRoles(orgId, false);
   const role = roles.some((r) => r.key === str(fd, 'role')) ? str(fd, 'role') : 'admin';
-  const inv = await inviteToOrg({ email, name: str(fd, 'name'), orgId, role, invitedBy: ctx.userId });
+  const inv = await inviteToOrg({ email, name: str(fd, 'name'), orgId, role, invitedBy: ctx.userId, byStaff: true });
   await logActivity(supabaseAdmin(), ctx.userId, orgId, 'member_invited', `${email} as ${role}`);
   redirect(withLink(withMsg(`/clients/${orgId}`, inv.ok ? (inv.emailed ? `Invitation emailed to ${email}. Their private link is also here to copy.` : `${email} now has access.`) : `${email} is added, but ${inv.error}.`, inv.ok ? 'ok' : 'warn'), inv.link, email));
 }
@@ -84,7 +84,13 @@ export async function memberLink(fd: FormData) {
   if (!m || !allowed) redirect(withMsg(back, 'You don’t have access to that.', 'err'));
   const { data: p } = await admin.from('profiles').select('email').eq('id', userId).single();
   if (!p?.email) redirect(withMsg(back, 'No email for this person.', 'err'));
+  // A sign-in link opens that person's account. It is only ever shown for someone who has never signed in
+  // and who belongs to this workspace alone — never for an active account, a team member or the owner.
+  const { data: u } = await admin.auth.admin.getUserById(userId);
+  const { count: elsewhere } = await admin.from('memberships').select('id', { count: 'exact', head: true }).eq('user_id', userId).neq('org_id', orgId);
+  const linkable = !u.user?.last_sign_in_at && !elsewhere;
   if (str(fd, 'mode') === 'copy') {
+    if (!linkable) redirect(withMsg(back, 'For safety, a copyable link is only made for people who haven’t signed in yet. Use “Email link” — they’ll get a password reset email.', 'warn'));
     const r = await copyableSignInLink(userId, p.email, orgId, ctx.userId);
     await logActivity(admin, ctx.userId, orgId, 'link_copied', p.email);
     if (!r.ok) redirect(withMsg(back, r.error ?? 'Could not create link', 'err'));
@@ -92,5 +98,5 @@ export async function memberLink(fd: FormData) {
   }
   const r = await emailSignInLink(userId, p.email, orgId, ctx.userId);
   await logActivity(admin, ctx.userId, orgId, 'link_emailed', p.email);
-  redirect(withLink(withMsg(back, r.ok ? `A new link was emailed to ${p.email}.` : `Email failed: ${r.error}`, r.ok ? 'ok' : 'warn'), r.link, p.email));
+  redirect(withLink(withMsg(back, r.ok ? `A new link was emailed to ${p.email}.` : `Email failed: ${r.error}`, r.ok ? 'ok' : 'warn'), linkable ? r.link : undefined, p.email));
 }

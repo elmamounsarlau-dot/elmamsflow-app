@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { requireCtx } from '@/lib/session';
 import { supabaseAdmin } from '@/lib/supabase/admin';
@@ -18,7 +19,7 @@ export default async function StorePage({ params }: { params: Promise<{ id: stri
   if (!ctx.can('integrations.manage')) redirect('/');
   const { id } = await params;
   const admin = supabaseAdmin();
-  const { data } = await admin.from('integrations').select('id, org_id, kind, store_url, name, status, settings, last_sync_at, last_error, orders_imported, created_at, organizations(name)').eq('id', id).maybeSingle();
+  const { data } = await admin.from('integrations').select('id, org_id, kind, store_url, name, status, settings, last_sync_at, last_error, orders_imported, created_at, organizations(name)').eq('id', id).neq('status', 'disconnected').maybeSingle();
   if (!data || (!ctx.staffRole && ctx.org?.id !== data.org_id) || (ctx.org && ctx.org.id !== data.org_id)) notFound();
   const i = data as unknown as Integration & { organizations: { name: string } | null };
   const [{ data: events }, { count: held }, { count: today }] = await Promise.all([
@@ -39,7 +40,7 @@ export default async function StorePage({ params }: { params: Promise<{ id: stri
           <p>{i.store_url.replace(/^https:\/\//, '')} · connected {fmtDate(i.created_at)}</p>
         </div>
         <div className="ep-actions">
-          <a className="ep-btn ep-btn--ghost" href={`/orders?src=${i.kind}`}>See its orders</a>
+          <Link className="ep-btn ep-btn--ghost" href={`/orders?src=${i.kind}`}>See its orders</Link>
         </div>
       </div>
 
@@ -53,7 +54,7 @@ export default async function StorePage({ params }: { params: Promise<{ id: stri
       <div className="ep-sum">
         <div className="ep-sum-card"><small>Orders imported</small><b>{i.orders_imported.toLocaleString('en')}</b><span>Since it was connected</span></div>
         <div className="ep-sum-card"><small>Last 24 hours</small><b>{today ?? 0}</b><span>New orders from this store</span></div>
-        <a href="/orders?s=on_hold" className={`ep-sum-card${held ? ' is-warn' : ''}`}><small>On hold</small><b>{held ?? 0}</b><span>{held ? 'Unknown SKU or customs info missing' : 'Nothing blocked'}</span></a>
+        <Link href={`/orders?t=attention&src=${i.kind}`} className={`ep-sum-card${held ? ' is-warn' : ''}`}><small>On hold</small><b>{held ?? 0}</b><span>{held ? 'Unknown SKU or customs info missing' : 'Nothing blocked'}</span></Link>
         <div className="ep-sum-card"><small>Last full check</small><b className="ep-sum-money">{i.last_sync_at ? fmtDate(i.last_sync_at, true) : '—'}</b><span>New orders also arrive live</span></div>
       </div>
 
@@ -113,7 +114,7 @@ export default async function StorePage({ params }: { params: Promise<{ id: stri
           </section>
         </div>
       </div>
-      <p className="ep-small ep-muted ep-foot-note">Need help connecting? <a href="/support/new">Ask us in Support</a> <Arrow /></p>
+      <p className="ep-small ep-muted ep-foot-note">Need help connecting? <Link href="/support/new">Ask us in Support</Link> <Arrow /></p>
     </>
   );
 }

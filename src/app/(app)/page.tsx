@@ -3,7 +3,7 @@ import { PendingLink } from '@/components/access';
 import type { AccessLink } from '@/lib/invite';
 import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
-import { getProducts, orgNames } from '@/lib/data';
+import { allRows, getProducts, orgNames } from '@/lib/data';
 import { fmtDays, HEALTH, RANGE_LABEL, RANGES, rangeOf, runway, salesByProduct } from '@/lib/insights';
 import { countryName, fmtDate, greeting, ORDER_STATUS } from '@/lib/format';
 import { ACTIVITY_LABELS } from '@/lib/log';
@@ -39,10 +39,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     ctx.backOffice ? orgNames() : Promise.resolve({} as Record<string, string>),
     salesByProduct(ctx, 30),
     salesByProduct(ctx, days),
-    scope(sb.from('orders').select('created_at, country').gte('created_at', new Date(now - chartDays * 864e5).toISOString()).limit(20000)),
+    allRows(() => scope(sb.from('orders').select('created_at, country').gte('created_at', new Date(now - chartDays * 864e5).toISOString()).order('created_at').order('id'))).then((data) => ({ data })),
     headCount('orders').gte('created_at', prevStart).lt('created_at', start),
-    scope(sb.from('orders').select('shipped_at, delivered_at')).gte('delivered_at', start).not('shipped_at', 'is', null).limit(5000),
-    scope(sb.from('orders').select('id, number, customer, country, city, created_at, status, org_id, hold_reason, order_items(product_id)').in('status', OPEN).order('created_at').limit(2000)),
+    allRows(() => scope(sb.from('orders').select('shipped_at, delivered_at')).gte('delivered_at', start).not('shipped_at', 'is', null).order('id')).then((data) => ({ data })),
+    allRows(() => scope(sb.from('orders').select('id, number, customer, country, city, created_at, status, org_id, hold_reason, order_items(product_id)').in('status', OPEN).order('created_at').order('id'))).then((data) => ({ data })),
     scope(sb.from('inbounds').select('id, ref, status, eta, supplier, org_id, inbound_items(expected)').neq('status', 'received').order('eta', { ascending: true, nullsFirst: false }).limit(50)),
     headCount('tickets').eq('status', 'open'),
     scope(sb.from('orders').select('id, number, customer, city, country, created_at, status, org_id, hold_reason').order('created_at', { ascending: false }).limit(6)),

@@ -137,7 +137,8 @@ export async function disconnectStore(fd: FormData) {
       for (const h of hooks.filter((h) => h.delivery_url === webhookUrl(i))) await wooCall(i, `/webhooks/${h.id}`, { method: 'DELETE', query: { force: 'true' } });
     } catch { /* store unreachable: nothing more to do */ }
   }
-  await supabaseAdmin().from('integrations').delete().eq('id', i.id);
+  // Keep the row (without credentials): reconnecting the same store reuses it, so its orders are never imported twice.
+  await supabaseAdmin().from('integrations').update({ status: 'disconnected', secret_enc: '', token_enc: null, token_expires_at: null, last_error: null }).eq('id', i.id);
   await logActivity(supabaseAdmin(), ctx.userId, i.org_id, 'store_disconnected', `${KIND_LABEL[i.kind]} · ${i.name ?? i.store_url}`);
   redirect(withMsg('/integrations', `${i.name ?? i.store_url} is disconnected. Orders already imported stay in Elmamsflow.${i.kind === 'shopify' ? ' You can also uninstall the app in Shopify.' : ''}`));
 }

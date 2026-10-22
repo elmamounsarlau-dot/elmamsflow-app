@@ -31,6 +31,7 @@ export default async function PrintInvoice({ params }: { params: Promise<{ id: s
       <article className="pi-page">
         <header className="pi-head">
           <div>
+            {/* eslint-disable-next-line @next/next/no-img-element -- printed page: a plain image prints reliably */}
             <img src="/brand/logo.png" alt="Elmamsflow" className="pi-logo" />
             <p className="pi-from"><b>{s?.company || 'Elmamsflow'}</b>{s?.address ? <><br />{s.address}</> : null}{s?.tax_id ? <><br />Tax ID {s.tax_id}</> : null}{s?.email ? <><br />{s.email}</> : null}</p>
           </div>

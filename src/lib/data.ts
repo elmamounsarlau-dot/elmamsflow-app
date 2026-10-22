@@ -11,18 +11,36 @@ export type ProductRow = {
 /** Sellable now: on hand − quarantined − reserved for open orders. */
 export const available = (p: Pick<ProductRow, 'on_hand' | 'quarantined' | 'reserved'>) => Math.max(0, p.on_hand - p.quarantined - p.reserved);
 
+/**
+ * Every matching row, read 1,000 at a time. The database API returns at most 1,000 rows per request,
+ * so a plain query silently stops there — wrong totals once a client has more products or orders than that.
+ * `make` must build the query with a stable order.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function allRows<T>(make: () => any, cap = 100_000): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; from < cap; from += 1000) {
+    const { data, error } = await make().range(from, from + 999);
+    if (error) throw new Error(error.message);
+    out.push(...((data ?? []) as T[]));
+    if (!data || data.length < 1000) break;
+  }
+  return out;
+}
+
 export async function getProducts(ctx: Ctx) {
   const sb = await supabaseServer();
-  let q = sb.from('product_stock').select('*').order('name');
-  if (ctx.org) q = q.eq('org_id', ctx.org.id);
-  const { data } = await q;
-  return (data ?? []) as ProductRow[];
+  return allRows<ProductRow>(() => {
+    let q = sb.from('product_stock').select('*').order('name').order('id');
+    if (ctx.org) q = q.eq('org_id', ctx.org.id);
+    return q;
+  });
 }
 
 export async function getClients() {
   const sb = await supabaseServer();
-  const { data } = await sb.from('organizations').select('id, name, code, status, country, created_at').eq('kind', 'client').order('created_at', { ascending: false });
-  return data ?? [];
+  return allRows<{ id: string; name: string; code: string | null; status: string; country: string | null; created_at: string }>(() =>
+    sb.from('organizations').select('id, name, code, status, country, created_at').eq('kind', 'client').order('created_at', { ascending: false }).order('id'));
 }
 
 export async function orgNames(): Promise<Record<string, string>> {

@@ -11,12 +11,18 @@ type Result = { ok: boolean; existing: boolean; emailed: boolean; link?: string;
  * The emailed invitation and the copyable link are two separate links: both work, using one does not break the other.
  * The membership is always saved, even if the email fails, so the owner can still copy the link or resend.
  */
-export async function inviteToOrg(opts: { email: string; name: string; orgId: string; role: string; invitedBy: string }): Promise<Result> {
+export async function inviteToOrg(opts: { email: string; name: string; orgId: string; role: string; invitedBy: string; byStaff: boolean }): Promise<Result> {
   const admin = supabaseAdmin();
   const email = opts.email.toLowerCase();
   const { data: existing } = await admin.from('profiles').select('id').eq('email', email).maybeSingle();
 
   if (existing) {
+    // Someone who already belongs to another workspace (or to the Elmamsflow team) can only be added by Elmamsflow,
+    // so a client can never pull another company's user — or a team member — into its own workspace.
+    if (!opts.byStaff) {
+      const { count } = await admin.from('memberships').select('id', { count: 'exact', head: true }).eq('user_id', existing.id).neq('org_id', opts.orgId);
+      if (count) return { ok: false, existing: true, emailed: false, error: 'this email can’t be added from here. Ask Elmamsflow to add them for you' };
+    }
     const { data: u } = await admin.auth.admin.getUserById(existing.id);
     const pending = !u.user?.last_sign_in_at;
     const { error } = await admin.from('memberships').upsert(

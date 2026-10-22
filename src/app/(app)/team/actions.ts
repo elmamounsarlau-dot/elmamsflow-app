@@ -44,7 +44,7 @@ export async function inviteMember(fd: FormData) {
   const email = str(fd, 'email').toLowerCase();
   const role = str(fd, 'role');
   if (!/^\S+@\S+\.\S+$/.test(email) || !s.roles.includes(role)) redirect(withMsg('/team', 'Add a valid email and choose a role.', 'err'));
-  const r = await inviteToOrg({ email, name: str(fd, 'name'), orgId: s.orgId, role, invitedBy: ctx.userId });
+  const r = await inviteToOrg({ email, name: str(fd, 'name'), orgId: s.orgId, role, invitedBy: ctx.userId, byStaff: !!ctx.staffRole });
   await logActivity(supabaseAdmin(), ctx.userId, s.staff ? null : s.orgId, 'member_invited', `${email} as ${role}`);
   const msg = !r.ok ? withMsg('/team', `${email} is added, but ${r.error}.`, 'warn') : withMsg('/team', r.emailed ? `Invitation emailed to ${email}.` : `${email} already had an account and now has access.`);
   // The owner (and managers) also get the private link on screen; client admins only get the email.

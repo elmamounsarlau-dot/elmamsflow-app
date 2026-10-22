@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 import { getCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 import { itemsFromForm } from '@/lib/data';
 import { logActivity } from '@/lib/log';
 import { str, withMsg } from '@/lib/format';
@@ -25,7 +26,12 @@ export async function createOrder(fd: FormData) {
     status: missing ? 'on_hold' : 'new', hold_reason: missing ? 'A product is missing its HS code or customs value' : null, created_by: ctx.userId,
   }).select('id, number').single();
   if (error || !order) redirect(withMsg('/orders/new', error?.message ?? 'Could not create the order.', 'err'));
-  await sb.from('order_items').insert(items.map((i) => ({ ...i, order_id: order.id })));
+  const { error: itemsErr } = await sb.from('order_items').insert(items.map((i) => ({ ...i, order_id: order.id })));
+  if (itemsErr) {
+    // Never leave an order without its products.
+    await supabaseAdmin().from('orders').delete().eq('id', order.id);
+    redirect(withMsg('/orders/new', `The order wasn’t saved: ${itemsErr.message}`, 'err'));
+  }
   await logActivity(sb, ctx.userId, orgId, 'order_created', `#${order.number} · ${str(fd, 'customer')}, ${country}`);
   redirect(withMsg(`/orders/${order.id}`, missing ? `#${order.number} created and put on hold: add the HS code and customs value to its products.` : `#${order.number} created.`, missing ? 'warn' : 'ok'));
 }

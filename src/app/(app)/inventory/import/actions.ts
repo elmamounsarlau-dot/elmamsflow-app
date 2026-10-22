@@ -55,12 +55,13 @@ export async function importProducts(payload: string): Promise<Result> {
   const { data: existing } = await sb.from('products').select('sku').eq('org_id', orgId).in('sku', rows.map((r) => r.sku));
   const have = new Set((existing ?? []).map((e) => e.sku));
   const fresh = rows.filter((r, i) => !have.has(r.sku) && rows.findIndex((x) => x.sku === r.sku) === i);
-  const { error: impErr } = await sb.rpc('record_import', { p_kind: 'products', p_org: orgId, p_file: String(data.file).slice(0, 200), p_hash: String(data.hash).slice(0, 128), p_rows: rows.length, p_summary: { added: fresh.length, skipped: rows.length - fresh.length } });
-  if (impErr) return { ok: false, message: impErr.message };
   if (fresh.length) {
+    // All new products in one statement: either every one is added or none is.
     const { error } = await sb.from('products').insert(fresh);
-    if (error) return { ok: false, message: error.message };
+    if (error) return { ok: false, message: error.code === '23505' ? 'Two SKUs in the file (or one already here) differ only by upper/lower case. Fix them and try again.' : error.message };
   }
+  // Remember the file afterwards, so a failed attempt can simply be retried.
+  await sb.rpc('record_import', { p_kind: 'products', p_org: orgId, p_file: String(data.file).slice(0, 200), p_hash: String(data.hash).slice(0, 128), p_rows: rows.length, p_summary: { added: fresh.length, skipped: rows.length - fresh.length } });
   await logActivity(sb, ctx.userId, orgId, 'products_imported', `${fresh.length} added from ${data.file}`);
   return { ok: true, message: `${fresh.length} product${fresh.length === 1 ? '' : 's'} added. ${rows.length - fresh.length} skipped (SKU already exists).` };
 }

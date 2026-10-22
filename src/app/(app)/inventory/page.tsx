@@ -39,10 +39,10 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
   ]);
 
   // Connected stores this person can import products from.
-  let storesQ = supabaseAdmin().from('integrations').select('id, kind, name, org_id').neq('status', 'paused');
+  let storesQ = supabaseAdmin().from('integrations').select('id, kind, name, org_id').in('status', ['active', 'error']);
   if (ctx.org) storesQ = storesQ.eq('org_id', ctx.org.id);
   const { data: storeRows } = ctx.can('products.edit') ? await storesQ : { data: [] };
-  const stores = ((storeRows ?? []) as { id: string; kind: 'shopify' | 'woocommerce'; name: string | null; org_id: string }[]).filter((st) => ctx.org || ctx.backOffice);
+  const stores = ((storeRows ?? []) as { id: string; kind: 'shopify' | 'woocommerce'; name: string | null; org_id: string }[]);
   const canConnect = ctx.can('integrations.manage') && !!ctx.org;
   const storeImport = (
     <>

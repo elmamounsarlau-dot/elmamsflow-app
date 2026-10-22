@@ -1,6 +1,6 @@
 import 'server-only';
 import { supabaseServer } from './supabase/server';
-import { available, type ProductRow } from './data';
+import { allRows, available, type ProductRow } from './data';
 import type { Ctx } from './session';
 
 /** Units shipped per product over the last `days` days (from stock leaving with orders). */
@@ -8,11 +8,13 @@ export async function salesByProduct(ctx: Ctx, days: number, until?: Date) {
   const sb = await supabaseServer();
   const end = until ?? new Date();
   const since = new Date(end.getTime() - days * 864e5).toISOString();
-  let q = sb.from('stock_moves').select('product_id, qty').eq('type', 'order').gte('created_at', since).lt('created_at', end.toISOString()).limit(20000);
-  if (ctx.org) q = q.eq('org_id', ctx.org.id);
-  const { data } = await q;
+  const data = await allRows<{ product_id: string; qty: number }>(() => {
+    let q = sb.from('stock_moves').select('product_id, qty').eq('type', 'order').gte('created_at', since).lt('created_at', end.toISOString()).order('id');
+    if (ctx.org) q = q.eq('org_id', ctx.org.id);
+    return q;
+  });
   const m = new Map<string, number>();
-  for (const r of (data ?? []) as { product_id: string; qty: number }[]) m.set(r.product_id, (m.get(r.product_id) ?? 0) + Math.abs(r.qty));
+  for (const r of data) m.set(r.product_id, (m.get(r.product_id) ?? 0) + Math.abs(r.qty));
   return m;
 }
 
