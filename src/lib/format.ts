@@ -76,3 +76,18 @@ export function csvCell(v: unknown) {
   if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n;\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
+
+/** Live carrier status from 17TRACK (label, badge tone, plain explanation). */
+export const CARRIER_STATUS: Record<string, [string, string]> = {
+  NotFound: ['Not scanned yet', 'mute'],
+  InfoReceived: ['Label created', 'mute'],
+  InTransit: ['In transit', 'go'],
+  AvailableForPickup: ['Ready for pickup', 'pk'],
+  OutForDelivery: ['Out for delivery', 'pk'],
+  Delivered: ['Delivered', 'ok'],
+  DeliveryFailure: ['Delivery failed', 'err'],
+  Exception: ['Problem', 'err'],
+  Expired: ['No updates', 'warn'],
+  Stopped: ['Tracking stopped', 'mute'],
+};
+export const CARRIER_PROBLEM = ['DeliveryFailure', 'Exception', 'Expired'];

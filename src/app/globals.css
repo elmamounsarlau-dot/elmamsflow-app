@@ -1144,3 +1144,13 @@ b a, .ep-pending-list a { text-decoration: underline; text-underline-offset: 2px
   .ep-bulk-wh { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 }
 .ep-bulk-wh select { min-height: 36px; }
+
+/* Carrier event history (17TRACK), newest first */
+.ep-events { list-style: none; margin: .2rem 0 0; padding: 0 0 0 1.1rem; border-left: 2px solid var(--line-soft); display: grid; gap: .75rem; max-height: 420px; overflow-y: auto; }
+.ep-events li { position: relative; display: grid; gap: .1rem; }
+.ep-events li::before { content: ""; position: absolute; left: calc(-1.1rem - 6px); top: .35rem; width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); border: 2px solid var(--surface); }
+.ep-events li:first-child::before { background: var(--blue); }
+.ep-events b { font-size: .88rem; color: var(--navy); font-weight: 600; }
+.ep-events small { font-size: .78rem; color: var(--muted); }
+.ep-trk-last { display: grid; gap: .1rem; min-width: 0; }
+.ep-trk-last small { color: var(--muted); }

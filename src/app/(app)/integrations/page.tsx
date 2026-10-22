@@ -3,7 +3,9 @@ import { redirect } from 'next/navigation';
 import { requireCtx } from '@/lib/session';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { orgNames } from '@/lib/data';
-import { fmtDate } from '@/lib/format';
+import { fmtDate, siteUrl } from '@/lib/format';
+import { trackKey, trackQuota } from '@/lib/track17';
+import { CopyLink } from '@/components/client';
 import { KIND_LABEL, STORE_STATUS, type Integration } from '@/lib/integrations/core';
 import { Arrow, Empty } from '@/components/ui';
 
@@ -18,6 +20,8 @@ export default async function Stores() {
   const [{ data }, names] = await Promise.all([q, ctx.backOffice ? orgNames() : Promise.resolve({} as Record<string, string>)]);
   const list = (data ?? []) as Integration[];
   const canConnect = !!ctx.org || ctx.backOffice;
+  const showTrack = ctx.staffRole === 'owner' && !ctx.viewingAs;
+  const quota = showTrack ? await trackQuota() : null;
 
   return (
     <>
@@ -71,6 +75,29 @@ export default async function Stores() {
           </div>
         )}
       </section>
+
+      {showTrack && (
+        <section className="ep-card ep-card--team" style={{ marginBottom: '1.2rem' }}>
+          <div className="ep-card-head">
+            <h2>Carrier tracking · 17TRACK</h2>
+            <span className={`ep-st ep-st--${trackKey() ? (quota ? 'ok' : 'warn') : 'mute'}`}>{trackKey() ? (quota ? 'Connected' : 'Key set, not answering') : 'Not connected'}</span>
+          </div>
+          <p className="ep-small" style={{ marginBottom: '.8rem' }}>Every parcel that ships with a tracking number is followed automatically. Carrier updates arrive live; Delivered closes the order by itself.</p>
+          {trackKey() ? (
+            <>
+              {quota && <p className="ep-small ep-muted" style={{ marginBottom: '.8rem' }}>Tracking quota: <b>{quota.quota_remain.toLocaleString('en')}</b> of {quota.quota_total.toLocaleString('en')} numbers left (1 per parcel).</p>}
+              <p className="ep-small" style={{ marginBottom: '.4rem' }}>Webhook URL — paste it in 17TRACK → Settings → Webhook:</p>
+              <CopyLink value={`${siteUrl()}/api/tracking/17track`} label="Copy URL" />
+            </>
+          ) : (
+            <ol className="ep-small" style={{ paddingLeft: '1.2rem', display: 'grid', gap: '.3rem' }}>
+              <li>Create an account at api.17track.net and copy your <b>Security Key</b> (Settings).</li>
+              <li>Vercel → elmamsflow-app → Settings → Environment Variables: add <code>TRACK17_API_KEY</code> (Production, Sensitive), then redeploy.</li>
+              <li>Come back here and copy the webhook URL into 17TRACK.</li>
+            </ol>
+          )}
+        </section>
+      )}
 
       <section className="ep-card">
         <h2>How it works</h2>

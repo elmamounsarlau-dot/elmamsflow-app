@@ -79,10 +79,13 @@ jobs:
           node supabase/local/env.mjs >> "$GITHUB_ENV"
       - name: Build and start the app against the local stack
         run: |
+          node e2e/fake17track.mjs > fake17.log 2>&1 &
           npm run build
           npx next start -H 127.0.0.1 -p 3000 > app.log 2>&1 &
           for i in $(seq 1 60); do curl -sf -o /dev/null http://127.0.0.1:3000/login && break; sleep 1; done
       - run: OUT=e2e-results node e2e/audit.mjs
+      - name: Live tracking (signed webhook, forged webhook, auto-delivery, daily sync) against a fake 17TRACK
+        run: node e2e/tracking.mjs
       - if: always()
         uses: actions/upload-artifact@v4
         with:

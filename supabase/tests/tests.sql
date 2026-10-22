@@ -5,7 +5,7 @@
 
 create schema t;
 create table t.results (id serial primary key, name text not null, ok boolean not null, detail text);
-grant usage on schema t to authenticated, anon;
+grant usage on schema t to authenticated, anon, service_role;
 
 create function t.ok(p_name text, p_ok boolean, p_detail text default null) returns void
 language sql security definer as $$ insert into t.results (name, ok, detail) values (p_name, coalesce(p_ok, false), p_detail) $$;
@@ -484,3 +484,55 @@ select t.ok('invariant: per-warehouse balances add up to each product total',
   not exists (select 1 from public.product_stock p
               where p.on_hand <> coalesce((select sum(on_hand) from public.warehouse_stock w where w.product_id = p.id), 0)));
 select t.ok('invariant: no warehouse balance is negative', not exists (select 1 from public.warehouse_stock where on_hand < 0 or quarantined < 0 or quarantined > on_hand));
+
+-- =====================================================================
+-- 8. Live carrier tracking (17TRACK, 0015)
+-- =====================================================================
+-- Order a6 shipped above with tracking L1 (client A).
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000a1');
+select t.raises('tracking: staff (even the owner) cannot write carrier data directly',
+  $q$select public.apply_tracking('0a000000-0000-0000-0000-0000000000a6', 'L1', 'Delivered', null, 'x', null, now(), null, null, '[]')$q$);
+select t.login('00000000-0000-0000-0000-0000000000b1');
+select t.raises('tracking: a client cannot mark its own order delivered',
+  $q$select public.apply_tracking('0a000000-0000-0000-0000-0000000000a6', 'L1', 'Delivered', null, 'x', null, now(), null, null, '[]')$q$);
+select t.denied('tracking: a client cannot set carrier fields on its order',
+  $q$update public.orders set tracking_status = 'Delivered' where id = '0a000000-0000-0000-0000-0000000000a6'$q$);
+reset role;
+set role service_role;
+select t.ok('tracking: an in-transit update is stored with its events',
+  public.apply_tracking('0a000000-0000-0000-0000-0000000000a6', 'L1', 'InTransit', 'InTransit_Other', 'Departed Guangzhou hub', 'Guangzhou, CN',
+    '2099-01-02T03:00:00Z', '2099-01-09', 190008,
+    '[{"at":"2099-01-02T03:00:00Z","description":"Departed Guangzhou hub","location":"Guangzhou, CN"},{"at":"2099-01-01T10:00:00Z","description":"Accepted by carrier"}]') = 'updated');
+select t.ok('tracking: same push twice stores each event once',
+  public.apply_tracking('0a000000-0000-0000-0000-0000000000a6', 'L1', 'InTransit', 'InTransit_Other', 'Departed Guangzhou hub', 'Guangzhou, CN',
+    '2099-01-02T03:00:00Z', null, null,
+    '[{"at":"2099-01-02T03:00:00Z","description":"Departed Guangzhou hub","location":"Guangzhou, CN"},{"at":"2099-01-01T10:00:00Z","description":"Accepted by carrier"}]') = 'updated'
+  and (select count(*) from public.tracking_events where order_id = '0a000000-0000-0000-0000-0000000000a6') = 2);
+select t.ok('tracking: an older push arriving late does not overwrite newer status',
+  public.apply_tracking('0a000000-0000-0000-0000-0000000000a6', 'L1', 'InfoReceived', null, 'Label created', null, '2099-01-01T00:00:00Z', null, null, '[]') = 'stale'
+  and (select tracking_status from public.orders where id = '0a000000-0000-0000-0000-0000000000a6') = 'InTransit');
+select t.ok('tracking: an update for an old tracking number is ignored',
+  public.apply_tracking('0a000000-0000-0000-0000-0000000000a6', 'OTHER-NUMBER', 'Delivered', null, 'x', null, '2099-02-01', null, null, '[]') = 'ignored');
+select t.ok('tracking: carrier Delivered marks the order delivered automatically, logged',
+  public.apply_tracking('0a000000-0000-0000-0000-0000000000a6', 'L1', 'Delivered', 'Delivered_Other', 'Delivered to recipient', 'Paris, FR', '2099-01-05T09:00:00Z', null, null,
+    '[{"at":"2099-01-05T09:00:00Z","description":"Delivered to recipient","location":"Paris, FR"}]') = 'delivered');
+select t.ok('tracking: the order is now Delivered with a delivery date', (select status = 'delivered' and delivered_at is not null from public.orders where id = '0a000000-0000-0000-0000-0000000000a6'),
+  (select status || ' ' || coalesce(delivered_at::text, 'null') from public.orders where id = '0a000000-0000-0000-0000-0000000000a6'));
+select t.ok('tracking: automatic delivery is in the activity log', exists (select 1 from public.activity_log where action = 'order_delivered_auto'));
+reset role;
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000b1');
+select t.ok('tracking: the client sees its own carrier history', t.rows($q$select 1 from public.tracking_events where order_id = '0a000000-0000-0000-0000-0000000000a6'$q$) = 3);
+select t.login('00000000-0000-0000-0000-0000000000c1');
+select t.ok('tracking: another client cannot see that history', t.rows($q$select 1 from public.tracking_events where order_id = '0a000000-0000-0000-0000-0000000000a6'$q$) = 0);
+reset role;
+-- A corrected tracking number starts live tracking from scratch.
+update public.orders set tracking_status = 'InTransit', tracking_registered_at = now(), status = 'shipped' where id = '0a000000-0000-0000-0000-0000000000a6';
+update public.orders set tracking = 'L2' where id = '0a000000-0000-0000-0000-0000000000a6';
+select t.ok('tracking: changing the number clears the old live status', (select tracking_status is null and tracking_registered_at is null from public.orders where id = '0a000000-0000-0000-0000-0000000000a6'));
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000b1');
+insert into public.orders (id, org_id, customer, address, country, tracking_status, tracking_last_event) values ('0a000000-0000-0000-0000-0000000000a7', '11111111-1111-1111-1111-111111111111', 'Fake', 'x', 'FR', 'Delivered', 'fake');
+reset role;
+select t.ok('tracking: a new order cannot arrive with carrier data filled in', (select tracking_status is null and tracking_last_event is null from public.orders where id = '0a000000-0000-0000-0000-0000000000a7'));
