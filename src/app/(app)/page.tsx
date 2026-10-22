@@ -99,10 +99,19 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const rlabel = range === 'today' ? 'today' : `${days} days`;
   const ageDays = (iso: string) => Math.max(0, Math.floor((now - Date.parse(iso)) / 864e5));
 
+  const issues = [
+    { href: '/orders?t=attention', n: onHold.length, label: 'Orders on hold', hint: 'waiting for a fix', tone: 'err', icon: 'hold' as const },
+    { href: '/inventory?f=reorder', n: reorder.length, label: 'Reorder', hint: 'under 3 weeks of stock', tone: 'err', icon: 'box' as const },
+    { href: '/inbounds?t=late', n: lateIn.length, label: 'Late inbounds', hint: 'past their ETA', tone: 'err', icon: 'truck' as const },
+    { href: '/inventory?f=customs', n: noCustoms.length, label: 'Customs info', hint: 'HS code or value missing', tone: 'warn', icon: 'doc' as const },
+    { href: '/inventory?f=quarantine', n: quarantined, label: 'Quarantine', hint: 'units set aside', tone: 'warn', icon: 'shield' as const },
+    { href: '/support', n: tickets.count ?? 0, label: 'Open tickets', hint: 'waiting for a reply', tone: 'blue', icon: 'chat' as const },
+  ];
+
   return (
-    <>
-      <div className="ep-home-head">
-        <div>
+    <div className="ep-home">
+      <header className="ep-home-top">
+        <div className="ep-home-head">
           <p className="ep-crumb">{dateLine}</p>
           <h1>{greeting()}, {ctx.viewingAs ? ctx.org?.name : ctx.name.split(' ')[0]}</h1>
           <p>
@@ -110,16 +119,16 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
             {critical ? <a href="#attention" className="ep-crit">{critical} item{critical === 1 ? '' : 's'} need{critical === 1 ? 's' : ''} attention.</a> : <span className="ep-good">everything is on track.</span>}
           </p>
         </div>
-      </div>
-      <div className="ep-home-bar">
-        <nav className="ep-range" aria-label="Period">
-          {(Object.keys(RANGES) as (keyof typeof RANGES)[]).map((k) => <Link key={k} href={k === '30d' ? '/' : `/?r=${k}`} className={range === k ? 'is-on' : ''}>{k === 'today' && <i />}{RANGE_LABEL[k]}</Link>)}
-        </nav>
-        <div className="ep-actions">
-          {ctx.can('orders.create') && !ctx.backOffice && <Link className="ep-btn ep-btn--ghost" href="/orders/new">New order</Link>}
-          {ctx.can('inbounds.create') && <Link className="ep-btn" href="/inbounds/new">New inbound <Arrow /></Link>}
+        <div className="ep-home-side">
+          <nav className="ep-range" aria-label="Period">
+            {(Object.keys(RANGES) as (keyof typeof RANGES)[]).map((k) => <Link key={k} href={k === '30d' ? '/' : `/?r=${k}`} className={range === k ? 'is-on' : ''}>{k === 'today' && <i />}{RANGE_LABEL[k]}</Link>)}
+          </nav>
+          <div className="ep-actions">
+            {ctx.can('orders.create') && !ctx.backOffice && <Link className="ep-btn ep-btn--ghost" href="/orders/new">New order</Link>}
+            {ctx.can('inbounds.create') && <Link className="ep-btn" href="/inbounds/new">New inbound <Arrow /></Link>}
+          </div>
         </div>
-      </div>
+      </header>
 
       {!ctx.backOffice && (sp.welcome || products.length === 0) && (
         <div className="ep-welcome">
@@ -135,9 +144,19 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         </div>
       )}
 
+      <section className="ep-hstrip" id="attention" aria-label="What needs attention">
+        {issues.map((x) => (
+          <Link key={x.label} href={x.href} className={`ep-htile${x.n ? ` is-${x.tone}` : ''}`}>
+            <span className="ep-htile-ic"><HIcon d={x.icon} /></span>
+            <span className="ep-htile-txt"><b>{x.label}</b><small>{x.n ? x.hint : 'all clear'}</small></span>
+            <em>{x.n.toLocaleString('en')}</em>
+          </Link>
+        ))}
+      </section>
+
       <div className="ep-home-kpis">
-        <section className="ep-card ep-hk">
-          <div className="ep-hk-head"><small>{range === 'today' ? 'Orders today' : `Avg daily orders · ${RANGE_LABEL[range]}`}</small></div>
+        <section className="ep-bcard ep-hk">
+          <div className="ep-bhead"><span className="ep-bic ep-bic--blue"><HIcon d="chart" /></span><h2>{range === 'today' ? 'Orders today' : 'Avg daily orders'}</h2><span className="ep-btag">{RANGE_LABEL[range]}</span></div>
           <div className="ep-hk-val">
             <b>{range === 'today' ? inRange.length : avgDaily.toFixed(1)}</b>
             {change !== null && <em className={change >= 0 ? 'up' : 'down'}>{change >= 0 ? '↗' : '↘'} {change >= 0 ? '+' : ''}{change.toFixed(1)}%</em>}
@@ -146,150 +165,145 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <span className="ep-hk-foot">{inRange.length.toLocaleString('en')} orders in {rlabel}{change === null ? '' : ` · vs previous ${rlabel}`}</span>
         </section>
 
-        <section className="ep-card ep-hk">
-          <div className="ep-hk-head"><small>Fulfilment rate · open orders</small></div>
+        <section className="ep-bcard ep-hk">
+          <div className="ep-bhead"><span className="ep-bic ep-bic--orange"><HIcon d="box" /></span><h2>Fulfilment rate</h2><span className="ep-btag">Open orders</span></div>
           <div className="ep-hk-val">
             <b className={fulfilRate < 95 ? 'ep-warn' : ''}>{fulfilRate.toFixed(1)}%</b>
             {blocked.length > 0 && <em className="down">{blocked.length} waiting for stock</em>}
           </div>
           <div className="ep-meter"><i style={{ width: `${fulfilRate}%` }} /><s style={{ left: '99%' }} /></div>
           <span className="ep-hk-foot ep-hk-split"><span>{open.length ? `${open.length - blocked.length} of ${open.length} can ship from stock` : 'No open orders'}</span><span>Target 99%</span></span>
-          <div className="ep-hk-mini">
-            <span><b>{avgTrip !== null ? `${avgTrip.toFixed(1)} d` : '—'}</b> avg delivery</span>
-            <span><b>{onTime !== null ? `${onTime.toFixed(0)}%` : '—'}</b> within 9 days</span>
-          </div>
         </section>
 
-        <section className="ep-card ep-hk">
-          <div className="ep-hk-head">
-            <small>Ready to reorder</small>
-            {reorder.length > 0 && ctx.can('inbounds.create') && <Link className="ep-chip" href="/inbounds/new">New inbound · {reorder.length}</Link>}
+        <section className="ep-bcard ep-hk">
+          <div className="ep-bhead"><span className="ep-bic ep-bic--green"><HIcon d="truck" /></span><h2>Delivery</h2><span className="ep-btag">{RANGE_LABEL[range]}</span></div>
+          <div className="ep-hk-val">
+            <b>{avgTrip !== null ? avgTrip.toFixed(1) : '—'}<i className="ep-hk-unit">{avgTrip !== null ? ' days' : ''}</i></b>
           </div>
-          {reorder.length === 0 ? (
-            <div className="ep-hk-ok"><b>Stock is healthy</b><span>No SKU has under 3 weeks of stock.</span></div>
-          ) : (
-            <ul className="ep-reorder">
-              {reorder.slice(0, 3).map(({ p, r }) => (
-                <li key={p.id}>
-                  <Link href={`/inventory/${p.id}`}><b>{p.name}</b><small>{p.sku}{ctx.backOffice ? ` · ${names[p.org_id]}` : ''}</small></Link>
-                  <span className="ep-days">{r.health === 'out' ? 'Out' : fmtDays(r.days)}</span>
-                  <span className="ep-rec"><small>Recommend</small><b>{r.reorder >= 1000 ? `${(r.reorder / 1000).toFixed(1)}K` : r.reorder}</b></span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <div className="ep-meter ep-meter--ok"><i style={{ width: `${onTime ?? 0}%` }} /></div>
+          <span className="ep-hk-foot ep-hk-split"><span>{onTime !== null ? `${onTime.toFixed(0)}% delivered within 9 days` : 'No deliveries in this period'}</span><span>{trips.length.toLocaleString('en')} delivered</span></span>
         </section>
       </div>
 
-      <section className="ep-card">
-        <div className="ep-card-head">
-          <h2 className="ep-h-ic">Best sellers</h2>
-          <span className="ep-muted ep-small">{range === 'today' ? 'Today' : `Last ${days} days`} · top 5 · <Link href="/inventory?sort=sales">Open inventory →</Link></span>
-        </div>
-        {best.length === 0 ? <Empty title="No sales yet in this period" text="Your best-selling SKUs show here once orders ship." /> : (
-          <ol className="ep-best">
-            {best.map(({ p, n }, i) => (
-              <li key={p.id}>
-                <span className="ep-rank">{i + 1}</span>
-                <span className="ep-prod-ic" aria-hidden="true">{p.sku.slice(0, 2)}</span>
-                <Link href={`/inventory/${p.id}`}><b>{p.name}</b><small>{p.sku}</small></Link>
-                <span className="ep-best-n"><b>{n.toLocaleString('en')}</b><small>units</small></span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      <div className="ep-hmain">
+        <div className="ep-hcol">
+          <section className="ep-bcard ep-bcard--flush">
+            <div className="ep-bhead ep-pad"><span className="ep-bic ep-bic--blue"><HIcon d="orders" /></span><h2>Latest orders</h2><Link className="ep-blink" href="/orders">All orders →</Link></div>
+            {orders.length === 0 ? <Empty title="No orders yet" text="Orders will appear here." /> : (
+              <table className="ep-table ep-htable">
+                <thead><tr><th>Order</th><th>Customer</th><th>Destination</th><th>Date</th><th className="ep-right">Status</th></tr></thead>
+                <tbody>
+                  {orders.map((o) => (
+                    <tr key={o.id} data-href={`/orders/${o.id}`}>
+                      <td><b>#{o.number}</b></td>
+                      <td>{o.customer}{ctx.backOffice && <small>{names[o.org_id]}</small>}</td>
+                      <td className="ep-muted">{[o.city, COUNTRIES[o.country] ?? o.country].filter(Boolean).join(', ')}</td>
+                      <td className="ep-muted">{fmtDate(o.created_at)}</td>
+                      <td className="ep-right"><Badge map={ORDER_STATUS} value={o.status} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
 
-      <div className="ep-grid2 ep-grid2--wide" id="attention">
-        <section className="ep-card">
-          <div className="ep-card-head"><h2>What needs attention</h2><span className="ep-muted ep-small">{critical ? <><b className="ep-crit">{critical}</b> open</> : 'All clear'}</span></div>
-          <div className="ep-issues">
-            <Link href="/orders?s=on_hold" className={onHold.length ? 'is-on' : ''}><b>{onHold.length}</b><span>On hold</span><small>orders waiting</small></Link>
-            <Link href="/inventory?f=reorder" className={reorder.length ? 'is-on' : ''}><b>{reorder.length}</b><span>Reorder</span><small>under 3 weeks</small></Link>
-            <Link href="/inbounds?t=late" className={lateIn.length ? 'is-on' : ''}><b>{lateIn.length}</b><span>Late inbounds</span><small>past ETA</small></Link>
-            <Link href="/inventory" className={noCustoms.length ? 'is-on' : ''}><b>{noCustoms.length}</b><span>Customs info</span><small>HS code missing</small></Link>
-            <Link href="/inventory?f=quarantine" className={quarantined ? 'is-on' : ''}><b>{quarantined}</b><span>Quarantine</span><small>units set aside</small></Link>
-            <Link href="/support" className={tickets.count ? 'is-on is-soft' : ''}><b>{tickets.count ?? 0}</b><span>Tickets</span><small>waiting reply</small></Link>
-          </div>
-          {onHold.length > 0 && (
-            <>
-              <p className="ep-sub">Most urgent · oldest on hold</p>
-              <ul className="ep-urgent">
-                {onHold.slice(0, 3).map((o) => (
-                  <li key={o.id}>
-                    <Link href={`/orders/${o.id}`}><b>#{o.number}</b><span>{o.customer}{ctx.backOffice ? ` · ${names[o.org_id]}` : ''}</span></Link>
-                    <span className="ep-late">{o.hold_reason || 'On hold'}</span>
-                    <small>{ageDays(o.created_at)}d</small>
+          <section className="ep-bcard">
+            <div className="ep-bhead"><span className="ep-bic ep-bic--orange"><HIcon d="star" /></span><h2>Best sellers</h2><span className="ep-btag">{range === 'today' ? 'Today' : `Last ${days} days`}</span><Link className="ep-blink" href="/inventory?sort=sales">Inventory →</Link></div>
+            {best.length === 0 ? <Empty title="No sales yet in this period" text="Your best-selling SKUs show here once orders ship." /> : (
+              <ol className="ep-hbest">
+                {best.map(({ p, n }, i) => (
+                  <li key={p.id}>
+                    <span className="ep-rank">{i + 1}</span>
+                    <Link href={`/inventory/${p.id}`}><b>{p.name}</b><small>{p.sku}</small></Link>
+                    <div className="ep-meter ep-meter--thin"><i style={{ width: `${(n / best[0].n) * 100}%` }} /></div>
+                    <span className="ep-best-n"><b>{n.toLocaleString('en')}</b><small>units</small></span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+
+          <section className="ep-bcard">
+            <div className="ep-bhead"><span className="ep-bic ep-bic--violet"><HIcon d="globe" /></span><h2>Top markets</h2><span className="ep-btag">{inRange.length.toLocaleString('en')} orders</span></div>
+            {markets.length === 0 ? <Empty title="No orders in this period" text="Where your orders go will show here." /> : (
+              <ul className="ep-markets">
+                {markets.map(([c, n]) => (
+                  <li key={c}>
+                    <span>{COUNTRIES[c] ?? c}</span>
+                    <b>{n.toLocaleString('en')}</b>
+                    <small>{((n / inRange.length) * 100).toFixed(1)}%</small>
+                    <div className="ep-meter ep-meter--thin"><i style={{ width: `${(n / markets[0][1]) * 100}%` }} /></div>
                   </li>
                 ))}
               </ul>
-            </>
-          )}
-        </section>
+            )}
+          </section>
+        </div>
 
-        <section className="ep-card">
-          <div className="ep-card-head"><h2>Stock inbounds</h2><Link href="/inbounds">Open inbounds →</Link></div>
-          {activeIn.length === 0 ? (
-            <div className="ep-allgood"><b>All inbounds delivered</b><span>Nothing on the way right now.</span></div>
-          ) : (
-            <ul className="ep-in-list">
-              {activeIn.slice(0, 4).map((b) => {
-                const late = b.eta && b.eta < today;
-                return (
-                  <li key={b.id}>
-                    <Link href={`/inbounds/${b.id}`}>
-                      <b className="ep-mono">{b.ref}</b>
-                      <small>{b.inbound_items.reduce((a, i) => a + i.expected, 0).toLocaleString('en')} units{ctx.backOffice ? ` · ${names[b.org_id]}` : b.supplier ? ` · ${b.supplier}` : ''}</small>
-                    </Link>
-                    <MiniSteps status={b.status} overdue={!!late} />
-                    <small className={late ? 'ep-late' : ''}>{b.eta ? `${late ? 'Late · ' : 'ETA '}${fmtDate(b.eta)}` : 'No ETA'}</small>
+        <aside className="ep-hcol">
+          {onHold.length > 0 && (
+            <section className="ep-bcard ep-bcard--alert">
+              <div className="ep-bhead"><span className="ep-bic ep-bic--red"><HIcon d="hold" /></span><h2>On hold</h2><Link className="ep-blink" href="/orders?t=attention">Fix them →</Link></div>
+              <ul className="ep-hlist">
+                {onHold.slice(0, 4).map((o) => (
+                  <li key={o.id}>
+                    <Link href={`/orders/${o.id}`}><b>#{o.number}</b><small>{o.hold_reason || 'On hold'}</small></Link>
+                    <span className="ep-hage">{ageDays(o.created_at)}d</span>
                   </li>
-                );
-              })}
-              {activeIn.length > 4 && <li className="ep-more"><Link href="/inbounds?t=active">+{activeIn.length - 4} more on the way</Link></li>}
-            </ul>
-          )}
-        </section>
-      </div>
-
-      <div className="ep-grid2 ep-grid2--wide">
-        <section className="ep-card">
-          <div className="ep-card-head"><h2>Top markets</h2><span className="ep-muted ep-small">{RANGE_LABEL[range]} · {inRange.length.toLocaleString('en')} orders</span></div>
-          {markets.length === 0 ? <Empty title="No orders in this period" text="Where your orders go will show here." /> : (
-            <ul className="ep-markets">
-              {markets.map(([c, n]) => (
-                <li key={c}>
-                  <span>{COUNTRIES[c] ?? c}</span>
-                  <b>{n.toLocaleString('en')}</b>
-                  <small>{((n / inRange.length) * 100).toFixed(1)}%</small>
-                  <div className="ep-meter ep-meter--thin"><i style={{ width: `${(n / markets[0][1]) * 100}%` }} /></div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="ep-card">
-          <div className="ep-card-head"><h2>Latest orders</h2><Link href="/orders">All orders →</Link></div>
-          {orders.length === 0 ? <Empty title="No orders yet" text="Orders will appear here." /> : (
-            <table className="ep-table">
-              <tbody>
-                {orders.map((o) => (
-                  <tr key={o.id} data-href={`/orders/${o.id}`}>
-                    <td><b>#{o.number}</b><small>{o.customer}{ctx.backOffice ? ` · ${names[o.org_id]}` : ''}</small></td>
-                    <td><small>{[o.city, COUNTRIES[o.country] ?? o.country].filter(Boolean).join(', ')}</small></td>
-                    <td className="ep-right"><Badge map={ORDER_STATUS} value={o.status} /></td>
-                  </tr>
                 ))}
-              </tbody>
-            </table>
+              </ul>
+            </section>
           )}
-        </section>
+
+          <section className="ep-bcard">
+            <div className="ep-bhead">
+              <span className="ep-bic ep-bic--orange"><HIcon d="box" /></span><h2>Ready to reorder</h2>
+              {reorder.length > 0 && ctx.can('inbounds.create') && <Link className="ep-blink" href="/inbounds/new">New inbound →</Link>}
+            </div>
+            {reorder.length === 0 ? (
+              <div className="ep-hk-ok"><b>Stock is healthy</b><span>No SKU has under 3 weeks of stock.</span></div>
+            ) : (
+              <ul className="ep-reorder">
+                {reorder.slice(0, 4).map(({ p, r }) => (
+                  <li key={p.id}>
+                    <Link href={`/inventory/${p.id}`}><b>{p.name}</b><small>{p.sku}{ctx.backOffice ? ` · ${names[p.org_id]}` : ''}</small></Link>
+                    <span className="ep-days">{r.health === 'out' ? 'Out' : fmtDays(r.days)}</span>
+                    <span className="ep-rec"><small>Recommend</small><b>{r.reorder >= 1000 ? `${(r.reorder / 1000).toFixed(1)}K` : r.reorder}</b></span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="ep-bcard">
+            <div className="ep-bhead"><span className="ep-bic ep-bic--blue"><HIcon d="truck" /></span><h2>Stock inbounds</h2><Link className="ep-blink" href="/inbounds">Open →</Link></div>
+            {activeIn.length === 0 ? (
+              <div className="ep-allgood"><b>All inbounds delivered</b><span>Nothing on the way right now.</span></div>
+            ) : (
+              <ul className="ep-in-list ep-in-list--side">
+                {activeIn.slice(0, 4).map((b) => {
+                  const late = b.eta && b.eta < today;
+                  return (
+                    <li key={b.id}>
+                      <Link href={`/inbounds/${b.id}`}>
+                        <b className="ep-mono">{b.ref}</b>
+                        <small>{b.inbound_items.reduce((a, i) => a + i.expected, 0).toLocaleString('en')} units{ctx.backOffice ? ` · ${names[b.org_id]}` : b.supplier ? ` · ${b.supplier}` : ''}</small>
+                      </Link>
+                      <MiniSteps status={b.status} overdue={!!late} />
+                      <small className={late ? 'ep-late' : ''}>{b.eta ? `${late ? 'Late · ' : 'ETA '}${fmtDate(b.eta)}` : 'No ETA'}</small>
+                    </li>
+                  );
+                })}
+                {activeIn.length > 4 && <li className="ep-more"><Link href="/inbounds?t=active">+{activeIn.length - 4} more on the way</Link></li>}
+              </ul>
+            )}
+          </section>
+        </aside>
       </div>
 
       {pending.length > 0 && (
-        <section className="ep-card ep-card--hl">
-          <div className="ep-card-head"><h2>Waiting to sign in</h2><span className="ep-muted ep-small">Invitation links only you and managers can see</span></div>
+        <section className="ep-bcard ep-card--hl">
+          <div className="ep-bhead"><span className="ep-bic ep-bic--orange"><HIcon d="key" /></span><h2>Waiting to sign in</h2><span className="ep-btag">Only you and managers see these links</span></div>
           <div className="ep-pending-list">
             {pending.map((l) => (
               <div key={l.user_id}>
@@ -302,8 +316,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       )}
 
       {ctx.backOffice && (activity.data ?? []).length > 0 && (
-        <section className="ep-card">
-          <div className="ep-card-head"><h2>Latest activity</h2><Link href="/activity">All activity →</Link></div>
+        <section className="ep-bcard">
+          <div className="ep-bhead"><span className="ep-bic ep-bic--violet"><HIcon d="pulse" /></span><h2>Latest activity</h2><Link className="ep-blink" href="/activity">All activity →</Link></div>
           <ul className="ep-activity">
             {(activity.data ?? []).map((a) => (
               <li key={a.id}><b>{ACTIVITY_LABELS[a.action] ?? a.action}</b><span>{[a.org_id ? names[a.org_id] : '', a.detail].filter(Boolean).join(' · ')}</span><small>{fmtDate(a.created_at, true)}</small></li>
@@ -315,6 +329,24 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <p className="ep-small ep-muted ep-foot-note">
         Runway uses the last 30 days of shipments. Reorder suggestions cover 60 days of sales, minus what is already sellable or on its way. Status legend: {Object.values(HEALTH).map(([l]) => l).join(' · ')}.
       </p>
-    </>
+    </div>
   );
+}
+
+const HP = {
+  hold: 'M7.5 5v10 M12.5 5v10',
+  box: 'M3 6.5l7-3.5 7 3.5v7l-7 3.5-7-3.5v-7z M3 6.5l7 3.5 7-3.5 M10 10v7',
+  truck: 'M2.5 6h9v7h-9z M11.5 9h3.5l2.5 2.5V13h-6 M5.5 15.5a1.3 1.3 0 1 0 0-2.6 1.3 1.3 0 0 0 0 2.6z M14.5 15.5a1.3 1.3 0 1 0 0-2.6 1.3 1.3 0 0 0 0 2.6z',
+  doc: 'M5.5 2.5h6l3 3v12h-9z M11.5 2.5v3h3 M7.5 10h5 M7.5 13h5',
+  shield: 'M10 2.5l6 2.5v4.5c0 4-2.7 6.7-6 8-3.3-1.3-6-4-6-8V5z M7.5 10l2 2 3-3.5',
+  chat: 'M3.5 5.5h13v8h-7l-3.5 3v-3H3.5v-8z',
+  chart: 'M3 16.5h14 M5.5 13l3-4 3 2.5 3.5-5.5',
+  orders: 'M4 3.5h12v13H4z M7 7.5h6 M7 10.5h6 M7 13.5h3',
+  star: 'M10 3l2.1 4.4 4.8.6-3.5 3.3.9 4.8L10 13.8 5.7 16.1l.9-4.8L3.1 8l4.8-.6z',
+  globe: 'M10 17.5a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15z M2.5 10h15 M10 2.5c2 2.2 3 4.7 3 7.5s-1 5.3-3 7.5c-2-2.2-3-4.7-3-7.5s1-5.3 3-7.5z',
+  key: 'M7 12.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z M10 9h7.5 M15 9v2.5 M17.5 9v2',
+  pulse: 'M2.5 10h3.5l2-4.5 4 9 2-4.5h3.5',
+};
+function HIcon({ d }: { d: keyof typeof HP }) {
+  return <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={HP[d]} /></svg>;
 }
