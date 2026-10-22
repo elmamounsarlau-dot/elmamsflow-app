@@ -37,7 +37,7 @@ export function parseFilters(sp: Record<string, string | undefined>, backOffice:
     country: /^[A-Za-z]{2}$/.test(sp.country ?? '') ? sp.country!.toUpperCase() : '',
     from: /^\d{4}-\d{2}-\d{2}$/.test(sp.from ?? '') ? sp.from! : '',
     to: /^\d{4}-\d{2}-\d{2}$/.test(sp.to ?? '') ? sp.to! : '',
-    c: backOffice && /^[0-9a-f-]{36}$/.test(sp.c ?? '') ? sp.c! : '',
+    c: backOffice && (/^[0-9a-f-]{36}$/.test(sp.c ?? '') || sp.c === 'all') ? sp.c! : '',
     svc: sp.svc === 'ddp' || sp.svc === 'express' ? sp.svc : '',
     per,
     p: Math.max(1, parseInt(sp.p ?? '1', 10) || 1),
@@ -49,7 +49,7 @@ export function parseFilters(sp: Record<string, string | undefined>, backOffice:
 export function applyScope<Q extends { eq: any; or: any; ilike: any; gte: any; lt: any }>(q: Q, f: OrderFilters, orgId: string | null): Q {
   let x = q;
   if (orgId) x = x.eq('org_id', orgId);
-  else if (f.c) x = x.eq('org_id', f.c);
+  else if (f.c && f.c !== 'all') x = x.eq('org_id', f.c);
   if (f.src) x = x.eq('source', f.src);
   if (f.country) x = x.eq('country', f.country);
   if (f.svc) x = x.eq('service', f.svc);
