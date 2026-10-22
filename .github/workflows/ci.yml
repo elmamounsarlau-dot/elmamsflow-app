@@ -89,14 +89,17 @@ jobs:
       - name: Store address changes reach held orders (needs a fresh seed)
         run: |
           bash supabase/local/up.sh > /dev/null
+          bash supabase/local/wait-rest.sh
           npm run test:stack
       - name: A client imports orders from a CSV (preview, confirm, no duplicates, errors block)
         run: |
           bash supabase/local/up.sh > /dev/null
+          bash supabase/local/wait-rest.sh
           node e2e/orders-import.mjs
       - name: Shipper role ships with tracking + label (and sees nothing else)
         run: |
           bash supabase/local/up.sh > /dev/null
+          bash supabase/local/wait-rest.sh
           node e2e/shipper.mjs
       - if: always()
         uses: actions/upload-artifact@v4
