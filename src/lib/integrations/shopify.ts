@@ -97,13 +97,13 @@ export async function shopifyRegisterWebhooks(i: Integration, url: string) {
 
 const ORDER_FIELDS = `id name email phone createdAt cancelledAt displayFinancialStatus displayFulfillmentStatus
   shippingAddress { firstName lastName name company address1 address2 city zip countryCodeV2 phone }
-  lineItems(first: 100) { nodes { sku name quantity currentQuantity requiresShipping } }`;
+  lineItems(first: 100) { nodes { sku name quantity currentQuantity requiresShipping variant { id } } }`;
 
 type ShopOrder = {
   id: string; name: string; email: string | null; phone: string | null; cancelledAt: string | null;
   displayFinancialStatus: string | null; displayFulfillmentStatus: string | null;
   shippingAddress: { firstName: string | null; lastName: string | null; name: string | null; company: string | null; address1: string | null; address2: string | null; city: string | null; zip: string | null; countryCodeV2: string | null; phone: string | null } | null;
-  lineItems: { nodes: { sku: string | null; name: string; quantity: number; currentQuantity: number | null; requiresShipping: boolean }[] };
+  lineItems: { nodes: { sku: string | null; name: string; quantity: number; currentQuantity: number | null; requiresShipping: boolean; variant?: { id: string } | null }[] };
 };
 
 export function shopifyToExt(o: ShopOrder): ExtOrder {
@@ -120,7 +120,7 @@ export function shopifyToExt(o: ShopOrder): ExtOrder {
     city: a?.city ?? null,
     zip: a?.zip ?? null,
     country: a?.countryCodeV2 ?? '',
-    lines: o.lineItems.nodes.filter((l) => l.requiresShipping !== false).map((l) => ({ sku: l.sku ?? '', name: l.name, qty: l.currentQuantity ?? l.quantity })),
+    lines: o.lineItems.nodes.filter((l) => l.requiresShipping !== false).map((l) => ({ sku: l.sku ?? '', name: l.name, qty: l.currentQuantity ?? l.quantity, ref: l.variant?.id })),
     shippable: paid && open && !!a,
     cancelled: !!o.cancelledAt,
   };
@@ -169,12 +169,12 @@ export async function shopifyProducts(i: Integration) {
   const out: ExtProduct[] = [];
   let after: string | null = null;
   for (let page = 0; page < 8; page++) {
-    const d: { productVariants: { nodes: { sku: string | null; barcode: string | null; title: string; product: { title: string }; inventoryItem: { measurement: { weight: { unit: string; value: number } | null } | null } | null }[]; pageInfo: { hasNextPage: boolean; endCursor: string } } } = await gql(i.store_url, token,
-      `query($after: String) { productVariants(first: 250, after: $after) { nodes { sku barcode title product { title } inventoryItem { measurement { weight { unit value } } } } pageInfo { hasNextPage endCursor } } }`, { after });
+    const d: { productVariants: { nodes: { id: string; sku: string | null; barcode: string | null; title: string; product: { title: string }; inventoryItem: { measurement: { weight: { unit: string; value: number } | null } | null } | null }[]; pageInfo: { hasNextPage: boolean; endCursor: string } } } = await gql(i.store_url, token,
+      `query($after: String) { productVariants(first: 250, after: $after) { nodes { id sku barcode title product { title } inventoryItem { measurement { weight { unit value } } } } pageInfo { hasNextPage endCursor } } }`, { after });
     for (const v of d.productVariants.nodes) {
-      if (!v.sku) continue;
       const w = v.inventoryItem?.measurement?.weight;
-      out.push({ sku: v.sku, name: v.title && v.title !== 'Default Title' ? `${v.product.title} · ${v.title}` : v.product.title, barcode: v.barcode, weight_g: w ? Math.round(w.value * (GRAMS[w.unit] ?? 1)) : 0 });
+      // No SKU in the store: give it one based on Shopify's variant number; orders still match through the variant id.
+      out.push({ ref: v.id, sku: v.sku || `SH-${v.id.split('/').pop()}`, name: v.title && v.title !== 'Default Title' ? `${v.product.title} · ${v.title}` : v.product.title, barcode: v.barcode, weight_g: w ? Math.round(w.value * (GRAMS[w.unit] ?? 1)) : 0 });
     }
     if (!d.productVariants.pageInfo.hasNextPage) break;
     after = d.productVariants.pageInfo.endCursor;

@@ -3,7 +3,7 @@ import { supabaseAdmin } from '../supabase/admin';
 import { siteUrl } from '../format';
 import { importOrder, KIND_LABEL, loadIntegration, logEvent, markError, type ExtOrder, type ExtProduct, type Integration } from './core';
 import { shopifyFulfil, shopifyOpenOrders, shopifyOrder, shopifyProducts, shopifyRegisterWebhooks } from './shopify';
-import { wooFulfil, wooOpenOrders, wooProducts, wooRegisterWebhooks } from './woocommerce';
+import { wooCall, wooFulfil, wooOpenOrders, wooProducts, wooRegisterWebhooks, wooToExt } from './woocommerce';
 
 export const webhookUrl = (i: Pick<Integration, 'id' | 'kind'>) => `${siteUrl()}/api/integrations/${i.kind}/${i.id}`;
 
@@ -40,21 +40,29 @@ export async function syncOrders(i: Integration, since: Date) {
 export async function importProducts(i: Integration) {
   const list: ExtProduct[] = i.kind === 'shopify' ? await shopifyProducts(i) : await wooProducts(i);
   const admin = supabaseAdmin();
-  const { data: have } = await admin.from('products').select('sku').eq('org_id', i.org_id);
-  const known = new Set((have ?? []).map((p) => p.sku.trim().toUpperCase()));
+  const { data: have } = await admin.from('products').select('id, sku, ext_ref').eq('org_id', i.org_id);
+  const bySku = new Map((have ?? []).map((p) => [p.sku.trim().toUpperCase(), p]));
+  const refs = new Set((have ?? []).map((p) => p.ext_ref).filter(Boolean));
   const fresh = new Map<string, ExtProduct>();
+  let linked = 0;
   for (const p of list) {
     const sku = p.sku.trim().toUpperCase().replace(/[^A-Z0-9\-_.]/g, '');
-    if (!sku || known.has(sku) || fresh.has(sku)) continue;
+    if (!sku || fresh.has(sku) || refs.has(p.ref)) continue;
+    const same = bySku.get(sku);
+    if (same) {
+      // Already here under the same SKU: remember the store link so orders match even without SKU.
+      if (!same.ext_ref) { await admin.from('products').update({ ext_ref: p.ref }).eq('id', same.id); linked++; }
+      continue;
+    }
     fresh.set(sku, { ...p, sku });
   }
-  const rows = [...fresh.values()].map((p) => ({ org_id: i.org_id, sku: p.sku, name: p.name.slice(0, 200), barcode: p.barcode, weight_g: p.weight_g, customs_value: 0, low_stock: 10 }));
+  const rows = [...fresh.values()].map((p) => ({ org_id: i.org_id, sku: p.sku, name: p.name.slice(0, 200), barcode: p.barcode, weight_g: p.weight_g, customs_value: 0, low_stock: 10, ext_ref: p.ref }));
   for (let k = 0; k < rows.length; k += 200) {
     const { error } = await admin.from('products').insert(rows.slice(k, k + 200));
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(/ext_ref/.test(error.message) ? 'Run the latest database update (0008) first.' : error.message);
   }
-  await logEvent(i, 'products_imported', `${rows.length} new product${rows.length === 1 ? '' : 's'} from ${list.length} store SKUs`);
-  return { found: list.length, added: rows.length };
+  await logEvent(i, 'products_imported', `${rows.length} new product${rows.length === 1 ? '' : 's'} from ${list.length} store products${linked ? `, ${linked} linked` : ''}`);
+  return { found: list.length, added: rows.length, linked };
 }
 
 /** Called when the warehouse ships an order: send the tracking number back to the store. */
@@ -84,4 +92,18 @@ export async function handleStoreOrder(i: Integration, ref: { shopifyGid?: strin
   const o = ref.shopifyGid ? await shopifyOrder(i, ref.shopifyGid) : ref.woo ?? null;
   if (!o) return 'missing';
   return importOrder(i, o);
+}
+
+/** Re-read an order's lines from the store (older imports didn't keep the store's product id). */
+export async function refreshLines(orderId: string) {
+  const admin = supabaseAdmin();
+  const { data: o } = await admin.from('orders').select('id, integration_id, external_id, external_lines').eq('id', orderId).maybeSingle();
+  const lines = (o?.external_lines ?? []) as ExtOrder['lines'];
+  if (!o?.integration_id || !o.external_id || lines.every((l) => l.ref)) return;
+  const i = await loadIntegration(o.integration_id);
+  if (!i) return;
+  try {
+    const fresh = i.kind === 'shopify' ? await shopifyOrder(i, o.external_id) : wooToExt(await wooCall(i, `/orders/${encodeURIComponent(o.external_id)}`));
+    if (fresh?.lines.length) await admin.from('orders').update({ external_lines: fresh.lines }).eq('id', o.id);
+  } catch { /* store unreachable: match with what we have */ }
 }

@@ -79,7 +79,7 @@ type WooOrder = {
   id: number; number: string; status: string;
   billing: { first_name: string; last_name: string; email: string; phone: string; company: string };
   shipping: { first_name: string; last_name: string; company: string; address_1: string; address_2: string; city: string; postcode: string; country: string; phone?: string };
-  line_items: { sku: string; name: string; quantity: number }[];
+  line_items: { sku: string; name: string; quantity: number; product_id: number; variation_id: number }[];
 };
 
 export function wooToExt(o: WooOrder): ExtOrder {
@@ -96,7 +96,7 @@ export function wooToExt(o: WooOrder): ExtOrder {
     city: hasShip ? sh.city || null : null,
     zip: hasShip ? sh.postcode || null : null,
     country: hasShip ? sh.country : '',
-    lines: o.line_items.map((l) => ({ sku: l.sku ?? '', name: l.name, qty: l.quantity })),
+    lines: o.line_items.map((l) => ({ sku: l.sku ?? '', name: l.name, qty: l.quantity, ref: `woo:${l.variation_id || l.product_id}` })),
     shippable: o.status === 'processing',
     cancelled: ['cancelled', 'refunded', 'failed'].includes(o.status),
   };
@@ -134,9 +134,9 @@ export async function wooProducts(i: Integration) {
     for (const p of list) {
       if (p.type === 'variable') {
         const vars = await wooCall<(P & { attributes: { option: string }[] })[]>(i, `/products/${p.id}/variations`, { query: { per_page: '100' } }).catch(() => []);
-        for (const v of vars) if (v.sku) out.push({ sku: v.sku, name: `${p.name} · ${v.attributes.map((a) => a.option).join(' / ')}`, barcode: v.global_unique_id || null, weight_g: g(v.weight || p.weight) });
-      } else if (p.sku) {
-        out.push({ sku: p.sku, name: p.name, barcode: p.global_unique_id || null, weight_g: g(p.weight) });
+        for (const v of vars) out.push({ ref: `woo:${v.id}`, sku: v.sku || `WC-${v.id}`, name: `${p.name} · ${v.attributes.map((a) => a.option).join(' / ')}`, barcode: v.global_unique_id || null, weight_g: g(v.weight || p.weight) });
+      } else {
+        out.push({ ref: `woo:${p.id}`, sku: p.sku || `WC-${p.id}`, name: p.name, barcode: p.global_unique_id || null, weight_g: g(p.weight) });
       }
     }
     if (list.length < 100) break;

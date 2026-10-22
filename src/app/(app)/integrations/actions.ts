@@ -9,7 +9,7 @@ import { seal, randomSecret } from '@/lib/integrations/crypto';
 import { KIND_LABEL, loadIntegration, logEvent, rematchOrder, type Integration, type Kind } from '@/lib/integrations/core';
 import { normalizeShop, shopifyConnect, type ShopifySecrets } from '@/lib/integrations/shopify';
 import { normalizeWooUrl, wooCall, wooConnect, type WooSecrets } from '@/lib/integrations/woocommerce';
-import { importProducts, pushTracking, registerWebhooks, syncOrders, webhookUrl } from '@/lib/integrations/service';
+import { importProducts, pushTracking, refreshLines, registerWebhooks, syncOrders, webhookUrl } from '@/lib/integrations/service';
 
 /** Who may manage a client's stores: the client's own admins, or Elmamsflow owner/managers. */
 function allowed(ctx: Ctx | null, orgId: string) {
@@ -106,7 +106,7 @@ export async function importStoreProducts(fd: FormData) {
     const r = await importProducts(i);
     msg = r.added
       ? `${r.added} product${r.added === 1 ? '' : 's'} imported from ${i.name ?? KIND_LABEL[i.kind]}. Add the HS code and customs value so orders don’t get held.`
-      : r.found ? `All ${r.found} SKUs from ${i.name ?? KIND_LABEL[i.kind]} are already in Elmamsflow.` : `No products with a SKU were found in ${i.name ?? KIND_LABEL[i.kind]}. Add SKUs to your products in the store first.`;
+      : r.found ? `All ${r.found} products from ${i.name ?? KIND_LABEL[i.kind]} are already in Elmamsflow${r.linked ? ` (${r.linked} linked to the store)` : ''}.` : `No products were found in ${i.name ?? KIND_LABEL[i.kind]}.`;
   } catch (e) {
     redirect(withMsg(back, (e as Error).message, 'err'));
   }
@@ -149,6 +149,7 @@ export async function rematchProducts(fd: FormData) {
   const id = str(fd, 'order');
   const { data: o } = await supabaseAdmin().from('orders').select('org_id').eq('id', id).maybeSingle();
   if (!o || !ctx || !(ctx.staffRole || ctx.org?.id === o.org_id) || !(ctx.can('orders.create') || ctx.can('orders.hold'))) redirect(withMsg(`/orders/${id}`, 'You don’t have access to that.', 'err'));
+  await refreshLines(id);
   const r = await rematchOrder(id);
   redirect(withMsg(`/orders/${id}`, r.message, r.ok ? 'ok' : 'warn'));
 }

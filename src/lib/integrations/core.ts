@@ -32,13 +32,14 @@ export type ExtOrder = {
   city: string | null;
   zip: string | null;
   country: string;
-  lines: { sku: string; qty: number; name: string }[];
+  /** ref = the store's own variant/product id, used when the SKU is empty. */
+  lines: { sku: string; qty: number; name: string; ref?: string }[];
   /** Paid and waiting to be shipped. */
   shippable: boolean;
   cancelled: boolean;
 };
 
-export type ExtProduct = { sku: string; name: string; barcode: string | null; weight_g: number };
+export type ExtProduct = { sku: string; name: string; barcode: string | null; weight_g: number; ref: string };
 
 export const STORE_STATUS: Record<string, [string, string]> = { active: ['Connected', 'ok'], paused: ['Paused', 'mute'], error: ['Needs attention', 'err'] };
 
@@ -69,16 +70,17 @@ export async function markError(i: Integration, message: string) {
 
 const norm = (s: string) => s.trim().toUpperCase();
 
-type Prod = { id: string; sku: string; hs_code: string | null; customs_value: number };
+type Prod = { id: string; sku: string; hs_code: string | null; customs_value: number; ext_ref?: string | null };
 
 /** Match store lines to this client's products by SKU. */
 function match(lines: ExtOrder['lines'], products: Prod[]) {
   const bySku = new Map(products.map((p) => [norm(p.sku), p]));
+  const byRef = new Map(products.filter((p) => p.ext_ref).map((p) => [p.ext_ref as string, p]));
   const items = new Map<string, number>();
   const unmatched: string[] = [];
   for (const l of lines) {
     if (l.qty <= 0) continue;
-    const p = l.sku ? bySku.get(norm(l.sku)) : undefined;
+    const p = (l.sku ? bySku.get(norm(l.sku)) : undefined) ?? (l.ref ? byRef.get(l.ref) : undefined);
     if (p) items.set(p.id, (items.get(p.id) ?? 0) + l.qty);
     else unmatched.push(l.sku || `“${l.name}” (no SKU)`);
   }
@@ -89,7 +91,7 @@ function match(lines: ExtOrder['lines'], products: Prod[]) {
 
 function holdReason(unmatched: string[], noCustoms: boolean, noAddress: boolean) {
   if (noAddress) return 'The shipping address is incomplete in the store';
-  if (unmatched.length) return `Not in Elmamsflow yet: ${unmatched.slice(0, 6).join(', ')}${unmatched.length > 6 ? '…' : ''}. Add these products, then press “Match products again”`;
+  if (unmatched.length) return `Not in Elmamsflow yet: ${unmatched.slice(0, 6).join(', ')}${unmatched.length > 6 ? '…' : ''}. Import or add these products, then press “Match products again”`;
   if (noCustoms) return 'A product is missing its HS code or customs value';
   return null;
 }
@@ -111,7 +113,7 @@ export async function importOrder(i: Integration, o: ExtOrder): Promise<'importe
   if (existing) return 'exists';
   if (!o.shippable) return 'skipped';
 
-  const { data: prods } = await admin.from('products').select('id, sku, hs_code, customs_value').eq('org_id', i.org_id);
+  const { data: prods } = await admin.from('products').select('id, sku, hs_code, customs_value, ext_ref').eq('org_id', i.org_id);
   const m = match(o.lines, (prods ?? []) as Prod[]);
   if (!m.items.length && !m.unmatched.length) return 'skipped'; // nothing to ship (digital items only)
   const noAddress = !o.address || !o.country;
@@ -140,7 +142,7 @@ export async function rematchOrder(orderId: string) {
   const admin = supabaseAdmin();
   const { data: o } = await admin.from('orders').select('id, org_id, status, external_lines, address, country').eq('id', orderId).maybeSingle();
   if (!o || !o.external_lines || !['new', 'on_hold'].includes(o.status)) return { ok: false, message: 'This order can’t be matched again.' };
-  const { data: prods } = await admin.from('products').select('id, sku, hs_code, customs_value').eq('org_id', o.org_id);
+  const { data: prods } = await admin.from('products').select('id, sku, hs_code, customs_value, ext_ref').eq('org_id', o.org_id);
   const m = match(o.external_lines as ExtOrder['lines'], (prods ?? []) as Prod[]);
   await admin.from('order_items').delete().eq('order_id', o.id);
   if (m.items.length) await admin.from('order_items').insert(m.items.map((it) => ({ ...it, order_id: o.id })));

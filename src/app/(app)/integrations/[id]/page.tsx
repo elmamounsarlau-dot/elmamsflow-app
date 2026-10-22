@@ -84,7 +84,7 @@ export default async function StorePage({ params }: { params: Promise<{ id: stri
           {ctx.can('products.edit') && (
             <section className="ep-card">
               <h2>Import products</h2>
-              <p className="ep-small ep-muted" style={{ margin: '.3rem 0 .9rem' }}>Adds every store SKU that isn’t in Elmamsflow yet, with its name, barcode and weight. Existing products are never changed.</p>
+              <p className="ep-small ep-muted" style={{ margin: '.3rem 0 .9rem' }}>Adds every store product that isn’t in Elmamsflow yet, with its name, barcode and weight. Products without a SKU get one (SH-… / WC-…) and stay linked to the store, so their orders still match. Existing products are never changed.</p>
               <form action={importStoreProducts}><input type="hidden" name="id" value={i.id} /><Submit className="ep-btn ep-btn--ghost ep-btn--full">Import products from {KIND_LABEL[i.kind]}</Submit></form>
             </section>
           )}
