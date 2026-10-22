@@ -9,6 +9,9 @@ import { Arrow, Empty } from '@/components/ui';
 import { Act, AutoSubmit, BulkBar, ColumnsMenu } from '@/components/orders';
 import { ordersListAction } from './actions';
 import { getWarehouses, shippingWarehouses, whLabel } from '@/lib/warehouses';
+import { clientTodo, ordersOverview } from '@/lib/orders-overview';
+import { OrdersOverview } from './overview';
+import { ClientPicker } from '@/components/orders-overview';
 
 export const metadata = { title: 'Orders' };
 
@@ -48,6 +51,13 @@ const Ico = ({ d, s = 16 }: { d: keyof typeof I; s?: number }) => (
 export default async function Orders({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const ctx = await requireCtx();
   const f = parseFilters(await searchParams, ctx.backOffice);
+  // Back office: the Orders page opens on the overview of all brands; a brand (or "all") is chosen from there.
+  // Old links with a tab, status or search (e.g. "Fix them →") open the all-brands list instead.
+  if (ctx.backOffice && !f.c) {
+    if (f.t || f.s || f.q || f.src || f.country || f.from || f.to || f.svc) f.c = 'all';
+    else return <OrdersOverview data={await ordersOverview()} canCreate={ctx.can('orders.create')} />;
+  }
+  const oneClient = ctx.backOffice && f.c !== 'all' ? f.c : '';
   const sb = await supabaseServer();
   const orgId = ctx.org?.id ?? null;
   const scopeOnly = { ...f, q: '', src: '', country: '', from: '', to: '', svc: '' };
@@ -73,6 +83,8 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
     getWarehouses(),
   ]);
   const whOf = new Map(whs.map((w) => [w.id, w]));
+  const todo = oneClient ? await clientTodo(oneClient) : null;
+  const pick = ctx.backOffice ? Object.entries(names).map(([id, name]) => ({ id, name, code: null })) : [];
   const canAssign = !!ctx.staffRole && ctx.can('orders.warehouse');
   const rows = (list.data ?? []) as unknown as Row[];
   const total = list.count ?? 0;
@@ -90,24 +102,53 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
   const staffHold = !!ctx.staffRole && ctx.can('orders.hold');
   const here = ordersHref(f);
   const issueTab = !!f.t;
-  const activeFilters = [f.src && CHANNELS[f.src], f.country, f.svc && (f.svc === 'ddp' ? 'DDP' : 'Express'), (f.from || f.to) && `${f.from || '…'} → ${f.to || '…'}`, f.c && names[f.c]].filter(Boolean) as string[];
+  const activeFilters = [f.src && CHANNELS[f.src], f.country, f.svc && (f.svc === 'ddp' ? 'DDP' : 'Express'), (f.from || f.to) && `${f.from || '…'} → ${f.to || '…'}`].filter(Boolean) as string[];
   const exportHref = `/orders/export${here.replace(/^\/orders/, '')}`;
 
   return (
     <>
-      <div className="ep-head ep-head--orders">
-        <div>
-          <p className="ep-crumb ep-crumb--icon"><Ico d="orders" s={14} />Orders</p>
-          <h1>Manage your orders</h1>
-          <p>Every order from your stores and from us, where it is right now, and what needs a fix before it can ship.</p>
-        </div>
-        {canCreate && (
-          <div className="ep-actions">
-            <Link className="ep-btn ep-btn--ghost" href="/orders/import">Import CSV</Link>
-            <Link className="ep-btn" href="/orders/new">New order <Arrow /></Link>
+      {ctx.backOffice ? (
+        <>
+          <Link className="ep-back" href="/orders">← All brands</Link>
+          <div className="ep-head ep-head--orders">
+            <div>
+              <p className="ep-crumb ep-crumb--icon"><Ico d="orders" s={14} />Orders{oneClient ? ' · Brand' : ''}</p>
+              <h1>{oneClient ? names[oneClient] ?? 'Client' : 'All brands in one list'}</h1>
+              <p>{oneClient ? 'Every order of this brand, what needs a fix, and what is ready to pack.' : 'Every order from every brand. Use the brand picker to work on one brand at a time.'}</p>
+            </div>
+            <div className="ep-actions">
+              <ClientPicker clients={pick} current={oneClient} label="Switch brand" />
+              {canCreate && <Link className="ep-btn ep-btn--ghost" href="/orders/import">Import CSV</Link>}
+              {canCreate && <Link className="ep-btn" href="/orders/new">New order <Arrow /></Link>}
+            </div>
           </div>
-        )}
-      </div>
+          {todo && (
+            <nav className="ep-todo" aria-label="To do for this brand">
+              <b>To do</b>
+              {todo.noWarehouse > 0 && <span className="ep-todo-item ep-todo-item--err">{todo.noWarehouse} without a warehouse <em>select them below → Ship from</em></span>}
+              {Object.entries(todo.holds).map(([k, n]) => <Link key={k} className="ep-todo-item ep-todo-item--warn" href={ordersHref(f, { t: k, s: '', p: 1 })}>{n} on hold · {(HOLD_KIND[k]?.[1] ?? k).toLowerCase()}</Link>)}
+              {todo.toShip > 0 && <Link className="ep-todo-item" href={ordersHref(f, { s: 'new', t: '', p: 1 })}>{todo.toShip} ready to pack</Link>}
+              {todo.packed > 0 && <Link className="ep-todo-item" href={ordersHref(f, { s: 'packed', t: '', p: 1 })}>{todo.packed} packed, waiting for the carrier</Link>}
+              {!todo.noWarehouse && !Object.keys(todo.holds).length && !todo.toShip && !todo.packed && <span className="ep-todo-item ep-todo-item--ok">Nothing waiting. All clear.</span>}
+              <Link className="ep-link ep-small" href={`/clients/${oneClient}`}>Client settings →</Link>
+            </nav>
+          )}
+        </>
+      ) : (
+        <div className="ep-head ep-head--orders">
+          <div>
+            <p className="ep-crumb ep-crumb--icon"><Ico d="orders" s={14} />Orders</p>
+            <h1>Manage your orders</h1>
+            <p>Every order from your stores and from us, where it is right now, and what needs a fix before it can ship.</p>
+          </div>
+          {canCreate && (
+            <div className="ep-actions">
+              <Link className="ep-btn ep-btn--ghost" href="/orders/import">Import CSV</Link>
+              <Link className="ep-btn" href="/orders/new">New order <Arrow /></Link>
+            </div>
+          )}
+        </div>
+      )}
 
       <nav className="ep-statstrip" aria-label="Orders by status">
         {statusKeys.map((k, i) => (
@@ -148,9 +189,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
                 {f.t && <input type="hidden" name="t" value={f.t} />}
                 {f.s && <input type="hidden" name="s" value={f.s} />}
                 {f.q && <><input type="hidden" name="q" value={f.q} /><input type="hidden" name="field" value={f.field} /></>}
-                {ctx.backOffice && (
-                  <label>Client<select name="c" defaultValue={f.c}><option value="">All clients</option>{Object.entries(names).map(([id, n]) => <option key={id} value={id}>{n}</option>)}</select></label>
-                )}
+                {f.c && <input type="hidden" name="c" value={f.c} />}
                 <label>Channel<select name="src" defaultValue={f.src}><option value="">All channels</option>{Object.entries(CHANNELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
                 <label>Country<select name="country" defaultValue={f.country}><option value="">All countries</option>{countries.map((c) => <option key={c} value={c}>{flag(c)} {c}</option>)}</select></label>
                 <label>Service<select name="svc" defaultValue={f.svc}><option value="">Express and DDP</option><option value="express">Express</option><option value="ddp">DDP</option></select></label>
@@ -159,7 +198,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
                   <label>To<input type="date" name="to" defaultValue={f.to} /></label>
                 </div>
                 <div className="ep-pop-foot">
-                  <Link href={ordersHref({ ...f, src: '', country: '', svc: '', from: '', to: '', c: '' }, { p: 1 })} className="ep-link">Reset all</Link>
+                  <Link href={ordersHref({ ...f, src: '', country: '', svc: '', from: '', to: '' }, { p: 1 })} className="ep-link">Reset all</Link>
                   <button className="ep-btn ep-btn--sm">Apply filters</button>
                 </div>
               </form>
@@ -174,7 +213,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
         {activeFilters.length > 0 && (
           <div className="ep-chips-active">
             {activeFilters.map((a) => <span key={a}>{a}</span>)}
-            <Link href={ordersHref({ ...f, src: '', country: '', svc: '', from: '', to: '', c: '' }, { p: 1 })} className="ep-link">Clear filters</Link>
+            <Link href={ordersHref({ ...f, src: '', country: '', svc: '', from: '', to: '' }, { p: 1 })} className="ep-link">Clear filters</Link>
           </div>
         )}
         {issueTab && f.t !== 'attention' && <p className="ep-orders-hint">{HOLD_KIND[f.t][2]}. {f.t === 'manual' ? 'Release them when they’re ready to ship.' : f.t === 'products' ? 'Import or add the products, then open the order and press “Match products again”.' : f.t === 'customs' ? 'Add the HS code and customs value on the product — the order releases by itself.' : f.t === 'address' ? 'Open the order to see the address, then fix it in your store or tell us in Support.' : 'They ship as soon as stock arrives.'}</p>}
@@ -209,7 +248,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
                   <tr>
                     <th className="ep-ock"><input type="checkbox" data-all aria-label="Select all on this page" /></th>
                     <th>Order ID</th>
-                    {ctx.backOffice && <th>Client</th>}
+                    {ctx.backOffice && !oneClient && <th>Client</th>}
                     <th>{issueTab ? 'Hold type' : 'Status'}</th>
                     <th className="col-items">Items</th>
                     <th>Customer name</th>
@@ -239,7 +278,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
                           {o.store_ref && <small>{o.store_ref}</small>}
                           <small className="ep-oid-date">{fmtDate(o.created_at)}</small>
                         </td>
-                        {ctx.backOffice && <td className="ep-muted">{names[o.org_id] ?? '—'}</td>}
+                        {ctx.backOffice && !oneClient && <td className="ep-muted">{names[o.org_id] ?? '—'}</td>}
                         <td>
                           {issueTab
                             ? <span className={`ep-st ep-st--${o.hold_kind === 'manual' ? 'pk' : 'warn'}`}>{kind?.[1] ?? 'On hold'}</span>

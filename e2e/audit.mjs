@@ -19,7 +19,7 @@ const PRODUCT = 'a0000000-0000-0000-0000-000000000003';
 const INBOUND = '1c000000-0000-0000-0000-000000000005';
 const ATLAS = '11111111-1111-1111-1111-111111111111';
 
-const STAFF_PAGES = ['/', '/clients', `/clients/${ATLAS}`, '/orders', '/orders?t=attention', `/orders/${ORDER}`, `/orders/${HELD}`, '/orders/new', '/orders/import', '/inventory', `/inventory/${PRODUCT}`, '/inventory/new', '/inventory/import', '/inbounds', `/inbounds/${INBOUND}`, '/inbounds/new', '/tracking', '/support', '/support/7a000000-0000-0000-0000-000000000002', '/support/new', '/invoices', '/invoices/1a000000-0000-0000-0000-000000000002', '/integrations', '/integrations/1e000000-0000-0000-0000-000000000001', '/integrations/new', '/warehouses', '/transfers', '/transfers/new', '/transfers/new?kind=allocation', '/transfers/:first', '/team', '/activity', '/settings', '/settings/billing'];
+const STAFF_PAGES = ['/', '/clients', `/clients/${ATLAS}`, '/orders', `/orders?c=${ATLAS}`, '/orders?c=all', '/orders?t=attention', `/orders/${ORDER}`, `/orders/${HELD}`, '/orders/new', '/orders/import', '/inventory', `/inventory/${PRODUCT}`, '/inventory/new', '/inventory/import', '/inbounds', `/inbounds/${INBOUND}`, '/inbounds/new', '/tracking', '/support', '/support/7a000000-0000-0000-0000-000000000002', '/support/new', '/invoices', '/invoices/1a000000-0000-0000-0000-000000000002', '/integrations', '/integrations/1e000000-0000-0000-0000-000000000001', '/integrations/new', '/warehouses', '/transfers', '/transfers/new', '/transfers/new?kind=allocation', '/transfers/:first', '/team', '/activity', '/settings', '/settings/billing'];
 const CLIENT_PAGES = ['/', '/notifications', '/orders', `/orders/${ORDER}`, '/orders/new', '/orders/import', '/inventory', `/inventory/${PRODUCT}`, '/inbounds', '/inbounds/new', '/tracking', '/support', '/support/new', '/invoices', '/invoices/1a000000-0000-0000-0000-000000000002', '/integrations', '/team', '/settings'];
 const ROLES = [
   { key: 'owner', email: 'owner@local.test', pages: STAFF_PAGES },
@@ -36,7 +36,7 @@ const browser = await chromium.launch({ ...(process.env.CHROMIUM ? { executableP
 for (const role of ROLES) {
   const cookies = await cookiesFor(role.email, BASE);
   for (const w of WIDTHS) {
-    const ctx = await browser.newContext({ viewport: { width: w.width, height: w.height }, isMobile: w.mobile, hasTouch: w.mobile, deviceScaleFactor: 1 });
+    const ctx = await browser.newContext({ viewport: { width: w.width, height: w.height }, isMobile: w.mobile, hasTouch: w.mobile, deviceScaleFactor: 1, reducedMotion: 'reduce' }); // final state: entrance animations would skew contrast checks
     await ctx.addCookies(cookies);
     const page = await ctx.newPage();
     for (const path of role.pages) {
