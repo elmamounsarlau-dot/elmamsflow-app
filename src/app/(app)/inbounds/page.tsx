@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+import { shippingOnly } from '@/lib/session';
 import Link from 'next/link';
 import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
@@ -15,6 +17,7 @@ const lateDays = (b: Row) => (b.status !== 'received' && b.eta && b.eta < today(
 
 export default async function Inbounds({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const ctx = await requireCtx();
+  if (shippingOnly(ctx)) redirect('/shipping');
   const sp = await searchParams;
   const sb = await supabaseServer();
   const qy = allRows<Row>(() => {

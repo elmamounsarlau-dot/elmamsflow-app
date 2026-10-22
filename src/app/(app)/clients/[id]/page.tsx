@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+import { shippingOnly } from '@/lib/session';
 import { readFlashLink } from '@/lib/link-flash';
 import { notFound } from 'next/navigation';
 import { requirePerm } from '@/lib/guard';
@@ -20,6 +22,7 @@ import { getWarehouses, shippingWarehouses } from '@/lib/warehouses';
 export default async function ClientPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string>> }) {
   const { id } = await params;
   const ctx = await requirePerm('clients.view', `/clients/${encodeURIComponent(id)}`);
+  if (shippingOnly(ctx)) redirect('/shipping');
   await searchParams;
   const flash = await readFlashLink();
   const sb = await supabaseServer();

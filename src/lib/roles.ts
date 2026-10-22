@@ -50,6 +50,7 @@ export const DEFAULT_STAFF_ROLES: RoleDef[] = [
   { key: 'warehouse', label: 'Warehouse', about: 'Receives stock, packs and ships orders, adjusts counts.', perms: ['orders.warehouse', 'orders.hold', 'stock.adjust', 'inbounds.receive', 'products.edit'], locked: false, system: true, position: 3 },
   { key: 'support', label: 'Customer service', about: 'Answers tickets, puts orders on hold or releases them.', perms: ['clients.view', 'orders.hold', 'support.reply', 'orders.create', 'products.edit', 'inbounds.create'], locked: false, system: true, position: 4 },
   { key: 'finance', label: 'Finance', about: 'Sees clients and orders; billing when it arrives.', perms: ['clients.view', 'activity.view', 'invoices.view', 'billing.manage'], locked: false, system: true, position: 5 },
+  { key: 'shipper', label: 'Shipper', about: 'Ships orders: sees what to ship and where, adds the tracking number and the label photo.', perms: ['orders.warehouse'], locked: false, system: true, position: 6 },
 ];
 export const DEFAULT_CLIENT_ROLES: RoleDef[] = [
   { key: 'admin', label: 'Admin', about: 'Everything in the workspace, including the team.', perms: permsFor(false).map((p) => p.key), locked: true, system: true, position: 1 },

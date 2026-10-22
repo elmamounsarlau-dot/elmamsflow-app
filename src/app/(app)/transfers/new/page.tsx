@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+import { shippingOnly } from '@/lib/session';
 import { requirePerm } from '@/lib/guard';
 import { getClients, getProducts, orgNames, productOptions } from '@/lib/data';
 import { getWarehouses, shippingWarehouses } from '@/lib/warehouses';
@@ -9,6 +11,7 @@ export const metadata = { title: 'New transfer' };
 
 export default async function NewTransfer({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const ctx = await requirePerm('stock.adjust');
+  if (shippingOnly(ctx)) redirect('/shipping');
   const sp = await searchParams;
   const allocation = sp.kind === 'allocation' && ctx.staffRole === 'owner';
   const [products, clients, names, whs] = await Promise.all([getProducts(ctx), ctx.org ? Promise.resolve([]) : getClients(), ctx.org ? Promise.resolve(undefined) : orgNames(), getWarehouses()]);

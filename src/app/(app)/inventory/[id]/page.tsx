@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+import { shippingOnly } from '@/lib/session';
 import { notFound } from 'next/navigation';
 import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
@@ -15,6 +17,7 @@ const SOURCE: Record<string, string> = { manual: 'Entered in app', csv: 'CSV imp
 
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireCtx();
+  if (shippingOnly(ctx)) redirect('/shipping');
   const { id } = await params;
   const sb = await supabaseServer();
   let q = sb.from('product_stock').select('*').eq('id', id);

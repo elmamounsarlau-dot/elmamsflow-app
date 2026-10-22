@@ -24,6 +24,7 @@ const CLIENT_PAGES = ['/', '/notifications', '/orders', `/orders/${ORDER}`, '/or
 const ROLES = [
   { key: 'owner', email: 'owner@local.test', pages: STAFF_PAGES },
   { key: 'warehouse', email: 'warehouse@local.test', pages: ['/', '/orders', `/orders/${ORDER}`, '/inventory', `/inventory/${PRODUCT}`, `/inbounds/${INBOUND}`] },
+  { key: 'shipper', email: 'shipper@local.test', pages: ['/shipping', '/shipping?s=packed', '/orders', `/orders/${ORDER}`, '/tracking'] },
   { key: 'client-admin', email: 'admin@atlas.local.test', pages: CLIENT_PAGES },
   { key: 'client-ops', email: 'ops@atlas.local.test', pages: ['/', '/notifications', '/orders', '/inventory', '/team'] },
 ];

@@ -7,13 +7,15 @@ const security = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   // Links to other sites (17TRACK, Shopify…) never receive our page addresses.
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=()' },
+  { key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=(), payment=()' },
 ];
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Local test builds (pointed at the local stack) go to their own folder.
   distDir: process.env.NEXT_DIST_DIR || '.next',
+  // Shipping labels (photo or PDF) are uploaded through a server action.
+  experimental: { serverActions: { bodySizeLimit: '9mb' } },
   async headers() {
     return [{ source: '/:path*', headers: security }];
   },

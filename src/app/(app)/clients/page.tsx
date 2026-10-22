@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+import { shippingOnly } from '@/lib/session';
 import { requirePerm } from '@/lib/guard';
 import { supabaseServer } from '@/lib/supabase/server';
 import { COUNTRIES, fmtDate } from '@/lib/format';
@@ -9,6 +11,7 @@ export const metadata = { title: 'Clients' };
 
 export default async function Clients() {
   const ctx = await requirePerm('clients.view', '/clients');
+  if (shippingOnly(ctx)) redirect('/shipping');
   const sb = await supabaseServer();
   const { data: orgs } = await sb.from('organizations').select('id, name, code, status, country, created_at, memberships(count)').eq('kind', 'client').order('created_at', { ascending: false });
   const list = orgs ?? [];

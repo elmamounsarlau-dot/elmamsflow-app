@@ -1,3 +1,4 @@
+import { shippingOnly } from '@/lib/session';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireCtx } from '@/lib/session';
@@ -14,6 +15,7 @@ const ACTIVE: Record<string, [string, string]> = { true: ['Open', 'ok'], false: 
 
 export default async function Warehouses() {
   const ctx = await requireCtx();
+  if (shippingOnly(ctx)) redirect('/shipping');
   if (!ctx.backOffice) redirect('/inventory');
   const sb = await supabaseServer();
   const [whs, stock, { data: openOrders }] = await Promise.all([

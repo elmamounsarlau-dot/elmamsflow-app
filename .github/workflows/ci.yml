@@ -94,6 +94,10 @@ jobs:
         run: |
           bash supabase/local/up.sh > /dev/null
           node e2e/orders-import.mjs
+      - name: Shipper role ships with tracking + label (and sees nothing else)
+        run: |
+          bash supabase/local/up.sh > /dev/null
+          node e2e/shipper.mjs
       - if: always()
         uses: actions/upload-artifact@v4
         with:

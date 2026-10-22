@@ -9,6 +9,7 @@ import { logActivity } from '@/lib/log';
 import { str, withMsg } from '@/lib/format';
 import { pushTracking } from '@/lib/integrations/service';
 import { refreshOrders, registerOrders, syncTracking, trackKey, trackShippedOrder } from '@/lib/track17';
+import { saveLabel } from '@/lib/labels';
 
 export async function createOrder(fd: FormData) {
   const ctx = await getCtx();
@@ -40,8 +41,25 @@ export async function createOrder(fd: FormData) {
 export async function updateOrder(fd: FormData) {
   const ctx = await getCtx();
   const id = str(fd, 'id');
-  if (!ctx?.can('orders.hold')) redirect(withMsg(`/orders/${id}`, 'You don’t have access to that.', 'err'));
+  if (!ctx?.can('orders.hold') && !ctx?.can('orders.warehouse')) redirect(withMsg(`/orders/${id}`, 'You don’t have access to that.', 'err'));
   const sb = await supabaseServer();
+  const { data: cur } = await sb.from('orders').select('id, org_id, status, tracking, label_path').eq('id', id).maybeSingle();
+  if (!cur) redirect(withMsg('/orders', 'Order not found.', 'err'));
+  const next = str(fd, 'status');
+  const label = fd.get('label');
+  const file = label instanceof File && label.size > 0 ? label : null;
+  // Handing a parcel to the carrier needs its tracking number and the label (photo or PDF): that's the proof clients see.
+  if (['shipped', 'delivered'].includes(next) && !['shipped', 'delivered'].includes(cur.status)) {
+    if (!str(fd, 'tracking') && !cur.tracking) redirect(withMsg(`/orders/${id}#ship`, 'Add the tracking number to mark it in transit.', 'warn'));
+    if (!file && !cur.label_path) redirect(withMsg(`/orders/${id}#ship`, 'Add the label photo (or PDF) to mark it in transit.', 'warn'));
+  }
+  if (file && ctx.can('orders.warehouse')) {
+    try {
+      await saveLabel(cur, file, ctx.userId);
+    } catch (e) {
+      redirect(withMsg(`/orders/${id}#ship`, (e as Error).message, 'err'));
+    }
+  }
   const weight = parseInt(str(fd, 'weight_g'), 10);
   // Warehouse first (only allowed before packing), then the status change checks stock at that warehouse.
   const wh = str(fd, 'warehouse_id');

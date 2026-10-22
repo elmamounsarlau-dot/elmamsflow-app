@@ -1306,3 +1306,9 @@ a.ep-okpi:hover { border-color: var(--line-hover); }
 @media (prefers-reduced-motion: reduce) {
   .ep-okpi, .ep-brands tbody tr, .ep-flow .ln, .ep-flow .area, .ep-flow .dot, .ep-ring .seg, .ep-bspark path, .ep-cpick-panel { animation: none !important; }
 }
+
+/* Shipping label preview */
+.ep-label-thumb { display: block; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface-2); max-width: 420px; }
+.ep-label-thumb img { display: block; width: 100%; height: auto; max-height: 520px; object-fit: contain; }
+.ep-ship-filter { display: flex; flex-wrap: wrap; gap: .4rem; padding-top: .8rem; padding-bottom: .8rem; }
+.ep-todo-item.is-off { background: transparent; border: 1px solid var(--line); color: var(--muted); }

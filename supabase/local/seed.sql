@@ -3,6 +3,7 @@ insert into auth.users (id, email, last_sign_in_at, email_confirmed_at, raw_user
   ('00000000-0000-0000-0000-0000000000a1', 'owner@local.test', now(), now(), '{"full_name":"Yasser (test owner)"}'),
   ('00000000-0000-0000-0000-0000000000a2', 'manager@local.test', now(), now(), '{"full_name":"Mina Manager"}'),
   ('00000000-0000-0000-0000-0000000000a3', 'warehouse@local.test', now(), now(), '{"full_name":"Wei Warehouse"}'),
+  ('00000000-0000-0000-0000-0000000000a4', 'shipper@local.test', now(), now(), '{"full_name":"Sam Shipper"}'),
   ('00000000-0000-0000-0000-0000000000b1', 'admin@atlas.local.test', now(), now(), '{"full_name":"Amal Atlas"}'),
   ('00000000-0000-0000-0000-0000000000b2', 'ops@atlas.local.test', now(), now(), '{"full_name":"Omar Ops"}'),
   ('00000000-0000-0000-0000-0000000000b3', 'new@atlas.local.test', null, null, '{"full_name":"Nadia New"}'),
@@ -15,7 +16,7 @@ insert into public.organizations (id, kind, name, country, phone, default_wareho
 insert into public.memberships (org_id, user_id, role, status)
 select o.id, u.id::uuid, u.role, 'active' from (values
   ('00000000-0000-0000-0000-0000000000a1', 'owner'), ('00000000-0000-0000-0000-0000000000a2', 'manager'),
-  ('00000000-0000-0000-0000-0000000000a3', 'warehouse')) u(id, role)
+  ('00000000-0000-0000-0000-0000000000a3', 'warehouse'), ('00000000-0000-0000-0000-0000000000a4', 'shipper')) u(id, role)
 cross join (select id from public.organizations where kind = 'owner') o;
 insert into public.memberships (org_id, user_id, role, status) values
   ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-0000000000b1', 'admin', 'active'),
