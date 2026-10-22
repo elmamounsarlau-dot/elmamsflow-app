@@ -5,7 +5,7 @@ import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
 import { getProducts, orgNames } from '@/lib/data';
 import { fmtDays, HEALTH, RANGE_LABEL, RANGES, rangeOf, runway, salesByProduct } from '@/lib/insights';
-import { COUNTRIES, fmtDate, greeting, ORDER_STATUS } from '@/lib/format';
+import { countryName, fmtDate, greeting, ORDER_STATUS } from '@/lib/format';
 import { ACTIVITY_LABELS } from '@/lib/log';
 import { Arrow, Badge, Empty } from '@/components/ui';
 import { Spark } from '@/components/charts';
@@ -197,7 +197,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                     <tr key={o.id} data-href={`/orders/${o.id}`}>
                       <td><b>#{o.number}</b></td>
                       <td>{o.customer}{ctx.backOffice && <small>{names[o.org_id]}</small>}</td>
-                      <td className="ep-muted">{[o.city, COUNTRIES[o.country] ?? o.country].filter(Boolean).join(', ')}</td>
+                      <td className="ep-muted">{[o.city, countryName(o.country)].filter(Boolean).join(', ')}</td>
                       <td className="ep-muted">{fmtDate(o.created_at)}</td>
                       <td className="ep-right"><Badge map={ORDER_STATUS} value={o.status} /></td>
                     </tr>
@@ -229,7 +229,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
               <ul className="ep-markets">
                 {markets.map(([c, n]) => (
                   <li key={c}>
-                    <span>{COUNTRIES[c] ?? c}</span>
+                    <span>{countryName(c)}</span>
                     <b>{n.toLocaleString('en')}</b>
                     <small>{((n / inRange.length) * 100).toFixed(1)}%</small>
                     <div className="ep-meter ep-meter--thin"><i style={{ width: `${(n / markets[0][1]) * 100}%` }} /></div>

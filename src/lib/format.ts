@@ -54,3 +54,10 @@ export function withMsg(path: string, msg: string, type: 'ok' | 'err' | 'warn' =
 export function str(fd: FormData, k: string) {
   return String(fd.get(k) ?? '').trim();
 }
+
+const REGION = new Intl.DisplayNames(['en'], { type: 'region' });
+/** Full country name for any ISO code (falls back to the code). */
+export function countryName(cc: string) {
+  if (COUNTRIES[cc]) return COUNTRIES[cc];
+  try { return REGION.of(cc) ?? cc; } catch { return cc; }
+}
