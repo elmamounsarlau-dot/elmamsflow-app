@@ -2,6 +2,7 @@
   { "id": "00000000-0000-0000-0000-0000000000a1", "email": "owner@local.test", "name": "Yasser (test owner)", "signedIn": true },
   { "id": "00000000-0000-0000-0000-0000000000a2", "email": "manager@local.test", "name": "Mina Manager", "signedIn": true },
   { "id": "00000000-0000-0000-0000-0000000000a3", "email": "warehouse@local.test", "name": "Wei Warehouse", "signedIn": true },
+  { "id": "00000000-0000-0000-0000-0000000000a4", "email": "shipper@local.test", "name": "Sam Shipper", "signedIn": true },
   { "id": "00000000-0000-0000-0000-0000000000b1", "email": "admin@atlas.local.test", "name": "Amal Atlas", "signedIn": true },
   { "id": "00000000-0000-0000-0000-0000000000b2", "email": "ops@atlas.local.test", "name": "Omar Ops", "signedIn": true },
   { "id": "00000000-0000-0000-0000-0000000000b3", "email": "new@atlas.local.test", "name": "Nadia New", "signedIn": false },

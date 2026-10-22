@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+import { shippingOnly } from '@/lib/session';
 import { requirePerm } from '@/lib/guard';
 import { getClients } from '@/lib/data';
 import { Back } from '@/components/ui';
@@ -8,6 +10,7 @@ export const metadata = { title: 'Add product' };
 
 export default async function NewProduct() {
   const ctx = await requirePerm('products.edit');
+  if (shippingOnly(ctx)) redirect('/shipping');
   const clients = ctx.org ? [] : await getClients();
   return (
     <>

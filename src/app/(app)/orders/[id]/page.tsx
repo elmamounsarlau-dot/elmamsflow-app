@@ -18,7 +18,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const { data: o } = await q.maybeSingle();
   if (!o) notFound();
   const [{ data: items }, whs, { data: events }] = await Promise.all([
-    sb.from('order_items').select('qty, products(sku, name)').eq('order_id', id),
+    sb.from('order_items').select('qty, products(sku, name, weight_g, hs_code, customs_value)').eq('order_id', id),
     getWarehouses(),
     o.tracking ? sb.from('tracking_events').select('at, description, location').eq('order_id', id).eq('tracking', o.tracking).order('at', { ascending: false }).limit(60) : Promise.resolve({ data: [] as { at: string | null; description: string; location: string | null }[] }),
   ]);
@@ -30,8 +30,11 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
     ['Shipped', o.shipped_at, ['shipped', 'delivered'].includes(o.status)],
     ['Delivered', o.delivered_at, o.status === 'delivered'],
   ];
-  const staffView = !!ctx.staffRole && ctx.can('orders.hold');
-  const statuses = ctx.can('orders.warehouse') ? Object.keys(ORDER_STATUS) : ['new', 'on_hold'];
+  const staffView = !!ctx.staffRole && (ctx.can('orders.hold') || ctx.can('orders.warehouse'));
+  const canHoldIt = ctx.can('orders.hold');
+  const statuses = ctx.can('orders.warehouse') ? Object.keys(ORDER_STATUS).filter((k) => canHoldIt || !['on_hold', 'cancelled'].includes(k)) : ['new', 'on_hold'];
+  const shippedAlready = ['shipped', 'delivered'].includes(o.status);
+  const isPdf = (o.label_path ?? '').endsWith('.pdf');
   return (
     <>
       <Back href="/orders">Orders</Back>
@@ -97,11 +100,30 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
               )}
             </section>
           )}
+          {o.label_path && (
+            <section className="ep-card" id="label">
+              <div className="ep-card-head"><h2>Shipping label</h2><a className="ep-link ep-small" href={`/orders/${o.id}/label`} target="_blank" rel="noopener">Open full size ↗</a></div>
+              {isPdf ? <p className="ep-small">PDF label · <a className="ep-link" href={`/orders/${o.id}/label`} target="_blank" rel="noopener">open it</a></p>
+                : <a href={`/orders/${o.id}/label`} target="_blank" rel="noopener" className="ep-label-thumb">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- private file behind sign-in, not optimisable */}
+                    <img src={`/orders/${o.id}/label`} alt={`Shipping label for #${o.number}`} loading="lazy" /></a>}
+              <p className="ep-small ep-muted" style={{ marginTop: '.5rem' }}>Added {fmtDate(o.label_uploaded_at, true)}.</p>
+            </section>
+          )}
           <section className="ep-card">
             <h2>Items</h2>
             <table className="ep-table">
-              <thead><tr><th>SKU</th><th>Product</th><th className="ep-right">Qty</th></tr></thead>
-              <tbody>{(items ?? []).map((it, i) => { const p = it.products as unknown as { sku: string; name: string }; return <tr key={i}><td><b>{p?.sku}</b></td><td>{p?.name}</td><td className="ep-right">{it.qty}</td></tr>; })}</tbody>
+              <thead><tr><th>SKU</th><th>Product</th>{ctx.staffRole && <><th>HS code</th><th className="ep-right">Value (USD)</th><th className="ep-right">Weight</th></>}<th className="ep-right">Qty</th></tr></thead>
+              <tbody>{(items ?? []).map((it, i) => {
+                const p = it.products as unknown as { sku: string; name: string; weight_g: number; hs_code: string | null; customs_value: number };
+                return (
+                  <tr key={i}>
+                    <td><b>{p?.sku}</b></td><td>{p?.name}</td>
+                    {ctx.staffRole && <><td>{p?.hs_code || <span className="ep-warn">missing</span>}</td><td className="ep-right">{Number(p?.customs_value) ? Number(p.customs_value).toFixed(2) : '—'}</td><td className="ep-right">{p?.weight_g ? `${p.weight_g} g` : '—'}</td></>}
+                    <td className="ep-right">{it.qty}</td>
+                  </tr>
+                );
+              })}</tbody>
             </table>
           </section>
         </div>
@@ -111,9 +133,12 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
             <p className="ep-address"><b>{o.customer}</b><br />{o.address}<br />{[o.zip, o.city].filter(Boolean).join(' ')}<br />{COUNTRIES[o.country] ?? o.country}{o.email && <><br /><span className="ep-muted">{o.email}</span></>}</p>
             <p className="ep-muted ep-small">Service: {o.service === 'ddp' ? 'DDP, duties paid' : 'Express'}{o.weight_g ? ` · ${(o.weight_g / 1000).toFixed(2)} kg` : ''}</p>
           </section>
-          {staffView && !['cancelled'].includes(o.status) && (
-            <section className="ep-card ep-card--team">
-              <h2>Warehouse update</h2>
+          {staffView && !canHoldIt && o.status === 'on_hold' && (
+            <section className="ep-card ep-card--team" id="ship"><h2>Ship this order</h2><p className="ep-small">On hold: {o.hold_reason ?? 'waiting for a fix'}. It appears in your shipping queue as soon as the team releases it.</p></section>
+          )}
+          {staffView && !['cancelled'].includes(o.status) && (canHoldIt || o.status !== 'on_hold') && (
+            <section className="ep-card ep-card--team" id="ship">
+              <h2>{canHoldIt ? 'Warehouse update' : 'Ship this order'}</h2>
               <TeamOnly />
               <form action={updateOrder} className="ep-form">
                 <input type="hidden" name="id" value={o.id} />
@@ -127,15 +152,19 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
                   </label>
                 )}
                 <label>Status<select name="status" defaultValue={o.status}>{statuses.map((k) => <option key={k} value={k}>{ORDER_STATUS[k][0]}</option>)}</select></label>
-                <label>Hold reason<input name="hold_reason" defaultValue={o.hold_reason ?? ''} placeholder="Only when on hold" /></label>
+                {canHoldIt && <label>Hold reason<input name="hold_reason" defaultValue={o.hold_reason ?? ''} placeholder="Only when on hold" /></label>}
                 {ctx.can('orders.warehouse') && (
                   <>
                     <div className="ep-row2"><label>Carrier<input name="carrier" defaultValue={o.carrier ?? ''} placeholder="e.g. YunExpress" /></label><label>Weight (g)<input type="number" name="weight_g" defaultValue={o.weight_g || ''} /></label></div>
-                    <label>Tracking number<input name="tracking" defaultValue={o.tracking ?? ''} /></label>
+                    <label>Tracking number<input name="tracking" defaultValue={o.tracking ?? ''} autoComplete="off" /></label>
+                    <label>{o.label_path ? 'Replace the label (photo or PDF)' : 'Label (photo or PDF)'}
+                      <input type="file" name="label" accept="image/*,application/pdf" capture="environment" />
+                      <small className="ep-muted">{o.label_path ? 'A label is already saved.' : shippedAlready ? 'Optional for orders already in transit.' : 'Needed to mark it in transit.'}</small>
+                    </label>
                   </>
                 )}
                 <Submit className="ep-btn ep-btn--full">Save</Submit>
-                <p className="ep-small ep-muted">Marking it in transit takes the items out of stock.</p>
+                <p className="ep-small ep-muted">In transit needs the tracking number and the label. It takes the items out of stock, sends tracking to the client’s store and starts live tracking.</p>
               </form>
             </section>
           )}

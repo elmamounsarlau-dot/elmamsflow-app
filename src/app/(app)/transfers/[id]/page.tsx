@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+import { shippingOnly } from '@/lib/session';
 import { notFound } from 'next/navigation';
 import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
@@ -9,6 +11,7 @@ import { cancelTransfer, dispatchTransfer, receiveTransfer } from '../actions';
 
 export default async function TransferPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireCtx();
+  if (shippingOnly(ctx)) redirect('/shipping');
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
   const sb = await supabaseServer();

@@ -536,3 +536,30 @@ select t.login('00000000-0000-0000-0000-0000000000b1');
 insert into public.orders (id, org_id, customer, address, country, tracking_status, tracking_last_event) values ('0a000000-0000-0000-0000-0000000000a7', '11111111-1111-1111-1111-111111111111', 'Fake', 'x', 'FR', 'Delivered', 'fake');
 reset role;
 select t.ok('tracking: a new order cannot arrive with carrier data filled in', (select tracking_status is null and tracking_last_event is null from public.orders where id = '0a000000-0000-0000-0000-0000000000a7'));
+
+-- =====================================================================
+-- 9. Shipper role (0016): ships orders, nothing else
+-- =====================================================================
+insert into auth.users (id, email, last_sign_in_at, email_confirmed_at) values ('00000000-0000-0000-0000-0000000000a4', 'shipper@test.local', now(), now());
+insert into public.memberships (org_id, user_id, role, status) values (t.owner_org(), '00000000-0000-0000-0000-0000000000a4', 'shipper', 'active');
+insert into public.orders (id, org_id, customer, address, country, warehouse_id) values
+  ('0a000000-0000-0000-0000-0000000000a8', '11111111-1111-1111-1111-111111111111', 'Ship me', 'x', 'FR', t.gz()),
+  ('0a000000-0000-0000-0000-0000000000a9', '11111111-1111-1111-1111-111111111111', 'Ship me too', 'x', 'FR', t.gz());
+insert into public.order_items (order_id, product_id, qty) values
+  ('0a000000-0000-0000-0000-0000000000a8', 'a0000000-0000-0000-0000-000000000004', 1),
+  ('0a000000-0000-0000-0000-0000000000a9', 'a0000000-0000-0000-0000-000000000004', 1);
+select t.ok('shipper: role exists for the team with only "pack and ship"', (select perms = array['orders.warehouse'] and not locked from public.roles where key = 'shipper' and org_id = t.owner_org()));
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000a4');
+select t.works('shipper: marks an order packed', $q$select public.set_order_status('0a000000-0000-0000-0000-0000000000a8', 'packed')$q$);
+select t.works('shipper: ships it with carrier and tracking', $q$select public.set_order_status('0a000000-0000-0000-0000-0000000000a8', 'shipped', 'YunExpress', 'YT0000000001')$q$);
+select t.ok('shipper: shipping takes the units out of stock at that warehouse', (select stock_out from public.orders where id = '0a000000-0000-0000-0000-0000000000a8'));
+select t.raises('shipper: cannot put an order on hold', $q$select public.set_order_status('0a000000-0000-0000-0000-0000000000a9', 'on_hold', null, null, null, 'x')$q$);
+select t.raises('shipper: cannot cancel an order', $q$select public.set_order_status('0a000000-0000-0000-0000-0000000000a9', 'cancelled')$q$);
+select t.ok('shipper: cannot hold orders in bulk', public.hold_orders(array['0a000000-0000-0000-0000-0000000000a9'::uuid], true, 'x') = 0);
+select t.raises('shipper: cannot correct stock', $q$select public.adjust_stock('a0000000-0000-0000-0000-000000000004', 5, 'x', t.gz())$q$);
+select t.raises('shipper: cannot move stock between warehouses',
+  $q$select public.create_transfer('11111111-1111-1111-1111-111111111111', t.gz(), t.nb(), '[{"product_id":"a0000000-0000-0000-0000-000000000004","qty":1}]'::jsonb, 'x')$q$);
+select t.denied('shipper: cannot change prices', $q$update public.rate_cards set currency = 'USD'$q$);
+select t.denied('shipper: cannot add team members', $q$insert into public.memberships (org_id, user_id, role, status) values (t.owner_org(), '00000000-0000-0000-0000-0000000000a4', 'owner', 'active')$q$);
+reset role;

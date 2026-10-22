@@ -1,7 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { Suspense } from 'react';
-import { requireCtx } from '@/lib/session';
+import { requireCtx, shippingOnly } from '@/lib/session';
 import { Burger, ClickableRows, Flash, NavCloser, ResponsiveTables } from '@/components/client';
 import { Arrow } from '@/components/ui';
 import { NavLinks, type NavItem } from './nav';
@@ -15,9 +15,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const ctx = await requireCtx();
   const items: NavItem[] = [];
   if (ctx.backOffice) {
-    items.push({ href: '/', label: 'Overview', icon: 'home' });
+    const shipper = shippingOnly(ctx);
+    if (!shipper) items.push({ href: '/', label: 'Overview', icon: 'home' });
+    if (ctx.can('orders.warehouse')) items.push({ href: '/shipping', label: 'Shipping', icon: 'shipping' });
     if (ctx.can('clients.view')) items.push({ href: '/clients', label: 'Clients', icon: 'clients' });
-    items.push({ href: '/orders', label: 'Orders', icon: 'orders' }, { href: '/inventory', label: 'Inventory', icon: 'inventory' }, { href: '/inbounds', label: 'Stock inbounds', icon: 'inbounds' }, { href: '/transfers', label: 'Transfers', icon: 'transfers' }, { href: '/warehouses', label: 'Warehouses', icon: 'warehouses' }, { href: '/tracking', label: 'Tracking', icon: 'tracking' });
+    items.push({ href: '/orders', label: 'Orders', icon: 'orders' });
+    if (!shipper) items.push({ href: '/inventory', label: 'Inventory', icon: 'inventory' }, { href: '/inbounds', label: 'Stock inbounds', icon: 'inbounds' }, { href: '/transfers', label: 'Transfers', icon: 'transfers' }, { href: '/warehouses', label: 'Warehouses', icon: 'warehouses' });
+    items.push({ href: '/tracking', label: 'Tracking', icon: 'tracking' });
     if (ctx.can('support.reply')) items.push({ href: '/support', label: 'Support', icon: 'support' });
     if (ctx.can('invoices.view')) items.push({ href: '/invoices', label: 'Invoices', icon: 'invoices' });
     if (ctx.can('integrations.manage')) items.push({ href: '/integrations', label: 'Stores', icon: 'stores' });

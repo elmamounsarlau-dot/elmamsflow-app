@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+import { shippingOnly } from '@/lib/session';
 import { notFound } from 'next/navigation';
 import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
@@ -11,6 +13,7 @@ type L = { id: string; category: string; description: string; qty: number; unit_
 
 export default async function InvoicePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string>> }) {
   const ctx = await requireCtx();
+  if (shippingOnly(ctx)) redirect('/shipping');
   const { id } = await params;
   const sp = await searchParams;
   const sb = await supabaseServer();

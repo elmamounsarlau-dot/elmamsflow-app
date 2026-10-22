@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+import { shippingOnly } from '@/lib/session';
 import { notFound } from 'next/navigation';
 import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
@@ -12,6 +14,7 @@ const STATUS_OF_STEP = ['announced', 'in_transit', 'receiving', 'counted', 'rece
 
 export default async function InboundPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireCtx();
+  if (shippingOnly(ctx)) redirect('/shipping');
   const { id } = await params;
   const sb = await supabaseServer();
   let q = sb.from('inbounds').select('*, organizations(name)').eq('id', id);

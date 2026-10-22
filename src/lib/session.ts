@@ -88,3 +88,10 @@ export async function requireCtx(): Promise<Ctx> {
 export function scoped<T extends { eq: (col: string, v: string) => T }>(q: T, ctx: Ctx): T {
   return ctx.org ? q.eq('org_id', ctx.org.id) : q;
 }
+
+/** Team member whose job is only shipping (e.g. the Shipper role): sees the shipping queue, orders and tracking. */
+export const shippingOnly = (ctx: Ctx) =>
+  !!ctx.staffRole && !ctx.viewingAs && ctx.can('orders.warehouse') &&
+  !ctx.can('orders.hold') && !ctx.can('stock.adjust') && !ctx.can('clients.view') && !ctx.can('products.edit') && !ctx.can('inbounds.receive');
+/** Sees inventory, inbounds, transfers and warehouses. */
+export const seesStock = (ctx: Ctx) => !ctx.backOffice || !shippingOnly(ctx);

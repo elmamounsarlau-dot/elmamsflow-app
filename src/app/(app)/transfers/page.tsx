@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+import { shippingOnly } from '@/lib/session';
 import Link from 'next/link';
 import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
@@ -12,6 +14,7 @@ type T = { id: string; ref: string; org_id: string; kind: string; status: string
 
 export default async function Transfers({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const ctx = await requireCtx();
+  if (shippingOnly(ctx)) redirect('/shipping');
   const sp = await searchParams;
   const sb = await supabaseServer();
   const [all, whs, names] = await Promise.all([

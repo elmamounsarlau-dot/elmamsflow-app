@@ -1,3 +1,4 @@
+import { shippingOnly } from '@/lib/session';
 import { redirect } from 'next/navigation';
 import { requireCtx } from '@/lib/session';
 import { getClients, getProducts } from '@/lib/data';
@@ -11,6 +12,7 @@ export const metadata = { title: 'Import CSV' };
 
 export default async function ImportPage() {
   const ctx = await requireCtx();
+  if (shippingOnly(ctx)) redirect('/shipping');
   const canCount = ctx.can('stock.adjust');
   const canProducts = ctx.can('products.edit');
   if (!canCount && !canProducts) redirect('/inventory');

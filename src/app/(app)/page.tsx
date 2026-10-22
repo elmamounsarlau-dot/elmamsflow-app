@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+import { shippingOnly } from '@/lib/session';
 import Link from 'next/link';
 import { PendingLink } from '@/components/access';
 import type { AccessLink } from '@/lib/invite';
@@ -24,6 +26,7 @@ type OrderLite = { id: string; number: string; customer: string; country: string
 
 export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const ctx = await requireCtx();
+  if (shippingOnly(ctx)) redirect('/shipping');
   const sp = await searchParams;
   const range = rangeOf(sp.r);
   const days = RANGES[range];

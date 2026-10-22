@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+import { shippingOnly } from '@/lib/session';
 import Link from 'next/link';
 import { requireCtx } from '@/lib/session';
 import { available, getProducts, orgNames, type ProductRow } from '@/lib/data';
@@ -31,6 +33,7 @@ const SORTS: [string, string][] = [
 
 export default async function Inventory({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const ctx = await requireCtx();
+  if (shippingOnly(ctx)) redirect('/shipping');
   const sp = await searchParams;
   const [products, names, sales] = await Promise.all([
     getProducts(ctx),

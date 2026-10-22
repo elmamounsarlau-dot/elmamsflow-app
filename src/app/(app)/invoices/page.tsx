@@ -1,3 +1,4 @@
+import { shippingOnly } from '@/lib/session';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireCtx } from '@/lib/session';
@@ -15,6 +16,7 @@ type Inv = { id: string; number: string; org_id: string; period_start: string; p
 
 export default async function Invoices({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const ctx = await requireCtx();
+  if (shippingOnly(ctx)) redirect('/shipping');
   if (!ctx.can('invoices.view')) redirect('/?err=' + encodeURIComponent('You don’t have access to invoices.'));
   const sp = await searchParams;
   const sb = await supabaseServer();

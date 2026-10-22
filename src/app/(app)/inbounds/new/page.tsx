@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+import { shippingOnly } from '@/lib/session';
 import { requirePerm } from '@/lib/guard';
 import { getClients, getProducts, orgNames, productOptions } from '@/lib/data';
 import { Arrow, Back } from '@/components/ui';
@@ -9,6 +11,7 @@ export const metadata = { title: 'Announce an inbound' };
 
 export default async function NewInbound() {
   const ctx = await requirePerm('inbounds.create');
+  if (shippingOnly(ctx)) redirect('/shipping');
   const [products, clients, names, whs] = await Promise.all([getProducts(ctx), ctx.org ? Promise.resolve([]) : getClients(), ctx.org ? Promise.resolve(undefined) : orgNames(), getWarehouses()]);
   const dests = shippingWarehouses(whs);
   return (
