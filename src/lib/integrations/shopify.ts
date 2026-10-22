@@ -113,7 +113,7 @@ export function shopifyToExt(o: ShopOrder): ExtOrder {
   return {
     external_id: o.id,
     ref: o.name,
-    customer: a?.name || [a?.firstName, a?.lastName].filter(Boolean).join(' ') || 'Customer',
+    customer: a?.name || [a?.firstName, a?.lastName].filter(Boolean).join(' ') || o.email || 'Customer',
     email: o.email,
     phone: a?.phone || o.phone,
     address: [a?.company, a?.address1, a?.address2].filter(Boolean).join(', '),
