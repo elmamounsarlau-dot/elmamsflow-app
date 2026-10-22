@@ -833,3 +833,12 @@ body, .ep-card, .ep-sum-card, .ep-kpi { transition: background-color .25s var(--
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --nav-on-bg: rgba(61,155,255,.14); --nav-on-fg: #8EC5FF; --nav-mark: #FFA733; } }
 .ep-side nav a.is-on { background: var(--nav-on-bg) !important; color: var(--nav-on-fg) !important; box-shadow: inset 3px 0 0 var(--nav-mark); font-weight: 600; }
 .ep-side nav a.is-on svg { color: var(--nav-on-fg); }
+
+/* ===== Selected chips and toggles match the menu (theme B) ===== */
+:root { --sel-grad: linear-gradient(135deg, #0A7CFF 0%, #38A3FF 100%); }
+.ep-range a.is-on, .ep-theme button.is-on, .ep-tabbar a.is-on em, .ep-pills a.is-on, .ep-pills button.is-on, .ep-avatar {
+  background: var(--sel-grad) !important; color: #fff !important; border-color: transparent !important;
+  box-shadow: 0 6px 16px -8px rgba(10,124,255,.7);
+}
+.ep-tabbar a.is-on { color: var(--nav-on-fg) !important; border-bottom-color: var(--nav-mark) !important; }
+.ep-range a i { background: var(--nav-mark) !important; box-shadow: 0 0 0 3px rgba(255,145,0,.2) !important; }
