@@ -125,8 +125,8 @@ export function PasswordField({ name, label, strength, autoComplete = 'new-passw
 type P = { id: string; label: string; org: string };
 
 /** Product + quantity rows; admins outside a client pick the client first. */
-export function ItemRows({ products, clients }: { products: P[]; clients?: { id: string; name: string }[] }) {
-  const [rows, setRows] = useState(3);
+export function ItemRows({ products, clients, initial, qtyLabel = 'Quantity' }: { products: P[]; clients?: { id: string; name: string }[]; initial?: { id: string; qty: number }[]; qtyLabel?: string }) {
+  const [rows, setRows] = useState(Math.max(3, (initial?.length ?? 0) + 1));
   const [client, setClient] = useState('');
   const list = clients ? products.filter((p) => !client || p.org === client) : products;
   return (
@@ -147,11 +147,11 @@ export function ItemRows({ products, clients }: { products: P[]; clients?: { id:
       <div className="ep-items">
         <div className="ep-items-head">
           <span>Product</span>
-          <span>Quantity</span>
+          <span>{qtyLabel}</span>
         </div>
         {Array.from({ length: rows }).map((_, i) => (
           <div className="ep-item" key={i}>
-            <select name="item_product" defaultValue="" aria-label={`Product, line ${i + 1}`}>
+            <select name="item_product" defaultValue={initial?.[i]?.id ?? ''} aria-label={`Product, line ${i + 1}`}>
               <option value="">Choose a product…</option>
               {list.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -159,7 +159,7 @@ export function ItemRows({ products, clients }: { products: P[]; clients?: { id:
                 </option>
               ))}
             </select>
-            <input type="number" name="item_qty" min={0} step={1} placeholder="0" aria-label={`Quantity, line ${i + 1}`} />
+            <input type="number" name="item_qty" min={0} step={1} placeholder="0" defaultValue={initial?.[i]?.qty ?? undefined} aria-label={`${qtyLabel}, line ${i + 1}`} />
           </div>
         ))}
         <button type="button" className="ep-link" onClick={() => setRows(rows + 1)}>
@@ -231,4 +231,27 @@ export function ResponsiveTables() {
     return () => { mo.disconnect(); clearTimeout(t); };
   }, []);
   return null;
+}
+
+/** Sections that ease in as they scroll into view (instantly for people who prefer less motion). */
+export function Reveal() {
+  useEffect(() => {
+    const els = [...document.querySelectorAll<HTMLElement>('.ep-reveal:not(.is-in)')];
+    if (!('IntersectionObserver' in window) || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      els.forEach((el) => el.classList.add('is-in'));
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); }
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    els.forEach((el) => io.observe(el));
+    // Never leave anything hidden (e.g. printing, or a very tall screen).
+    const t = setTimeout(() => els.forEach((el) => el.classList.add('is-in')), 4000);
+    return () => { io.disconnect(); clearTimeout(t); };
+  }, []);
+  return null;
+}
+
+export function PrintButton({ label = 'Print or save as PDF' }: { label?: string }) {
+  return <button type="button" className="ep-btn ep-btn--ghost" onClick={() => window.print()}>{label}</button>;
 }

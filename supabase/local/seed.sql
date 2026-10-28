@@ -149,3 +149,14 @@ on conflict (id) do update set address = excluded.address, email = excluded.emai
 insert into public.activity_log (org_id, user_id, action, detail, created_at)
 select '11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-0000000000a3', 'order_updated', '#' || number || ' → ' || status, created_at + interval '1 day'
 from public.orders where status in ('shipped', 'delivered') limit 20;
+
+-- Client experience (0017): a kit, a company profile, a quarantine decision, ticket topics
+insert into public.products (id, org_id, sku, name, kind) values
+  ('a0000000-0000-0000-0000-0000000000f1', '11111111-1111-1111-1111-111111111111', 'ATL-KIT-BATH', 'Bath gift box · 2 towels + cutting board', 'bundle')
+on conflict do nothing;
+insert into public.bundle_items (bundle_id, component_id, qty) values
+  ('a0000000-0000-0000-0000-0000000000f1', 'a0000000-0000-0000-0000-000000000002', 2),
+  ('a0000000-0000-0000-0000-0000000000f1', 'a0000000-0000-0000-0000-000000000006', 1);
+update public.organizations set legal_name = 'Atlas Home Goods SAS', billing_address = E'12 Rue de Rivoli\n75001 Paris\nFrance', invoice_email = 'compta@atlas.local.test', website = 'https://atlas.local.test'
+where id = '11111111-1111-1111-1111-111111111111';
+update public.tickets set category = 'order' where org_id = '11111111-1111-1111-1111-111111111111';

@@ -19,6 +19,9 @@ const ICONS: Record<string, string> = {
   transfers: 'M3 7h12l-3-3M17 13H5l3 3',
   shipping: 'M2 6h10v8H2zM12 9h3.5L18 11.5V14h-6M5 16.5a1.4 1.4 0 1 0 0-2.8 1.4 1.4 0 0 0 0 2.8zM14.5 16.5a1.4 1.4 0 1 0 0-2.8 1.4 1.4 0 0 0 0 2.8z',
   stores: 'M3 7l1.5-4h11L17 7M3 7v10h14V7M3 7c0 1.4 1.1 2.5 2.5 2.5S8 8.4 8 7c0 1.4 1 2.5 2 2.5s2-1.1 2-2.5c0 1.4 1.1 2.5 2.5 2.5S17 8.4 17 7M8 17v-4h4v4',
+  reports: 'M4 16.5V9M8.5 16.5V4M13 16.5v-6M17 16.5V7',
+  pricing: 'M10.5 2.5H17v6.5l-8 8-6.5-6.5zM13.5 6.5h.01',
+  company: 'M3 17.5h14M4.5 17.5V5l6-2.5v15M10.5 7.5h5v10M7 7.5h1M7 10.5h1M7 13.5h1M13 10.5h1M13 13.5h1',
   settings: 'M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM10 2v2.5M10 15.5V18M2 10h2.5M15.5 10H18M4.3 4.3l1.8 1.8M13.9 13.9l1.8 1.8M4.3 15.7l1.8-1.8M13.9 6.1l1.8-1.8',
 };
 
@@ -29,7 +32,7 @@ export function NavLinks({ items }: { items: NavItem[] }) {
   return (
     <nav>
       {items.map((it) => {
-        const on = it.href === '/' ? path === '/' : path.startsWith(it.href);
+        const on = it.href === '/' ? path === '/' : it.href === '/settings' ? path === '/settings' || path.startsWith('/settings/billing') : path.startsWith(it.href);
         return (
           <Link key={it.href} href={it.href} className={on ? 'is-on' : ''}>
             <svg viewBox="0 0 20 20" aria-hidden="true">

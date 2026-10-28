@@ -102,3 +102,5 @@ export const isOwner = (ctx: Ctx) => ctx.staffRole === 'owner' && !ctx.viewingAs
 export const seesMoney = (ctx: Ctx) => !ctx.backOffice || ctx.can('billing.manage');
 /** Business figures (best sellers, top markets): clients see their own; in the back office, people who work with clients. */
 export const seesBusiness = (ctx: Ctx) => !ctx.backOffice || ctx.can('clients.view') || ctx.can('billing.manage');
+/** Can change the brand's company profile (name on invoices, address, VAT, logo): the client's admins, or our team for them. */
+export const editsCompany = (ctx: Ctx) => !!ctx.org && ((!!ctx.clientRole && ctx.can('team.manage')) || (!!ctx.staffRole && ctx.can('clients.manage')));

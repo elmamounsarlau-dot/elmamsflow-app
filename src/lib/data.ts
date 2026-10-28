@@ -6,6 +6,9 @@ export type ProductRow = {
   id: string; org_id: string; sku: string; name: string; barcode: string | null; weight_g: number; hs_code: string | null;
   customs_value: number; low_stock: number; on_hand: number; reserved: number; incoming: number; quarantined: number;
   last_movement_at: string | null; in_transfer?: number; unallocated?: number;
+  photo_path?: string | null; kind?: 'item' | 'bundle';
+  /** Kits only: how many complete kits the products inside allow right now. */
+  kits?: number;
 };
 
 /** Sellable now: on hand − quarantined − reserved for open orders. */
@@ -52,8 +55,27 @@ export function productOptions(products: ProductRow[], names?: Record<string, st
   return products.map((p) => ({
     id: p.id,
     org: p.org_id,
-    label: `${names ? names[p.org_id] + ' — ' : ''}${p.sku} · ${p.name} (${available(p)} available)`,
+    label: `${names ? names[p.org_id] + ' — ' : ''}${p.sku} · ${p.name} (${p.kind === 'bundle' ? `kit · ${p.kits ?? 0} ready` : `${available(p)} available`})`,
   }));
+}
+
+/** How many complete kits can be packed: the product inside with the least stock decides. */
+export const kitStock = (parts: { qty: number; p: Pick<ProductRow, 'on_hand' | 'quarantined' | 'reserved'> }[]) =>
+  parts.length ? Math.max(0, Math.min(...parts.map((x) => Math.floor(available(x.p) / x.qty)))) : 0;
+
+/** Products with each kit's contents and its ready-to-ship count filled in. */
+export async function getProductsWithKits(ctx: Ctx) {
+  const products = await getProducts(ctx);
+  const bundles = products.filter((p) => p.kind === 'bundle');
+  if (!bundles.length) return { products, parts: new Map<string, { component_id: string; qty: number }[]>() };
+  const sb = await supabaseServer();
+  const rows = await allRows<{ bundle_id: string; component_id: string; qty: number }>(() =>
+    sb.from('bundle_items').select('bundle_id, component_id, qty').in('bundle_id', bundles.map((b) => b.id)).order('bundle_id').order('component_id'));
+  const parts = new Map<string, { component_id: string; qty: number }[]>();
+  for (const r of rows) parts.set(r.bundle_id, [...(parts.get(r.bundle_id) ?? []), { component_id: r.component_id, qty: r.qty }]);
+  const byId = new Map(products.map((p) => [p.id, p]));
+  for (const b of bundles) b.kits = kitStock((parts.get(b.id) ?? []).filter((x) => byId.has(x.component_id)).map((x) => ({ qty: x.qty, p: byId.get(x.component_id)! })));
+  return { products, parts };
 }
 
 export function itemsFromForm(fd: FormData) {

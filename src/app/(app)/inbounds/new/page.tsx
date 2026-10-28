@@ -21,7 +21,7 @@ export default async function NewInbound() {
         <h2>Announce an inbound</h2>
         <p className="ep-muted ep-small" style={{ marginBottom: '1rem' }}>Tell us what the factory or supplier is sending to our warehouse.</p>
         <form action={createInbound} className="ep-form">
-          <ItemRows products={productOptions(products, names)} clients={ctx.org ? undefined : clients.map((c) => ({ id: c.id, name: c.name }))} />
+          <ItemRows products={productOptions(products.filter((p) => p.kind !== 'bundle'), names)} clients={ctx.org ? undefined : clients.map((c) => ({ id: c.id, name: c.name }))} />
           <label>Deliver to warehouse
             <select name="warehouse_id" required defaultValue="">
               <option value="" disabled>Choose Guangzhou, Ningbo…</option>

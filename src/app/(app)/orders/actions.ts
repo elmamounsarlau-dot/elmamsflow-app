@@ -10,6 +10,7 @@ import { str, withMsg } from '@/lib/format';
 import { pushTracking } from '@/lib/integrations/service';
 import { refreshOrders, registerOrders, syncTracking, trackKey, trackShippedOrder } from '@/lib/track17';
 import { saveLabel } from '@/lib/labels';
+import { editShipTo } from '@/lib/integrations/core';
 
 export async function createOrder(fd: FormData) {
   const ctx = await getCtx();
@@ -19,12 +20,16 @@ export async function createOrder(fd: FormData) {
   const country = str(fd, 'country').toUpperCase().slice(0, 2);
   if (!orgId || !items.length || !str(fd, 'customer') || !str(fd, 'address') || !country) redirect(withMsg('/orders/new', 'Add the customer, the address with country, and at least one product.', 'err'));
   const sb = await supabaseServer();
-  const { data: prods } = await sb.from('products').select('id, org_id, hs_code, customs_value').in('id', items.map((i) => i.product_id));
+  const { data: prods } = await sb.from('products').select('id, org_id, hs_code, customs_value, kind').in('id', items.map((i) => i.product_id));
   if (!prods || prods.length !== items.length || prods.some((p) => p.org_id !== orgId)) redirect(withMsg('/orders/new', 'Those products don’t belong to this client.', 'err'));
-  const missing = prods.some((p) => !p.hs_code || !Number(p.customs_value));
+  // A kit ships its products, so their customs info counts (the kit itself has none).
+  const kits = prods.filter((p) => p.kind === 'bundle').map((p) => p.id);
+  const parts = kits.length ? ((await sb.from('bundle_items').select('component:products!bundle_items_component_id_fkey(hs_code, customs_value)').in('bundle_id', kits)).data ?? []) : [];
+  const noCustoms = (p: { hs_code: string | null; customs_value: number } | null) => !p?.hs_code || !Number(p?.customs_value);
+  const missing = prods.some((p) => p.kind !== 'bundle' && noCustoms(p)) || parts.some((x) => noCustoms(x.component as unknown as { hs_code: string | null; customs_value: number } | null));
   const { data: order, error } = await sb.from('orders').insert({
     org_id: orgId, store_ref: str(fd, 'store_ref') || null, customer: str(fd, 'customer'), email: str(fd, 'email') || null, phone: str(fd, 'phone') || null,
-    address: str(fd, 'address'), city: str(fd, 'city') || null, zip: str(fd, 'zip') || null, country, service: str(fd, 'service') === 'ddp' ? 'ddp' : 'express',
+    address: str(fd, 'address'), city: str(fd, 'city') || null, zip: str(fd, 'zip') || null, country, service: 'ddp',
     status: missing ? 'on_hold' : 'new', hold_reason: missing ? 'A product is missing its HS code or customs value' : null, created_by: ctx.userId,
   }).select('id, number').single();
   if (error || !order) redirect(withMsg('/orders/new', error?.message ?? 'Could not create the order.', 'err'));
@@ -172,4 +177,29 @@ export async function syncTrackingNow() {
     redirect(withMsg('/tracking', (e as Error).message, 'err'));
   }
   redirect(withMsg('/tracking', msg));
+}
+
+/** Fix the customer's name, address, phone or email before the warehouse packs the order. */
+export async function editOrderShipTo(fd: FormData) {
+  const ctx = await getCtx();
+  const id = str(fd, 'id');
+  const to = `/orders/${id}`;
+  if (!ctx || !(ctx.can('orders.create') || (ctx.staffRole && ctx.can('orders.hold')))) redirect(withMsg(to, 'You don’t have access to that.', 'err'));
+  // Row Level Security decides who sees the order; the edit itself runs on the server after that check.
+  const sb = await supabaseServer();
+  let q = sb.from('orders').select('id, org_id').eq('id', id);
+  if (ctx.org) q = q.eq('org_id', ctx.org.id);
+  const { data: o } = await q.maybeSingle();
+  if (!o) redirect(withMsg('/orders', 'Order not found.', 'err'));
+  const email = str(fd, 'email');
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) redirect(withMsg(`${to}#edit`, 'The email doesn’t look right.', 'err'));
+  const country = str(fd, 'country').toUpperCase().slice(0, 2);
+  if (!str(fd, 'customer') || !str(fd, 'address') || !/^[A-Z]{2}$/.test(country)) redirect(withMsg(`${to}#edit`, 'The customer name, street address and country are needed.', 'err'));
+  const res = await editShipTo(o.id, o.org_id, {
+    customer: str(fd, 'customer').slice(0, 120), email: email.slice(0, 160) || null, phone: str(fd, 'phone').slice(0, 40) || null,
+    address: [str(fd, 'address'), str(fd, 'address2')].filter(Boolean).join(', ').slice(0, 240), city: str(fd, 'city').slice(0, 80) || null,
+    zip: str(fd, 'zip').slice(0, 20) || null, country,
+  }, ctx.userId);
+  if ('error' in res && res.error) redirect(withMsg(to, res.error, 'err'));
+  redirect(withMsg(to, ('message' in res && res.message) || 'Saved.', 'held' in res && res.held ? 'warn' : 'ok'));
 }

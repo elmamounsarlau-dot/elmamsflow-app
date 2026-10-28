@@ -563,3 +563,74 @@ select t.raises('shipper: cannot move stock between warehouses',
 select t.denied('shipper: cannot change prices', $q$update public.rate_cards set currency = 'USD'$q$);
 select t.denied('shipper: cannot add team members', $q$insert into public.memberships (org_id, user_id, role, status) values (t.owner_org(), '00000000-0000-0000-0000-0000000000a4', 'owner', 'active')$q$);
 reset role;
+
+-- =====================================================================
+-- 10. Client experience (0017): quarantine decisions, bundles, attachments, DDP
+-- =====================================================================
+insert into public.products (id, org_id, sku, name, weight_g, hs_code, customs_value) values
+  ('a0000000-0000-0000-0000-000000000009', '11111111-1111-1111-1111-111111111111', 'A-Q', 'Quarantine test', 100, '630790', 2),
+  ('a0000000-0000-0000-0000-00000000000a', '11111111-1111-1111-1111-111111111111', 'A-CUP', 'Cup', 100, '691200', 2),
+  ('a0000000-0000-0000-0000-00000000000b', '11111111-1111-1111-1111-111111111111', 'A-LID', 'Lid', 20, '392350', 1);
+insert into public.products (id, org_id, sku, name, kind) values
+  ('a0000000-0000-0000-0000-00000000000c', '11111111-1111-1111-1111-111111111111', 'A-KIT', 'Cup + 2 lids', 'bundle'),
+  ('a0000000-0000-0000-0000-00000000000d', '11111111-1111-1111-1111-111111111111', 'A-EMPTY', 'Empty kit', 'bundle');
+insert into public.stock_moves (product_id, org_id, warehouse_id, qty, type) values
+  ('a0000000-0000-0000-0000-000000000009', '11111111-1111-1111-1111-111111111111', t.gz(), 20, 'inbound'),
+  ('a0000000-0000-0000-0000-000000000009', '11111111-1111-1111-1111-111111111111', t.gz(), 6, 'quarantine');
+
+select t.ok('ddp: new orders ship DDP by default', (select column_default like '%ddp%' from information_schema.columns where table_name = 'orders' and column_name = 'service'));
+
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000b1');
+select t.works('quarantine decision: the brand asks to restock 2 units', $q$select public.request_quarantine_decision('a0000000-0000-0000-0000-000000000009', t.gz(), 2, 'restock', 'checked photos, fine')$q$);
+select t.works('quarantine decision: and to dispose of 3', $q$select public.request_quarantine_decision('a0000000-0000-0000-0000-000000000009', t.gz(), 3, 'dispose', null)$q$);
+select t.raises('quarantine decision: cannot decide on more units than are still waiting (6 − 5 = 1)', $q$select public.request_quarantine_decision('a0000000-0000-0000-0000-000000000009', t.gz(), 2, 'return', null)$q$);
+select t.raises('quarantine decision: unknown decision refused', $q$select public.request_quarantine_decision('a0000000-0000-0000-0000-000000000009', t.gz(), 1, 'sell', null)$q$);
+select t.raises('quarantine decision: the brand cannot carry it out itself', $q$select public.decide_quarantine((select id from public.quarantine_requests where decision = 'restock'), true, null)$q$);
+select t.ok('quarantine decision: the brand sees its own requests', (select count(*) = 2 from public.quarantine_requests));
+select t.login('00000000-0000-0000-0000-0000000000c1');
+select t.raises('quarantine decision: another client cannot decide on these units', $q$select public.request_quarantine_decision('a0000000-0000-0000-0000-000000000009', t.gz(), 1, 'return', null)$q$);
+select t.ok('quarantine decision: another client sees none of them', (select count(*) = 0 from public.quarantine_requests));
+select t.login('00000000-0000-0000-0000-0000000000b3');
+select t.raises('quarantine decision: a read-only client role cannot ask', $q$select public.request_quarantine_decision('a0000000-0000-0000-0000-000000000009', t.gz(), 1, 'return', null)$q$);
+select t.login('00000000-0000-0000-0000-0000000000a3');
+select t.works('quarantine decision: the warehouse restocks', $q$select public.decide_quarantine((select id from public.quarantine_requests where decision = 'restock'), true, null)$q$);
+select t.works('quarantine decision: the warehouse disposes', $q$select public.decide_quarantine((select id from public.quarantine_requests where decision = 'dispose'), true, 'binned')$q$);
+select t.raises('quarantine decision: a handled request cannot be applied twice', $q$select public.decide_quarantine((select id from public.quarantine_requests where decision = 'dispose'), true, null)$q$);
+reset role;
+select t.ok('quarantine decision: 2 back to sellable, 3 written off, 1 still in quarantine',
+  (select on_hand = 17 and quarantined = 1 from t.stock('a0000000-0000-0000-0000-000000000009')), (select on_hand || ' on hand, ' || quarantined || ' quarantined' from t.stock('a0000000-0000-0000-0000-000000000009')));
+
+-- Bundles
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000b1');
+select t.works('bundle: the brand sets up a kit', $q$insert into public.bundle_items (bundle_id, component_id, qty) values ('a0000000-0000-0000-0000-00000000000c', 'a0000000-0000-0000-0000-00000000000a', 1), ('a0000000-0000-0000-0000-00000000000c', 'a0000000-0000-0000-0000-00000000000b', 2)$q$);
+select t.raises('bundle: no bundle inside a bundle', $q$insert into public.bundle_items (bundle_id, component_id, qty) values ('a0000000-0000-0000-0000-00000000000d', 'a0000000-0000-0000-0000-00000000000c', 1)$q$);
+select t.raises('bundle: no product of another client', $q$insert into public.bundle_items (bundle_id, component_id, qty) values ('a0000000-0000-0000-0000-00000000000d', 'b0000000-0000-0000-0000-000000000001', 1)$q$);
+select t.ok('bundle: the brand sees its kit contents', (select count(*) = 2 from public.bundle_items where bundle_id = 'a0000000-0000-0000-0000-00000000000c'));
+insert into public.orders (id, org_id, customer, address, country) values ('0a000000-0000-0000-0000-0000000000b0', '11111111-1111-1111-1111-111111111111', 'Kit buyer', '3 Street', 'FR');
+select t.works('bundle: ordering 3 kits', $q$insert into public.order_items (order_id, product_id, qty) values ('0a000000-0000-0000-0000-0000000000b0', 'a0000000-0000-0000-0000-00000000000c', 3)$q$);
+select t.ok('bundle: the order ships the components (3 cups, 6 lids), not the kit',
+  (select string_agg(p.sku || '×' || i.qty, ',' order by p.sku) = 'A-CUP×3,A-LID×6' from public.order_items i join public.products p on p.id = i.product_id where i.order_id = '0a000000-0000-0000-0000-0000000000b0'));
+select t.raises('bundle: a kit with nothing in it cannot be ordered', $q$insert into public.order_items (order_id, product_id, qty) values ('0a000000-0000-0000-0000-0000000000b0', 'a0000000-0000-0000-0000-00000000000d', 1)$q$);
+select t.login('00000000-0000-0000-0000-0000000000c1');
+select t.ok('bundle: another client cannot see the kit contents', (select count(*) = 0 from public.bundle_items));
+insert into public.orders (id, org_id, customer, address, country) values ('0b000000-0000-0000-0000-0000000000b0', '22222222-2222-2222-2222-222222222222', 'Sneaky', '4 Street', 'DE');
+select t.raises('bundle: another client cannot order this kit into their order', $q$insert into public.order_items (order_id, product_id, qty) values ('0b000000-0000-0000-0000-0000000000b0', 'a0000000-0000-0000-0000-00000000000c', 1)$q$);
+select t.login('00000000-0000-0000-0000-0000000000a3');
+select t.raises('bundle: a kit has no stock of its own', $q$select public.adjust_stock('a0000000-0000-0000-0000-00000000000c', 5, 'x', t.gz())$q$);
+reset role;
+select t.raises('bundle: a kit cannot be announced on an inbound', $q$insert into public.inbound_items (inbound_id, product_id, expected) values ('1c000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-00000000000c', 5)$q$);
+
+-- Ticket attachments and categories
+insert into public.ticket_files (ticket_id, path, name, type, size) values
+  ('7a000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111/x/a.jpg', 'damaged.jpg', 'image/jpeg', 100),
+  ('7b000000-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222/x/b.jpg', 'private.jpg', 'image/jpeg', 100);
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000b1');
+select t.ok('tickets: a client sees the attachments of its own tickets only', (select string_agg(name, ',') = 'damaged.jpg' from public.ticket_files));
+select t.denied('tickets: a client cannot add attachment rows directly', $q$insert into public.ticket_files (ticket_id, path, name, type, size) values ('7a000000-0000-0000-0000-000000000001', 'x', 'x', 'x', 1)$q$);
+select t.raises('tickets: an unknown category is refused', $q$update public.tickets set category = 'nonsense' where id = '7a000000-0000-0000-0000-000000000001'$q$);
+select t.works('tickets: a category can be set', $q$update public.tickets set category = 'damaged' where id = '7a000000-0000-0000-0000-000000000001'$q$);
+select t.denied('company profile: a client cannot write its organisation row directly', $q$update public.organizations set vat_number = 'X' where id = '11111111-1111-1111-1111-111111111111'$q$);
+reset role;

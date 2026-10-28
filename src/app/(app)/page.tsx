@@ -15,6 +15,7 @@ import { MiniSteps } from '@/components/steps';
 import { NoticeCard } from '@/components/notices';
 import { getNotices } from '@/lib/notifications';
 import { money } from '@/lib/billing';
+import { ClientHome } from './client-home';
 
 export const metadata = { title: 'Home' };
 
@@ -28,6 +29,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const ctx = await requireCtx();
   if (shippingOnly(ctx)) redirect('/shipping');
   const sp = await searchParams;
+  if (!ctx.backOffice) return <ClientHome ctx={ctx} welcome={!!sp.welcome} />;
   const range = rangeOf(sp.r);
   const days = RANGES[range];
   const sb = await supabaseServer();
@@ -80,7 +82,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // ---------- Stock health ----------
   const health = products.map((p) => ({ p, r: runway(p, sales30.get(p.id) ?? 0) }));
   const reorder = health.filter((x) => x.r.health === 'critical' || x.r.health === 'out').sort((a, b) => (a.r.days ?? -1) - (b.r.days ?? -1));
-  const noCustoms = products.filter((p) => !p.hs_code || !Number(p.customs_value));
+  const noCustoms = products.filter((p) => p.kind !== 'bundle' && (!p.hs_code || !Number(p.customs_value)));
   const quarantined = products.reduce((a, p) => a + p.quarantined, 0);
   const best = products.map((p) => ({ p, n: salesRange.get(p.id) ?? 0 })).filter((x) => x.n > 0).sort((a, b) => b.n - a.n).slice(0, 5);
 

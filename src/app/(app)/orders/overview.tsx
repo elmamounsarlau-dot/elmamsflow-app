@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Arrow } from '@/components/ui';
 import { CountUp, ClientPicker } from '@/components/orders-overview';
+import { FlowChart, PipeRing } from '@/components/viz';
 import { HOLD_KIND } from '@/lib/orders-query';
 import { fmtDate } from '@/lib/format';
 import type { ordersOverview } from '@/lib/orders-overview';
@@ -13,66 +14,6 @@ const delta = (now: number, before: number) => {
   const d = Math.round(((now - before) / before) * 100);
   return { up: d >= 0, text: `${d >= 0 ? '+' : ''}${d}% vs yesterday` };
 };
-
-/** Two lines (received, shipped) over the last days, drawn in when the page opens. */
-function FlowChart({ series }: { series: Data['series'] }) {
-  const w = 640, h = 200, pad = 26;
-  const max = Math.max(4, ...series.map((d) => Math.max(d.received, d.shipped)));
-  const x = (i: number) => pad + (i * (w - pad * 2)) / Math.max(1, series.length - 1);
-  const y = (v: number) => h - pad - (v / max) * (h - pad * 2);
-  const path = (k: 'received' | 'shipped') => series.map((d, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(d[k]).toFixed(1)}`).join(' ');
-  const ticks = [0, Math.round(max / 2), max];
-  const total = series.reduce((a, d) => a + d.received, 0);
-  const sent = series.reduce((a, d) => a + d.shipped, 0);
-  return (
-    <figure className="ep-flow" aria-label={`Last ${series.length} days: ${total} orders received, ${sent} shipped`}>
-      <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-hidden="true">
-        {ticks.map((t) => <g key={t}><line x1={pad} x2={w - pad} y1={y(t)} y2={y(t)} className="grid" /><text x={pad - 8} y={y(t) + 4} textAnchor="end">{t}</text></g>)}
-        <path className="area" d={`${path('received')} L${x(series.length - 1)} ${h - pad} L${x(0)} ${h - pad}Z`} />
-        <path className="ln ln--in" d={path('received')} pathLength={1} />
-        <path className="ln ln--out" d={path('shipped')} pathLength={1} />
-        {series.map((d, i) => <circle key={i} className="dot" cx={x(i)} cy={y(d.received)} r={i === series.length - 1 ? 4.5 : 0} />)}
-        {series.map((d, i) => (i % 2 === (series.length - 1) % 2 ? <text key={`l${i}`} x={x(i)} y={h - 6} textAnchor="middle">{d.label}</text> : null))}
-      </svg>
-      <figcaption>
-        <span><i className="sw sw--in" />Received <b>{total}</b></span>
-        <span><i className="sw sw--out" />Shipped <b>{sent}</b></span>
-      </figcaption>
-    </figure>
-  );
-}
-
-/** Where every open order is right now, as a ring that fills in. */
-function PipeRing({ pipe }: { pipe: Data['pipe'] }) {
-  const parts: [string, number, string, string][] = [
-    ['To pack', pipe.new, 'var(--blue)', '/orders?c=all&s=new'],
-    ['On hold', pipe.on_hold, 'var(--warn)', '/orders?c=all&t=attention'],
-    ['Packed', pipe.packed, 'var(--violet)', '/orders?c=all&s=packed'],
-    ['In transit', pipe.shipped, 'var(--ok)', '/tracking'],
-  ];
-  const total = parts.reduce((a, p) => a + p[1], 0);
-  const r = 62, c = 2 * Math.PI * r;
-  let acc = 0;
-  return (
-    <div className="ep-ring">
-      <svg viewBox="0 0 160 160" aria-hidden="true">
-        <circle cx="80" cy="80" r={r} className="track" />
-        {total > 0 && parts.map(([l, n, col], i) => {
-          const len = (n / total) * c;
-          const el = <circle key={l} cx="80" cy="80" r={r} className="seg" style={{ stroke: col, strokeDasharray: `${Math.max(0, len - 3)} ${c}`, strokeDashoffset: -acc, animationDelay: `${i * 120}ms` }} />;
-          acc += len;
-          return el;
-        })}
-      </svg>
-      <div className="ep-ring-mid"><b><CountUp value={total} /></b><small>open orders</small></div>
-      <ul>
-        {parts.map(([l, n, col, href]) => (
-          <li key={l}><Link href={href}><i style={{ background: col }} />{l}<b>{n.toLocaleString('en')}</b></Link></li>
-        ))}
-      </ul>
-    </div>
-  );
-}
 
 function Spark({ values }: { values: number[] }) {
   const w = 96, h = 28, max = Math.max(1, ...values);
@@ -119,7 +60,12 @@ export function OrdersOverview({ data, canCreate }: { data: Data; canCreate: boo
         </section>
         <section className="ep-card">
           <div className="ep-card-head"><h2>Right now</h2><Link className="ep-link ep-small" href="/orders?c=all">All open orders →</Link></div>
-          <PipeRing pipe={pipe} />
+          <PipeRing parts={[
+            ['To pack', pipe.new, 'var(--blue)', '/orders?c=all&s=new'],
+            ['On hold', pipe.on_hold, 'var(--warn)', '/orders?c=all&t=attention'],
+            ['Packed', pipe.packed, 'var(--violet)', '/orders?c=all&s=packed'],
+            ['In transit', pipe.shipped, 'var(--ok)', '/tracking'],
+          ]} />
         </section>
       </div>
 

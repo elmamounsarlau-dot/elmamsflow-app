@@ -17,7 +17,7 @@ export default async function NewTransfer({ searchParams }: { searchParams: Prom
   const [products, clients, names, whs] = await Promise.all([getProducts(ctx), ctx.org ? Promise.resolve([]) : getClients(), ctx.org ? Promise.resolve(undefined) : orgNames(), getWarehouses()]);
   const real = shippingWarehouses(whs);
   const pool = whs.find((w) => w.kind === 'holding');
-  const options = productOptions(allocation ? products.filter((p) => (p.unallocated ?? 0) > 0) : products, names).map((o) => {
+  const options = productOptions((allocation ? products.filter((p) => (p.unallocated ?? 0) > 0) : products).filter((p) => p.kind !== 'bundle'), names).map((o) => {
     const p = products.find((x) => x.id === o.id);
     return allocation && p ? { ...o, label: `${o.label.replace(/ \(\d+ available\)$/, '')} — ${p.unallocated} unallocated` } : o;
   });

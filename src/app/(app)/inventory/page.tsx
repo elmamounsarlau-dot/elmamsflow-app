@@ -2,10 +2,11 @@ import { redirect } from 'next/navigation';
 import { seesMoney, shippingOnly } from '@/lib/session';
 import Link from 'next/link';
 import { requireCtx } from '@/lib/session';
-import { available, getProducts, orgNames, type ProductRow } from '@/lib/data';
+import { available, getProductsWithKits, orgNames, type ProductRow } from '@/lib/data';
+import { supabaseServer } from '@/lib/supabase/server';
 import { fmtDays, HEALTH, runway, salesByProduct, type Health } from '@/lib/insights';
 import { fmtDate } from '@/lib/format';
-import { Arrow, Empty } from '@/components/ui';
+import { Arrow, Empty, Thumb } from '@/components/ui';
 import { Submit } from '@/components/client';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { KIND_LABEL } from '@/lib/integrations/core';
@@ -22,6 +23,7 @@ const FILTERS: [string, string][] = [
   ['quarantine', 'Quarantine'],
   ['incoming', 'Incoming'],
   ['customs', 'Missing customs info'],
+  ['kits', 'Kits'],
 ];
 const SORTS: [string, string][] = [
   ['runway', 'Days of stock left'],
@@ -35,10 +37,13 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
   const ctx = await requireCtx();
   if (shippingOnly(ctx)) redirect('/shipping');
   const sp = await searchParams;
-  const [products, names, sales] = await Promise.all([
-    getProducts(ctx),
+  const [{ products }, names, sales, decisions] = await Promise.all([
+    getProductsWithKits(ctx),
     ctx.backOffice ? orgNames() : Promise.resolve({} as Record<string, string>),
     salesByProduct(ctx, 30),
+    ctx.backOffice && ctx.can('stock.adjust')
+      ? supabaseServer().then((sb) => sb.from('quarantine_requests').select('id', { count: 'exact', head: true }).eq('status', 'requested')).then((r) => r.count ?? 0)
+      : Promise.resolve(0),
   ]);
 
   // Store product import lives in the client's own workspace only (the back office stays free of per-store buttons).
@@ -63,8 +68,11 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
   );
 
   const rows = products.map((p) => ({ p, r: runway(p, sales.get(p.id) ?? 0) }));
+  const isKit = (x: (typeof rows)[number]) => x.p.kind === 'bundle';
   const match = (f: string, x: (typeof rows)[number]) =>
-    f === 'reorder' ? x.r.health === 'critical' || x.r.health === 'out'
+    f === 'kits' ? isKit(x)
+    : f !== 'all' && isKit(x) ? false
+    : f === 'reorder' ? x.r.health === 'critical' || x.r.health === 'out'
     : f === 'low' ? x.r.health === 'warning'
     : f === 'healthy' ? x.r.health === 'healthy'
     : f === 'idle' ? x.r.health === 'idle' || x.r.health === 'new'
@@ -88,7 +96,7 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
     return rank[a.r.health] - rank[b.r.health] || (a.r.days ?? 1e9) - (b.r.days ?? 1e9);
   });
 
-  const scopeRows = base;
+  const scopeRows = base.filter((x) => !isKit(x));
   const sellable = scopeRows.reduce((a, x) => a + x.r.available, 0);
   const value = scopeRows.reduce((a, x) => a + x.p.on_hand * Number(x.p.customs_value || 0), 0);
   const reorder = scopeRows.filter((x) => match('reorder', x));
@@ -150,6 +158,13 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
           <span>{quarantined ? 'Set aside, waiting for a decision' : 'Nothing set aside'}</span>
         </Link>
       </div>
+
+      {decisions > 0 && (
+        <Link href="/inventory/decisions" className="ep-fixbar">
+          <span><b>{decisions} quarantine decision{decisions === 1 ? '' : 's'} from brands</b> waiting to be carried out (restock, dispose or return to supplier).</span>
+          <em>Open the list →</em>
+        </Link>
+      )}
 
       {noCustoms > 0 && (
         <p className="ep-note ep-note--warn" style={{ marginBottom: 14 }}>
@@ -219,6 +234,19 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
 }
 
 function Row({ p, r, client }: { p: ProductRow; r: ReturnType<typeof runway>; client: string | null }) {
+  if (p.kind === 'bundle') {
+    return (
+      <tr data-href={`/inventory/${p.id}`}>
+        <td><div className="ep-prod"><Thumb id={p.id} photo={p.photo_path} name={p.name} size={38} kit /><div><b>{p.sku}</b><small>{p.name}</small></div></div></td>
+        {client !== null && <td><small className="ep-client">{client}</small></td>}
+        <td className="ep-inv-bar"><span className="ep-st ep-st--pk">Kit</span></td>
+        <td className="ep-right"><span className="ep-zero">—</span></td><td className="ep-right"><span className="ep-zero">—</span></td>
+        <td className="ep-right"><b>{(p.kits ?? 0).toLocaleString('en')}</b><small>kits</small></td>
+        <td className="ep-right"><span className="ep-zero">—</span></td><td className="ep-right"><span className="ep-zero">—</span></td><td className="ep-right"><span className="ep-zero">—</span></td>
+        <td><div className="ep-runway"><span className={`ep-st ep-st--${p.kits ? 'ok' : 'err'}`}>{p.kits ? 'Ready' : 'Can’t ship'}</span><small>follows its products</small></div></td>
+      </tr>
+    );
+  }
   const av = available(p);
   const max = Math.max(1, av + p.reserved + p.quarantined + p.incoming);
   const [label, tone] = HEALTH[r.health];
@@ -226,7 +254,7 @@ function Row({ p, r, client }: { p: ProductRow; r: ReturnType<typeof runway>; cl
     <tr data-href={`/inventory/${p.id}`}>
       <td>
         <div className="ep-prod">
-          <span className="ep-prod-ic" aria-hidden="true">{p.sku.slice(0, 2)}</span>
+          <Thumb id={p.id} photo={p.photo_path} name={p.name} size={38} />
           <div><b>{p.sku}</b><small>{p.name}{(!p.hs_code || !Number(p.customs_value)) && <a className="ep-fixlink" href={`/inventory/${p.id}#edit`}>{!p.hs_code ? 'Add HS code' : 'Add customs value'}</a>}</small></div>
         </div>
       </td>
