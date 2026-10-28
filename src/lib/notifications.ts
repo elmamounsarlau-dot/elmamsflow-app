@@ -30,7 +30,7 @@ export const getNotices = cache(async (ctx: Ctx): Promise<Notice[]> => {
   const today = new Date().toISOString().slice(0, 10);
   const can = ctx.can;
 
-  const [held, products, sales30, invoices, trackIssues, answered, inbounds, stores] = await Promise.all([
+  const [held, products, sales30, invoices, trackIssues, answered, inbounds, stores, qreq, co] = await Promise.all([
     allRows<{ id: string; number: string; hold_reason: string | null; created_at: string; customer: string }>(() =>
       sb.from('orders').select('id, number, hold_reason, created_at, customer').eq('org_id', org).eq('status', 'on_hold').order('created_at').order('id')),
     getProducts(ctx),
@@ -47,6 +47,8 @@ export const getNotices = cache(async (ctx: Ctx): Promise<Notice[]> => {
     can('integrations.manage')
       ? sb.from('integrations').select('id, name, store_url, last_error, status').eq('org_id', org).eq('status', 'active').not('last_error', 'is', null)
       : Promise.resolve({ data: [] as { id: string; name: string | null; store_url: string; last_error: string | null; status: string }[] }),
+    sb.from('quarantine_requests').select('product_id, qty, status, decision, handled_at, handled_note').eq('org_id', org).or(`status.eq.requested,handled_at.gte.${new Date(Date.now() - 3 * 864e5).toISOString()}`).limit(200),
+    sb.from('organizations').select('legal_name, billing_address, invoice_email').eq('id', org).maybeSingle(),
   ]);
 
   const out: Notice[] = [];
@@ -65,7 +67,7 @@ export const getNotices = cache(async (ctx: Ctx): Promise<Notice[]> => {
     });
   }
 
-  const noCustoms = products.filter((p) => !p.hs_code || !Number(p.customs_value));
+  const noCustoms = products.filter((p) => p.kind !== 'bundle' && (!p.hs_code || !Number(p.customs_value)));
   if (noCustoms.length) {
     out.push({
       key: 'customs', level: 'action', kind: 'product',
@@ -111,6 +113,24 @@ export const getNotices = cache(async (ctx: Ctx): Promise<Notice[]> => {
       detail: `${p.name}${r.reorder ? ` · we suggest sending ${r.reorder.toLocaleString('en')} units` : ''}`,
       href: can('inbounds.create') ? '/inbounds/new' : `/inventory/${p.id}`, cta: can('inbounds.create') ? 'Send stock' : 'View product',
     });
+  }
+
+  // Quarantined units the brand still has to decide on (restock, dispose or return).
+  const asked = new Map<string, number>();
+  for (const r of qreq.data ?? []) if (r.status === 'requested') asked.set(r.product_id, (asked.get(r.product_id) ?? 0) + r.qty);
+  if (can('products.edit')) {
+    for (const p of products.filter((x) => x.quarantined - (asked.get(x.id) ?? 0) > 0).slice(0, 10)) {
+      const n = p.quarantined - (asked.get(p.id) ?? 0);
+      out.push({ key: `q:${p.id}`, level: 'warn', kind: 'stock', title: `${n} unit${n === 1 ? '' : 's'} of ${p.sku} in quarantine`, detail: 'Set aside by the warehouse. Choose: restock, dispose or return to your supplier.', href: `/inventory/${p.id}#quarantine`, cta: 'Decide' });
+    }
+  }
+  for (const r of (qreq.data ?? []).filter((x) => x.status === 'declined')) {
+    const p = products.find((x) => x.id === r.product_id);
+    out.push({ key: `qd:${r.product_id}:${r.handled_at}`, level: 'info', kind: 'stock', at: r.handled_at, title: `Quarantine decision for ${p?.sku ?? 'a product'} was declined`, detail: r.handled_note ?? 'Open the product to see why.', href: `/inventory/${r.product_id}#quarantine`, cta: 'See why' });
+  }
+
+  if (can('team.manage') && co.data && (!co.data.legal_name || !co.data.billing_address || !co.data.invoice_email)) {
+    out.push({ key: 'company', level: 'info', kind: 'invoice', title: 'Complete your company profile', detail: 'Add your legal name, billing address and invoice email so your invoices are ready for your accountant.', href: '/settings/company', cta: 'Complete it' });
   }
 
   for (const b of inbounds.data ?? []) {

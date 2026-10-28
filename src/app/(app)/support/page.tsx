@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
 import { allRows, orgNames } from '@/lib/data';
-import { fmtDate, TICKET_STATUS } from '@/lib/format';
+import { fmtDate, TICKET_CATEGORY, TICKET_STATUS } from '@/lib/format';
 import { Arrow, Badge, Empty, PageHead, Pager, pageOf } from '@/components/ui';
 
 export const metadata = { title: 'Support' };
@@ -13,10 +13,10 @@ export default async function Support({ searchParams }: { searchParams: Promise<
   const sb = await supabaseServer();
   const PER = 25;
   const page = pageOf(sp.p);
-  type Tk = { id: string; org_id: string; subject: string; order_ref: string | null; status: string; updated_at: string };
+  type Tk = { id: string; org_id: string; subject: string; order_ref: string | null; status: string; updated_at: string; category: string };
   const [all, names] = await Promise.all([
     allRows<Tk>(() => {
-      let q = sb.from('tickets').select('id, org_id, subject, order_ref, status, updated_at').order('updated_at', { ascending: false }).order('id');
+      let q = sb.from('tickets').select('id, org_id, subject, order_ref, status, updated_at, category').order('updated_at', { ascending: false }).order('id');
       if (ctx.org) q = q.eq('org_id', ctx.org.id);
       return q;
     }),
@@ -34,8 +34,8 @@ export default async function Support({ searchParams }: { searchParams: Promise<
       <section className="ep-card">
         {list.length === 0 ? <Empty title="No tickets yet" text="Messages and answers stay together in one thread." /> : (
           <table className="ep-table">
-            <thead><tr><th>Subject</th>{ctx.backOffice && <th>Client</th>}<th>Order</th><th>Updated</th><th>Status</th></tr></thead>
-            <tbody>{list.map((t) => <tr key={t.id} data-href={`/support/${t.id}`}><td><b>{t.subject}</b></td>{ctx.backOffice && <td>{names[t.org_id]}</td>}<td>{t.order_ref ? `#${t.order_ref}` : '—'}</td><td>{fmtDate(t.updated_at, true)}</td><td><Badge map={TICKET_STATUS} value={t.status} /></td></tr>)}</tbody>
+            <thead><tr><th>Subject</th><th>Topic</th>{ctx.backOffice && <th>Client</th>}<th>Order</th><th>Updated</th><th>Status</th></tr></thead>
+            <tbody>{list.map((t) => <tr key={t.id} data-href={`/support/${t.id}`}><td><b>{t.subject}</b></td><td><span className="ep-tk-cat">{TICKET_CATEGORY[t.category]?.[0] ?? 'Other'}</span></td>{ctx.backOffice && <td>{names[t.org_id]}</td>}<td>{t.order_ref ? `#${t.order_ref}` : '—'}</td><td>{fmtDate(t.updated_at, true)}</td><td><Badge map={TICKET_STATUS} value={t.status} /></td></tr>)}</tbody>
           </table>
         )}
         <Pager total={count ?? 0} page={page} per={PER} href={(n) => (n > 1 ? `/support?p=${n}` : '/support')} noun="ticket" />

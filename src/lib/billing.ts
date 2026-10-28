@@ -27,7 +27,7 @@ export const RATE_FIELDS: { key: keyof RateCard; label: string; unit: string; gr
   { key: 'packaging_order', label: 'Packaging', unit: 'per order (box or mailer)', group: 'Fulfillment', step: '0.01' },
   { key: 'shipping_base', label: 'Shipping', unit: 'per parcel', group: 'Shipping', step: '0.01' },
   { key: 'shipping_per_kg', label: 'Shipping weight', unit: 'per kg', group: 'Shipping', step: '0.01' },
-  { key: 'ddp_order', label: 'DDP customs handling', unit: 'per DDP order', group: 'Shipping', step: '0.01' },
+  { key: 'ddp_order', label: 'DDP customs handling', unit: 'per order', group: 'Shipping', step: '0.01' },
   { key: 'receiving_carton', label: 'Receiving', unit: 'per carton', group: 'Receiving & storage', step: '0.01' },
   { key: 'receiving_unit', label: 'Counting in', unit: 'per unit', group: 'Receiving & storage', step: '0.001' },
   { key: 'storage_unit_month', label: 'Storage', unit: 'per unit per month', group: 'Receiving & storage', step: '0.001' },

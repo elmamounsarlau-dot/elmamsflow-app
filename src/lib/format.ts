@@ -69,6 +69,21 @@ export function countryName(cc: string) {
   try { return REGION.of(cc) ?? cc; } catch { return cc; }
 }
 
+/** Every country, by name, for a select (common destinations first). Keeps an unusual current value. */
+export function countryList(current?: string | null): [string, string][] {
+  const all: [string, string][] = [];
+  for (let a = 65; a <= 90; a++) for (let b = 65; b <= 90; b++) {
+    const cc = String.fromCharCode(a, b);
+    if (['EU', 'EZ', 'UN', 'QO', 'XA', 'XB', 'ZZ', 'AC', 'CP', 'DG', 'EA', 'IC', 'TA', 'CQ'].includes(cc)) continue;
+    try { const n = REGION.of(cc); if (n && n !== cc && !/unknown/i.test(n)) all.push([cc, n]); } catch { /* not a region */ }
+  }
+  const top = Object.keys(COUNTRIES);
+  const rest = all.filter(([k]) => !top.includes(k)).sort((x, y) => x[1].localeCompare(y[1]));
+  const list: [string, string][] = [...top.map((k) => [k, COUNTRIES[k]] as [string, string]), ...rest];
+  if (current && /^[A-Z]{2}$/.test(current) && current !== 'XX' && !list.some(([k]) => k === current)) list.unshift([current, current]);
+  return list;
+}
+
 /** One CSV cell. Text that a spreadsheet would run as a formula (=, +, -, @) is prefixed with ' so it stays text —
  *  customer names and addresses come from stores and could otherwise run in Excel. */
 export function csvCell(v: unknown) {
@@ -91,3 +106,14 @@ export const CARRIER_STATUS: Record<string, [string, string]> = {
   Stopped: ['Tracking stopped', 'mute'],
 };
 export const CARRIER_PROBLEM = ['DeliveryFailure', 'Exception', 'Expired'];
+
+/** Support ticket topics: [label, short hint]. */
+export const TICKET_CATEGORY: Record<string, [string, string]> = {
+  order: ['An order', 'Address, delay, change, cancel'],
+  damaged: ['Damaged goods', 'Broken or wrong items — add photos'],
+  inbound: ['Stock delivery', 'An inbound, receiving, counts'],
+  stock: ['Inventory', 'Stock levels, quarantine, products'],
+  billing: ['Billing', 'An invoice, a charge, payment'],
+  account: ['Account & stores', 'Access, team, store connection'],
+  other: ['Something else', 'Anything else'],
+};

@@ -29,11 +29,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     if (isOwner(ctx)) items.push({ href: '/activity', label: 'Activity', icon: 'activity' });
   } else {
     items.push({ href: '/', label: 'Home', icon: 'home' }, { href: '/notifications', label: 'Notifications', icon: 'bell' }, { href: '/orders', label: 'Orders', icon: 'orders' }, { href: '/inventory', label: 'Inventory', icon: 'inventory' }, { href: '/inbounds', label: 'Stock inbounds', icon: 'inbounds' }, { href: '/tracking', label: 'Tracking', icon: 'tracking' });
-    if (ctx.can('invoices.view')) items.push({ href: '/invoices', label: 'Invoices', icon: 'invoices' });
+    items.push({ href: '/reports', label: 'Monthly report', icon: 'reports' });
+    if (ctx.can('invoices.view')) items.push({ href: '/invoices', label: 'Invoices', icon: 'invoices' }, { href: '/pricing', label: 'Pricing', icon: 'pricing' });
     if (ctx.can('integrations.manage')) items.push({ href: '/integrations', label: 'Stores', icon: 'stores' });
     items.push({ href: '/support', label: 'Support', icon: 'support' });
     if ((ctx.clientRole && ctx.can('team.manage')) || ctx.viewingAs) items.push({ href: '/team', label: 'Team', icon: 'team' });
   }
+  if (ctx.org) items.push({ href: '/settings/company', label: 'Company profile', icon: 'company' });
   if (!ctx.viewingAs) items.push({ href: '/settings', label: 'Settings', icon: 'settings' });
 
   const role = ctx.staffRole ? `Elmamsflow · ${ctx.roleName}` : ctx.roleName;

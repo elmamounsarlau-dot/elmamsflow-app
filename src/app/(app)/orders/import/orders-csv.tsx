@@ -9,7 +9,7 @@ import { importOrdersCsv } from './actions';
 type P = { sku: string; name: string; org: string; customs: boolean };
 type Org = { id: string; name: string };
 
-const TEMPLATE = 'order,customer,address,city,zip,country,email,phone,service,sku,qty\n1042,Camille Durand,12 Rue de Rivoli,Paris,75001,FR,camille@example.com,+33 6 12 34 56 78,express,LEMON-LIME,2\n1042,Camille Durand,12 Rue de Rivoli,Paris,75001,FR,camille@example.com,+33 6 12 34 56 78,express,BERRY,1\n1043,Jonas Becker,Hauptstraße 5,Berlin,10115,Germany,,,ddp,LEMON-LIME,1\n';
+const TEMPLATE = 'order,customer,address,city,zip,country,email,phone,sku,qty\n1042,Camille Durand,12 Rue de Rivoli,Paris,75001,FR,camille@example.com,+33 6 12 34 56 78,LEMON-LIME,2\n1042,Camille Durand,12 Rue de Rivoli,Paris,75001,FR,camille@example.com,+33 6 12 34 56 78,BERRY,1\n1043,Jonas Becker,Hauptstraße 5,Berlin,10115,Germany,,,LEMON-LIME,1\n';
 
 export function OrdersCsv({ fixedOrg, clients, products }: { fixedOrg: Org | null; clients: Org[]; products: P[] }) {
   const router = useRouter();
@@ -81,7 +81,7 @@ export function OrdersCsv({ fixedOrg, clients, products }: { fixedOrg: Org | nul
                         <tr key={k}>
                           <td><b>{o.ref ? `#${o.ref}` : '—'}</b><small>line{o.lineNos.length > 1 ? 's' : ''} {o.lineNos.join(', ')}</small></td>
                           <td>{o.customer || '—'}<small>{o.email}</small></td>
-                          <td>{[o.city, o.country].filter(Boolean).join(', ') || '—'}<small>{o.service === 'ddp' ? 'DDP' : 'Express'}</small></td>
+                          <td>{[o.city, o.country].filter(Boolean).join(', ') || '—'}<small>DDP</small></td>
                           <td>{o.lines.map((l) => `${l.qty} × ${l.sku}`).join(', ') || '—'}</td>
                           <td>{o.errors.length ? <span className="ep-st ep-st--warn" title={o.errors.join(' · ')}>{o.errors[0]}{o.errors.length > 1 ? ` (+${o.errors.length - 1})` : ''}</span> : hold ? <span className="ep-st ep-st--pk">On hold: customs info</span> : <span className="ep-st ep-st--ok">Ready</span>}</td>
                         </tr>

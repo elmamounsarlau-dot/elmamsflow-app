@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { getCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
-import { fmtDate } from '@/lib/format';
+import { countryName, fmtDate } from '@/lib/format';
 import { CATEGORY, isOverdue, money } from '@/lib/billing';
 import { PrintNow } from '@/components/client';
 
@@ -13,7 +13,7 @@ export default async function PrintInvoice({ params }: { params: Promise<{ id: s
   if (!ctx) redirect('/login');
   const { id } = await params;
   const sb = await supabaseServer();
-  let q = sb.from('invoices').select('*, organizations(name, code, country, phone)').eq('id', id);
+  let q = sb.from('invoices').select('*, organizations(id, name, code, country, phone, legal_name, billing_address, vat_number, invoice_email, logo_path)').eq('id', id);
   if (ctx.org) q = q.eq('org_id', ctx.org.id).neq('status', 'draft');
   const { data: inv } = await q.maybeSingle();
   if (!inv || !ctx.can('invoices.view')) notFound();
@@ -22,7 +22,7 @@ export default async function PrintInvoice({ params }: { params: Promise<{ id: s
     sb.from('billing_settings').select('*').eq('id', 1).maybeSingle(),
   ]);
   const cur = inv.currency as string;
-  const org = inv.organizations as unknown as { name: string; code: string; country: string | null; phone: string | null } | null;
+  const org = inv.organizations as unknown as { id: string; name: string; code: string; country: string | null; phone: string | null; legal_name: string | null; billing_address: string | null; vat_number: string | null; invoice_email: string | null; logo_path: string | null } | null;
   const bank = s?.[`bank_${cur.toLowerCase()}`] as string | null | undefined;
   const status = inv.status === 'paid' ? 'PAID' : inv.status === 'draft' ? 'DRAFT' : inv.status === 'void' ? 'VOID' : isOverdue(inv) ? 'OVERDUE' : 'DUE';
   return (
@@ -43,7 +43,16 @@ export default async function PrintInvoice({ params }: { params: Promise<{ id: s
         </header>
 
         <section className="pi-parties">
-          <div><small>Billed to</small><b>{org?.name}</b><span>Client {org?.code}{org?.country ? ` · ${org.country}` : ''}</span></div>
+          <div className="pi-to">
+            {/* eslint-disable-next-line @next/next/no-img-element -- printed page: a plain image prints reliably */}
+            {org?.logo_path && <img src={`/files/logo/${org.id}`} alt="" className="pi-to-logo" />}
+            <small>Billed to</small><b>{org?.legal_name || org?.name}</b>
+            {org?.legal_name && org.legal_name !== org.name && <span>{org.name}</span>}
+            {org?.billing_address && <span style={{ whiteSpace: 'pre-line' }}>{org.billing_address}</span>}
+            {org?.vat_number && <span>VAT {org.vat_number}</span>}
+            {org?.invoice_email && <span>{org.invoice_email}</span>}
+            <span>Client {org?.code}{org?.country ? ` · ${countryName(org.country)}` : ''}</span>
+          </div>
           <div><small>Period</small><b>{fmtDate(inv.period_start)} – {fmtDate(inv.period_end)}</b></div>
           <div><small>Issued</small><b>{inv.issued_at ? fmtDate(inv.issued_at) : '—'}</b></div>
           <div><small>{inv.status === 'paid' ? 'Paid' : 'Due'}</small><b>{inv.status === 'paid' ? fmtDate(inv.paid_at) : fmtDate(inv.due_date)}</b></div>

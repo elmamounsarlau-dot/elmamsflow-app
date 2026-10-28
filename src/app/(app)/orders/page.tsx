@@ -192,7 +192,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
                 {f.c && <input type="hidden" name="c" value={f.c} />}
                 <label>Channel<select name="src" defaultValue={f.src}><option value="">All channels</option>{Object.entries(CHANNELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
                 <label>Country<select name="country" defaultValue={f.country}><option value="">All countries</option>{countries.map((c) => <option key={c} value={c}>{flag(c)} {c}</option>)}</select></label>
-                <label>Service<select name="svc" defaultValue={f.svc}><option value="">Express and DDP</option><option value="express">Express</option><option value="ddp">DDP</option></select></label>
+                
                 <div className="ep-row2">
                   <label>From<input type="date" name="from" defaultValue={f.from} /></label>
                   <label>To<input type="date" name="to" defaultValue={f.to} /></label>

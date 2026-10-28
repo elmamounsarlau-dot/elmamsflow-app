@@ -2,10 +2,10 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
-import { CARRIER_PROBLEM, CARRIER_STATUS, COUNTRIES, fmtDate, ORDER_STATUS } from '@/lib/format';
-import { Arrow, Back, Badge, TeamOnly } from '@/components/ui';
+import { CARRIER_PROBLEM, CARRIER_STATUS, COUNTRIES, countryList, fmtDate, ORDER_STATUS } from '@/lib/format';
+import { Arrow, Back, Badge, TeamOnly, Thumb } from '@/components/ui';
 import { Submit } from '@/components/client';
-import { cancelOrder, refreshTracking, reverseShipment, updateOrder } from '../actions';
+import { cancelOrder, editOrderShipTo, refreshTracking, reverseShipment, updateOrder } from '../actions';
 import { rematchProducts, resendTracking } from '../../integrations/actions';
 import { getWarehouses, shippingWarehouses, whLabel } from '@/lib/warehouses';
 
@@ -18,7 +18,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const { data: o } = await q.maybeSingle();
   if (!o) notFound();
   const [{ data: items }, whs, { data: events }] = await Promise.all([
-    sb.from('order_items').select('qty, products(sku, name, weight_g, hs_code, customs_value)').eq('order_id', id),
+    sb.from('order_items').select('qty, products(id, sku, name, weight_g, hs_code, customs_value, photo_path)').eq('order_id', id),
     getWarehouses(),
     o.tracking ? sb.from('tracking_events').select('at, description, location').eq('order_id', id).eq('tracking', o.tracking).order('at', { ascending: false }).limit(60) : Promise.resolve({ data: [] as { at: string | null; description: string; location: string | null }[] }),
   ]);
@@ -35,6 +35,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const statuses = ctx.can('orders.warehouse') ? Object.keys(ORDER_STATUS).filter((k) => canHoldIt || !['on_hold', 'cancelled'].includes(k)) : ['new', 'on_hold'];
   const shippedAlready = ['shipped', 'delivered'].includes(o.status);
   const isPdf = (o.label_path ?? '').endsWith('.pdf');
+  const canEdit = ['new', 'on_hold'].includes(o.status) && (ctx.can('orders.create') || (!!ctx.staffRole && ctx.can('orders.hold')));
   return (
     <>
       <Back href="/orders">Orders</Back>
@@ -64,7 +65,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
             <div><small>Shipment</small><b>#{o.number}</b></div>
             <div><small>Ships from</small><b>{wh ? whLabel(wh) : 'Not chosen'}</b></div>
             <div><small>To</small><b>{[o.city, COUNTRIES[o.country] ?? o.country].filter(Boolean).join(', ')}</b></div>
-            <div><small>Service</small><b>{o.service === 'ddp' ? 'DDP Express' : 'Express'}</b></div>
+            <div><small>Service</small><b>{o.service === 'ddp' ? 'DDP · duties paid' : 'Express'}</b></div>
           </div>
           <section className="ep-card">
             <h2>Journey</h2>
@@ -115,10 +116,10 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
             <table className="ep-table">
               <thead><tr><th>SKU</th><th>Product</th>{ctx.staffRole && <><th>HS code</th><th className="ep-right">Value (USD)</th><th className="ep-right">Weight</th></>}<th className="ep-right">Qty</th></tr></thead>
               <tbody>{(items ?? []).map((it, i) => {
-                const p = it.products as unknown as { sku: string; name: string; weight_g: number; hs_code: string | null; customs_value: number };
+                const p = it.products as unknown as { id: string; sku: string; name: string; weight_g: number; hs_code: string | null; customs_value: number; photo_path: string | null };
                 return (
                   <tr key={i}>
-                    <td><b>{p?.sku}</b></td><td>{p?.name}</td>
+                    <td><div className="ep-prod">{p && <Thumb id={p.id} photo={p.photo_path} name={p.name} size={34} />}<b>{p?.sku}</b></div></td><td>{p?.name}</td>
                     {ctx.staffRole && <><td>{p?.hs_code || <span className="ep-warn">missing</span>}</td><td className="ep-right">{Number(p?.customs_value) ? Number(p.customs_value).toFixed(2) : '—'}</td><td className="ep-right">{p?.weight_g ? `${p.weight_g} g` : '—'}</td></>}
                     <td className="ep-right">{it.qty}</td>
                   </tr>
@@ -132,6 +133,21 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
             <h2>Ship to</h2>
             <p className="ep-address"><b>{o.customer}</b><br />{o.address}<br />{[o.zip, o.city].filter(Boolean).join(' ')}<br />{COUNTRIES[o.country] ?? o.country}{o.email && <><br /><span className="ep-muted">{o.email}</span></>}</p>
             <p className="ep-muted ep-small">Service: {o.service === 'ddp' ? 'DDP, duties paid' : 'Express'}{o.weight_g ? ` · ${(o.weight_g / 1000).toFixed(2)} kg` : ''}</p>
+            {canEdit && (
+              <details className="ep-edit" id="edit" open={o.hold_kind === 'address' || undefined}>
+                <summary><span>Edit customer &amp; address</span><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M5.5 8l4.5 4.5L14.5 8" /></svg></summary>
+                <form action={editOrderShipTo} className="ep-form">
+                  <input type="hidden" name="id" value={o.id} />
+                  <label>Customer name<input name="customer" defaultValue={o.customer} required maxLength={120} autoComplete="off" /></label>
+                  <label>Street address<input name="address" defaultValue={o.address === '—' ? '' : o.address} required maxLength={240} autoComplete="off" /></label>
+                  <div className="ep-row2"><label>Postcode<input name="zip" defaultValue={o.zip ?? ''} maxLength={20} /></label><label>City<input name="city" defaultValue={o.city ?? ''} maxLength={80} /></label></div>
+                  <label>Country<select name="country" defaultValue={/^[A-Z]{2}$/.test(o.country) && o.country !== 'XX' ? o.country : ''} required><option value="" disabled>Choose…</option>{countryList(o.country).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+                  <div className="ep-row2"><label>Phone<input name="phone" defaultValue={o.phone ?? ''} maxLength={40} /></label><label>Email<input type="email" name="email" defaultValue={o.email ?? ''} maxLength={160} /></label></div>
+                  {o.integration_id && <p className="ep-small ep-muted">From your store: if the address changes there later, the store’s version replaces this one until the parcel is packed.</p>}
+                  <Submit className="ep-btn ep-btn--full">Save changes</Submit>
+                </form>
+              </details>
+            )}
           </section>
           {staffView && !canHoldIt && o.status === 'on_hold' && (
             <section className="ep-card ep-card--team" id="ship"><h2>Ship this order</h2><p className="ep-small">On hold: {o.hold_reason ?? 'waiting for a fix'}. It appears in your shipping queue as soon as the team releases it.</p></section>

@@ -70,8 +70,7 @@ export const ORDER_COLS: [string, boolean, string][] = [
   ['country', true, 'FR or France'],
   ['email', false, 'Customer email'],
   ['phone', false, 'Customer phone'],
-  ['service', false, 'express (default) or ddp'],
-  ['sku', true, 'One product per row'],
+    ['sku', true, 'One product per row'],
   ['qty', true, 'Units of that product'],
 ];
 
@@ -85,19 +84,17 @@ export function groupOrders(rows: Record<string, string>[], knownSkus: Set<strin
     let o = map.get(key);
     if (!o) {
       const countryRaw = pick(r, ['country', 'country_code', 'shipping_country']);
-      const service = pick(r, ['service', 'shipping']).toLowerCase();
       o = {
         ref, customer: pick(r, ['customer', 'name_on_parcel', 'full_name', 'shipping_name', 'recipient']).slice(0, 120),
         email: pick(r, ['email', 'e-mail', 'customer_email']).slice(0, 160), phone: pick(r, ['phone', 'telephone', 'mobile']).slice(0, 40),
         address: [pick(r, ['address', 'address1', 'address_1', 'street']), pick(r, ['address2', 'address_2'])].filter(Boolean).join(', ').slice(0, 240),
         city: pick(r, ['city', 'town']).slice(0, 80), zip: pick(r, ['zip', 'postcode', 'postal_code', 'zip_code']).slice(0, 20),
-        country: resolveCountry(countryRaw), service: service === 'ddp' ? 'ddp' : 'express', lines: [], lineNos: [], errors: [],
+        country: resolveCountry(countryRaw), service: 'ddp', lines: [], lineNos: [], errors: [], // every order ships DDP (duties and taxes paid)
       };
       if (!ref) o.errors.push('Order number missing');
       if (!o.customer) o.errors.push('Customer missing');
       if (!o.address) o.errors.push('Address missing');
       if (!o.country) o.errors.push(countryRaw ? `Unknown country “${countryRaw}”` : 'Country missing');
-      if (service && !['express', 'ddp'].includes(service)) o.errors.push(`Service “${service}” is not express or ddp`);
       map.set(key, o);
     }
     o.lineNos.push(line);

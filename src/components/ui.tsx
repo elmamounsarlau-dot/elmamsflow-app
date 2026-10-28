@@ -86,3 +86,18 @@ export function Pager({ total, page, per, href, noun = 'item' }: { total: number
 }
 
 export const pageOf = (v: string | undefined) => Math.max(1, parseInt(v ?? '1', 10) || 1);
+
+/** A product's photo (private, served by the app), or its initials on a soft tile when there is none. */
+export function Thumb({ id, photo, name, size = 40, kit }: { id: string; photo?: string | null; name: string; size?: number; kit?: boolean }) {
+  const ini = name.replace(/[^\p{L}\p{N} ]/gu, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '·';
+  let h = 0;
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return (
+    <span className={`ep-thumb${kit ? ' ep-thumb--kit' : ''}`} style={{ width: size, height: size, ['--h' as string]: h }} aria-hidden="true">
+      {photo
+        // eslint-disable-next-line @next/next/no-img-element -- private file served by our own route
+        ? <img src={`/files/product/${id}?v=${encodeURIComponent(photo.split('/').pop() ?? '')}`} alt="" loading="lazy" decoding="async" />
+        : <i style={{ fontSize: Math.max(10, size * 0.34) }}>{ini}</i>}
+    </span>
+  );
+}

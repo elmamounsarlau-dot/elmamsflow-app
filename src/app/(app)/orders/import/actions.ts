@@ -27,7 +27,7 @@ export async function importOrdersCsv(payload: string): Promise<Result> {
   if (typeof data.text !== 'string' || data.text.length > 5_000_000) return { ok: false, message: 'The file is too large (5 MB max).' };
 
   const sb = await supabaseServer();
-  const { data: prods } = await sb.from('products').select('id, sku, hs_code, customs_value').eq('org_id', orgId).limit(20000);
+  const { data: prods } = await sb.from('products').select('id, sku, hs_code, customs_value, kind').eq('org_id', orgId).limit(20000);
   const bySku = new Map((prods ?? []).map((p) => [p.sku.toUpperCase(), p]));
   const orders = groupOrders(parseCsv(data.text).rows, new Set(bySku.keys()));
   if (!orders.length) return { ok: false, message: 'No orders found in the file.' };
@@ -43,7 +43,7 @@ export async function importOrdersCsv(payload: string): Promise<Result> {
   if (!fresh.length) return { ok: true, message: `All ${orders.length} orders were already imported. Nothing changed.`, created: 0, skipped: orders.length };
 
   const rows = fresh.map((o) => {
-    const noCustoms = o.lines.some((l) => { const p = bySku.get(l.sku)!; return !p.hs_code || !Number(p.customs_value); });
+    const noCustoms = o.lines.some((l) => { const p = bySku.get(l.sku)! as { hs_code: string | null; customs_value: number; kind?: string }; return p.kind !== 'bundle' && (!p.hs_code || !Number(p.customs_value)); });
     return {
       org_id: orgId, store_ref: o.ref, source: 'csv', customer: o.customer, email: o.email || null, phone: o.phone || null,
       address: o.address, city: o.city || null, zip: o.zip || null, country: o.country, service: o.service,
