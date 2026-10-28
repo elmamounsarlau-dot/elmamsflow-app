@@ -34,14 +34,17 @@ p.on('console', (m) => { if (m.type() === 'error') net.push(`CONSOLE ${m.text().
 // Submit the ship form and wait for the server's answer (flash message in the address); on slow machines the first
 // click can land before the page is interactive, so it is retried once.
 const save = async () => {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    await ready();
-    const before = p.url();
-    // Submit the form itself (a message banner can sit over the button on small test screens).
-    await p.locator('#ship form').evaluate((f) => f.requestSubmit(f.querySelector('button.ep-btn--full')));
-    try { await p.waitForURL((u) => u.toString() !== before && /[?&](ok|warn|err)=/.test(u.toString()), { timeout: 15000, waitUntil: 'commit' }); return; } catch { /* retry */ }
-  }
-  throw new Error('the ship form did not submit');
+  await ready();
+  // Submit, wait for the app's answer, then open the page it points to (doesn't depend on the browser's own
+  // in-page navigation, which is slow on CI machines).
+  const [resp] = await Promise.all([
+    p.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/orders/'), { timeout: 30000 }),
+    p.locator('#ship form').evaluate((f) => f.requestSubmit(f.querySelector('button.ep-btn--full'))),
+  ]);
+  const to = (resp.headers()['x-action-redirect'] ?? '').split(';')[0];
+  if (!to) throw new Error(`the ship form got no redirect (HTTP ${resp.status()})`);
+  await p.goto(BASE + to, { waitUntil: 'networkidle' });
+  await ready();
 };
 const ready = () => p.locator('#ship form button.ep-btn--full[data-ready="1"]').waitFor({ timeout: 30000 });
 const openOrder = async (oid) => { await p.goto(`${BASE}/orders/${oid}`, { waitUntil: 'networkidle' }); await ready(); };
