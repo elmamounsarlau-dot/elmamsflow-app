@@ -95,3 +95,10 @@ export const shippingOnly = (ctx: Ctx) =>
   !ctx.can('orders.hold') && !ctx.can('stock.adjust') && !ctx.can('clients.view') && !ctx.can('products.edit') && !ctx.can('inbounds.receive');
 /** Sees inventory, inbounds, transfers and warehouses. */
 export const seesStock = (ctx: Ctx) => !ctx.backOffice || !shippingOnly(ctx);
+
+/** The Owner themself (not viewing a client's workspace). */
+export const isOwner = (ctx: Ctx) => ctx.staffRole === 'owner' && !ctx.viewingAs;
+/** Money figures (declared stock value): clients see their own; in the back office only owner, manager, finance (billing). */
+export const seesMoney = (ctx: Ctx) => !ctx.backOffice || ctx.can('billing.manage');
+/** Business figures (best sellers, top markets): clients see their own; in the back office, people who work with clients. */
+export const seesBusiness = (ctx: Ctx) => !ctx.backOffice || ctx.can('clients.view') || ctx.can('billing.manage');

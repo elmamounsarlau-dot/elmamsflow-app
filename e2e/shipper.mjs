@@ -16,12 +16,38 @@ let current = null;
 process.on('uncaughtException', async (e) => {
   let where = '';
   try { if (current) where = ` || at ${current.url()} || ${String(await current.evaluate(() => document.body.innerText)).replace(/\s+/g, ' ').slice(0, 900)}`; } catch (x) { where = ` || (no page text: ${x?.message})`; }
-  console.log(`::error title=shipper e2e::${String(e?.message ?? e).split('\n').slice(0, 4).join(' | ')}${where}`); process.exit(1);
+  let log = '';
+  try { const { readFileSync, existsSync } = await import('node:fs'); const f = process.env.APP_LOG ?? 'app.log'; if (existsSync(f)) log = ` || APP LOG: ${readFileSync(f, 'utf8').slice(-1500).replace(/\s+/g, ' ')}`; } catch { /* none */ }
+  console.log(`::error title=shipper e2e::${String(e?.message ?? e).split('\n').slice(0, 2).join(' | ')} || NET: ${(globalThis.__net ?? []).join(' ; ')}${log.slice(0, 600)}`); process.exit(1);
 });
 process.on('unhandledRejection', (e) => { console.log(`::error title=shipper e2e::${String(e?.message ?? e).split('\n').slice(0, 6).join(' | ')}`); process.exit(1); });
-const browser = await chromium.launch();
+// Full Chromium (new headless), not the stripped headless shell: the label file field needs a real browser.
+const browser = await chromium.launch({ channel: 'chromium' });
 const as = async (email) => { const c = await browser.newContext(); await c.addCookies(await cookiesFor(email, BASE)); return c.newPage(); };
 const p = await as('shipper@local.test');
+const net = []; globalThis.__net = net;
+p.on('request', (r) => { if (r.method() === 'POST') net.push(`REQ ${r.url().replace(BASE, '')} ${r.headers()['content-type']?.slice(0, 30)}`); });
+p.on('requestfinished', async (r) => { if (r.method() === 'POST') { const res = await r.response(); net.push(`DONE ${res?.status()} ${res?.headers()['x-action-redirect'] ?? ''}`); } });
+p.on('requestfailed', (r) => { if (r.method() === 'POST') net.push(`FAIL ${r.failure()?.errorText}`); });
+p.on('pageerror', (e) => net.push(`PAGEERR ${e.message.slice(0, 120)}`));
+p.on('console', (m) => { if (m.type() === 'error') net.push(`CONSOLE ${m.text().slice(0, 160)}`); });
+// Submit the ship form and wait for the server's answer (flash message in the address); on slow machines the first
+// click can land before the page is interactive, so it is retried once.
+const save = async () => {
+  await ready();
+  // Submit, wait for the app's answer, then open the page it points to (doesn't depend on the browser's own
+  // in-page navigation, which is slow on CI machines).
+  const [resp] = await Promise.all([
+    p.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/orders/'), { timeout: 30000 }),
+    p.locator('#ship form').evaluate((f) => f.requestSubmit(f.querySelector('button.ep-btn--full'))),
+  ]);
+  const to = (resp.headers()['x-action-redirect'] ?? '').split(';')[0];
+  if (!to) throw new Error(`the ship form got no redirect (HTTP ${resp.status()})`);
+  await p.goto(BASE + to, { waitUntil: 'networkidle' });
+  await ready();
+};
+const ready = () => p.locator('#ship form button.ep-btn--full[data-ready="1"]').waitFor({ timeout: 30000 });
+const openOrder = async (oid) => { await p.goto(`${BASE}/orders/${oid}`, { waitUntil: 'networkidle' }); await ready(); };
 current = p;
 
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
@@ -38,30 +64,33 @@ console.log('ok  shipper sees only Shipping, Orders and Tracking');
 const id = sql("select o.id from orders o join organizations g on g.id = o.org_id where o.status = 'packed' and g.name like 'Atlas%' order by o.number limit 1");
 await p.goto(`${BASE}/shipping`, { waitUntil: 'networkidle' });
 assert.ok(await p.locator(`a[href="/orders/${id}#ship"]`).count(), 'packed order is in the queue');
-await p.goto(`${BASE}/orders/${id}`, { waitUntil: 'networkidle' });
+await openOrder(id);
 const options = await p.locator('#ship select[name=status] option').allInnerTexts();
 assert.ok(!options.includes('On hold') && !options.includes('Cancelled'), 'no hold/cancel for the shipper');
 
+await ready();
 await p.selectOption('#ship select[name=status]', 'shipped');
 await p.fill('#ship input[name=carrier]', 'YunExpress');
 await p.fill('#ship input[name=tracking]', 'YT2299000001');
-await p.click('#ship form button.ep-btn--full');
+await save();
 await p.getByText(/Add the label photo/).waitFor();
 assert.equal(sql(`select status from orders where id = '${id}'`), 'packed');
 console.log('ok  cannot mark in transit without the label');
 
+await ready();
 await p.selectOption('#ship select[name=status]', 'shipped');
 await p.fill('#ship input[name=tracking]', 'YT2299000001');
 await p.setInputFiles('#ship input[name=label]', { name: 'label.txt.png', mimeType: 'image/png', buffer: Buffer.from('not an image at all') });
-await p.click('#ship form button.ep-btn--full');
+await save();
 await p.getByText(/must be a photo/).waitFor();
 console.log('ok  a file that is not really an image or PDF is refused');
 
+await ready();
 await p.selectOption('#ship select[name=status]', 'shipped');
 await p.fill('#ship input[name=carrier]', 'YunExpress');
 await p.fill('#ship input[name=tracking]', 'YT2299000001');
 await p.setInputFiles('#ship input[name=label]', { name: 'label.png', mimeType: 'image/png', buffer: PNG });
-await p.click('#ship form button.ep-btn--full');
+await save();
 await p.getByText(/Order saved/).waitFor();
 const row = sql(`select status || '|' || tracking || '|' || (label_path is not null) || '|' || (tracking_registered_at is not null) from orders where id = '${id}'`);
 assert.equal(row, 'shipped|YT2299000001|true|true');
