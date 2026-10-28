@@ -1,7 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { Suspense } from 'react';
-import { requireCtx, shippingOnly } from '@/lib/session';
+import { isOwner, requireCtx, shippingOnly } from '@/lib/session';
 import { Burger, ClickableRows, Flash, NavCloser, ResponsiveTables } from '@/components/client';
 import { Arrow } from '@/components/ui';
 import { NavLinks, type NavItem } from './nav';
@@ -26,7 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     if (ctx.can('invoices.view')) items.push({ href: '/invoices', label: 'Invoices', icon: 'invoices' });
     if (ctx.can('integrations.manage')) items.push({ href: '/integrations', label: 'Stores', icon: 'stores' });
     if (ctx.can('team.manage')) items.push({ href: '/team', label: 'Team', icon: 'team' });
-    if (ctx.can('activity.view')) items.push({ href: '/activity', label: 'Activity', icon: 'activity' });
+    if (isOwner(ctx)) items.push({ href: '/activity', label: 'Activity', icon: 'activity' });
   } else {
     items.push({ href: '/', label: 'Home', icon: 'home' }, { href: '/notifications', label: 'Notifications', icon: 'bell' }, { href: '/orders', label: 'Orders', icon: 'orders' }, { href: '/inventory', label: 'Inventory', icon: 'inventory' }, { href: '/inbounds', label: 'Stock inbounds', icon: 'inbounds' }, { href: '/tracking', label: 'Tracking', icon: 'tracking' });
     if (ctx.can('invoices.view')) items.push({ href: '/invoices', label: 'Invoices', icon: 'invoices' });

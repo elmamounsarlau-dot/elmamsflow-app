@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { shippingOnly } from '@/lib/session';
+import { seesMoney, shippingOnly } from '@/lib/session';
 import Link from 'next/link';
 import { requireCtx } from '@/lib/session';
 import { available, getProducts, orgNames, type ProductRow } from '@/lib/data';
@@ -126,11 +126,19 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
           <b>{sellable.toLocaleString('en')} <i>units</i></b>
           <span>{scopeRows.length} SKU{scopeRows.length === 1 ? '' : 's'}{incoming ? ` · ${incoming.toLocaleString('en')} incoming` : ''}</span>
         </div>
-        <div className="ep-sum-card">
-          <small>Declared value · USD</small>
-          <b>${value.toLocaleString('en', { maximumFractionDigits: 0 })}</b>
-          <span>On hand × each product’s customs value (entered in USD)</span>
-        </div>
+        {seesMoney(ctx) ? (
+          <div className="ep-sum-card">
+            <small>Declared value · USD</small>
+            <b>${value.toLocaleString('en', { maximumFractionDigits: 0 })}</b>
+            <span>On hand × each product’s customs value (entered in USD)</span>
+          </div>
+        ) : (
+          <div className="ep-sum-card">
+            <small>Incoming</small>
+            <b>{incoming.toLocaleString('en')} <i>units</i></b>
+            <span>On inbounds not received yet</span>
+          </div>
+        )}
         <Link href={link({ f: 'reorder' })} className={`ep-sum-card${reorder.length ? ' is-alert' : ''}`}>
           <small>Reorder now</small>
           <b>{reorder.length}</b>

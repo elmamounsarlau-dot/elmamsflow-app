@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { shippingOnly } from '@/lib/session';
+import { isOwner, shippingOnly } from '@/lib/session';
 import { requirePerm } from '@/lib/guard';
 import { supabaseServer } from '@/lib/supabase/server';
 import { orgNames } from '@/lib/data';
@@ -12,6 +12,7 @@ export const metadata = { title: 'Activity' };
 export default async function Activity() {
   const ctx = await requirePerm('activity.view');
   if (shippingOnly(ctx)) redirect('/shipping');
+  if (ctx.backOffice && !isOwner(ctx)) redirect('/'); // the team's activity log is for the owner only
   const sb = await supabaseServer();
   let q = sb.from('activity_log').select('*, profile:profiles!activity_log_user_profile_fkey(full_name, email)').order('created_at', { ascending: false }).limit(150);
   if (ctx.org) q = q.eq('org_id', ctx.org.id);

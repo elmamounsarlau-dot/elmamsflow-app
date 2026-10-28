@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { shippingOnly } from '@/lib/session';
+import { isOwner, seesBusiness, shippingOnly } from '@/lib/session';
 import Link from 'next/link';
 import { PendingLink } from '@/components/access';
 import type { AccessLink } from '@/lib/invite';
@@ -52,7 +52,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     scope(sb.from('inbounds').select('id, ref, status, eta, supplier, org_id, inbound_items(expected)').neq('status', 'received').order('eta', { ascending: true, nullsFirst: false }).limit(50)),
     headCount('tickets').eq('status', 'open'),
     scope(sb.from('orders').select('id, number, customer, city, country, created_at, status, org_id, hold_reason').order('created_at', { ascending: false }).limit(6)),
-    ctx.backOffice ? sb.from('activity_log').select('*').order('created_at', { ascending: false }).limit(8) : Promise.resolve({ data: [] as { id: number; action: string; detail: string | null; org_id: string | null; created_at: string }[] }),
+    isOwner(ctx) ? sb.from('activity_log').select('*').order('created_at', { ascending: false }).limit(8) : Promise.resolve({ data: [] as { id: number; action: string; detail: string | null; org_id: string | null; created_at: string }[] }),
     ctx.backOffice ? Promise.resolve({ count: 1 }) : headCount('inbounds'),
   ]);
 
@@ -249,6 +249,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           {billing && invoiceCard}
           {latestCard}
 
+          {seesBusiness(ctx) && (
+            <>
           <section className="ep-bcard">
             <div className="ep-bhead"><span className="ep-bic ep-bic--orange"><HIcon d="star" /></span><h2>Best sellers</h2><span className="ep-btag">{range === 'today' ? 'Today' : `Last ${days} days`}</span><Link className="ep-blink" href="/inventory?sort=sales">Inventory →</Link></div>
             {best.length === 0 ? <Empty title="No sales yet in this period" text="Your best-selling SKUs show here once orders ship." /> : (
@@ -280,6 +282,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
               </ul>
             )}
           </section>
+            </>
+          )}
         </div>
 
         <aside className="ep-hcol">
@@ -358,7 +362,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         </section>
       )}
 
-      {ctx.backOffice && (activity.data ?? []).length > 0 && (
+      {isOwner(ctx) && (activity.data ?? []).length > 0 && (
         <section className="ep-bcard">
           <div className="ep-bhead"><span className="ep-bic ep-bic--violet"><HIcon d="pulse" /></span><h2>Latest activity</h2><Link className="ep-blink" href="/activity">All activity →</Link></div>
           <ul className="ep-activity">
