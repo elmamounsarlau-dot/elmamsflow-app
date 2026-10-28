@@ -37,7 +37,8 @@ const save = async () => {
   for (let attempt = 0; attempt < 2; attempt++) {
     await ready();
     const before = p.url();
-    await p.click('#ship form button.ep-btn--full');
+    // Submit the form itself (a message banner can sit over the button on small test screens).
+    await p.locator('#ship form').evaluate((f) => f.requestSubmit(f.querySelector('button.ep-btn--full')));
     try { await p.waitForURL((u) => u.toString() !== before && /[?&](ok|warn|err)=/.test(u.toString()), { timeout: 15000, waitUntil: 'commit' }); return; } catch { /* retry */ }
   }
   throw new Error('the ship form did not submit');
