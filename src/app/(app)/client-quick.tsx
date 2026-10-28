@@ -51,7 +51,7 @@ export async function ClientQuick({ ctx }: { ctx: Ctx }) {
         <Tile label="Door to door" href="/tracking" figure="doorToDoor" value={d.trip.avg === null ? -1 : Number(d.trip.avg.toFixed(1))} delay={150} sub="last 30 days · duties paid (DDP)">
           <span className="ds-kv">{d.trip.avg === null ? '—' : <>{d.trip.avg.toFixed(1)}<small> days</small></>}</span>
         </Tile>
-        <Tile label="Sellable stock" href="/inventory" figure="sellable" value={d.sellable} delay={200} sub={d.daysLeft !== null ? `about ${Math.round(d.daysLeft)} days left` : 'units ready to ship'}>
+        <Tile label="Sellable stock" href="/inventory" figure="sellable" value={d.sellable} delay={200} sub={d.daysLeft !== null ? (d.daysLeft > 365 ? 'over a year of stock' : `about ${Math.round(d.daysLeft)} days left`) : 'units ready to ship'}>
           <span className="ds-kv"><CountUp value={d.sellable} /></span>
         </Tile>
         {bill ? (
@@ -127,7 +127,7 @@ export async function ClientQuick({ ctx }: { ctx: Ctx }) {
                     <td className="ep-right">{x.n.toLocaleString('en')}</td>
                     <td className="ep-right">{x.change === null ? <span className="ds-muted">new</span> : <span className={x.change >= 0 ? 'ds-up' : 'ds-dn'}>{x.change >= 0 ? '+' : '−'}{Math.abs(x.change)}%</span>}</td>
                     <td className="ep-right">{x.r.available.toLocaleString('en')}</td>
-                    <td className="ep-right">{x.r.days === null ? '—' : <span className={x.r.days < 21 ? 'ds-pill ds-pill--err' : x.r.days < 45 ? 'ds-pill ds-pill--warn' : ''}>{Math.round(x.r.days)} d</span>}</td>
+                    <td className="ep-right">{x.r.days === null ? '—' : <span className={x.r.days < 21 ? 'ds-pill ds-pill--err' : x.r.days < 45 ? 'ds-pill ds-pill--warn' : ''}>{x.r.days > 365 ? '365+' : Math.round(x.r.days)} d</span>}</td>
                     <td>{x.market ? countryName(x.market) : '—'}</td>
                   </tr>
                 ))}
