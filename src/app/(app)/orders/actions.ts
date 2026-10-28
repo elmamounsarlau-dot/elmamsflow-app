@@ -10,6 +10,7 @@ import { str, withMsg } from '@/lib/format';
 import { pushTracking } from '@/lib/integrations/service';
 import { refreshOrders, registerOrders, syncTracking, trackKey, trackShippedOrder } from '@/lib/track17';
 import { saveLabel } from '@/lib/labels';
+import { MONEY_CURRENCIES } from '@/lib/fx';
 import { editShipTo } from '@/lib/integrations/core';
 
 export async function createOrder(fd: FormData) {
@@ -48,7 +49,7 @@ export async function updateOrder(fd: FormData) {
   const id = str(fd, 'id');
   if (!ctx?.can('orders.hold') && !ctx?.can('orders.warehouse')) redirect(withMsg(`/orders/${id}`, 'You don’t have access to that.', 'err'));
   const sb = await supabaseServer();
-  const { data: cur } = await sb.from('orders').select('id, org_id, status, tracking, label_path').eq('id', id).maybeSingle();
+  const { data: cur } = await sb.from('orders').select('id, number, org_id, status, tracking, label_path').eq('id', id).maybeSingle();
   if (!cur) redirect(withMsg('/orders', 'Order not found.', 'err'));
   const next = str(fd, 'status');
   const label = fd.get('label');
@@ -77,12 +78,44 @@ export async function updateOrder(fd: FormData) {
     p_weight: Number.isFinite(weight) ? weight : null, p_hold_reason: str(fd, 'hold_reason') || null,
   });
   if (error) redirect(withMsg(`/orders/${id}`, error.message, 'err'));
+  // What the label and the duties cost us (Finance). Kept apart from the order: clients can never read it.
+  if (fd.get('costs') && ctx.staffRole && !ctx.viewingAs && ctx.can('orders.warehouse')) {
+    const costErr = await saveOrderCosts(cur, fd, ctx.userId);
+    if (costErr) redirect(withMsg(`/orders/${id}#ship`, `Order saved, but the costs weren’t: ${costErr}`, 'warn'));
+  }
   // Shipped with a tracking number: tell the client's store (Shopify / WooCommerce).
   const shipped = ['shipped', 'delivered'].includes(str(fd, 'status'));
   const pushed = shipped ? await pushTracking(id).catch((e) => (e as Error).message) : null;
   // Start live tracking with 17TRACK (a failure here is retried by the daily sync).
   if (shipped) await trackShippedOrder(id).catch(() => null);
   redirect(withMsg(`/orders/${id}`, pushed === 'ok' ? 'Order saved. Tracking sent to the client’s store.' : pushed ? `Order saved, but tracking couldn’t be sent to the store: ${pushed}` : 'Order saved.', pushed && pushed !== 'ok' ? 'warn' : 'ok'));
+}
+
+async function saveOrderCosts(order: { id: string; number: string; org_id: string }, fd: FormData, by: string): Promise<string | null> {
+  const read = (k: string) => {
+    const v = str(fd, k);
+    if (!v) return null;
+    const n = Math.round(parseFloat(v.replace(',', '.')) * 100) / 100;
+    return Number.isFinite(n) && n >= 0 && n <= 100000 ? n : NaN;
+  };
+  const label = read('label_cost');
+  const duties = fd.has('duties_paid') ? read('duties_paid') : undefined;
+  if (Number.isNaN(label) || Number.isNaN(duties)) return 'write the costs as amounts (0 or more).';
+  const currency = str(fd, 'cost_currency');
+  if (!(MONEY_CURRENCIES as readonly string[]).includes(currency)) return 'choose the currency.';
+  const admin = supabaseAdmin();
+  const { data: old } = await admin.from('order_costs').select('label_cost, duties_paid, currency').eq('order_id', order.id).maybeSingle();
+  const next = { label_cost: label, duties_paid: duties === undefined ? old?.duties_paid ?? null : duties };
+  if (next.label_cost === null && next.duties_paid === null) {
+    if (old) await admin.from('order_costs').delete().eq('order_id', order.id);
+    return null;
+  }
+  if (old && Number(old.label_cost ?? -1) === Number(next.label_cost ?? -1) && Number(old.duties_paid ?? -1) === Number(next.duties_paid ?? -1) && old.currency === currency) return null;
+  const { error } = await admin.from('order_costs').upsert({ order_id: order.id, org_id: order.org_id, ...next, currency, recorded_by: by, recorded_at: new Date().toISOString() }, { onConflict: 'order_id' });
+  if (error) return error.message;
+  // No client on the log line: clients can read their own activity, never our costs.
+  await logActivity(admin, by, null, 'order_costs', `#${order.number} · ` + [next.label_cost !== null && `label ${next.label_cost}`, next.duties_paid !== null && `duties ${next.duties_paid}`].filter(Boolean).join(' · ') + ` ${currency}`);
+  return null;
 }
 
 export async function cancelOrder(fd: FormData) {

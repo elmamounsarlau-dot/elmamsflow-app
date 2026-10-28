@@ -131,7 +131,7 @@ export default async function Inventory({ searchParams }: { searchParams: Promis
       <div className="ep-sum">
         <div className="ep-sum-card">
           <small>Sellable now</small>
-          <b>{sellable.toLocaleString('en')} <i>units</i></b>
+          <b data-figure="sellable" data-value={sellable}>{sellable.toLocaleString('en')} <i>units</i></b>
           <span>{scopeRows.length} SKU{scopeRows.length === 1 ? '' : 's'}{incoming ? ` · ${incoming.toLocaleString('en')} incoming` : ''}</span>
         </div>
         {seesMoney(ctx) ? (

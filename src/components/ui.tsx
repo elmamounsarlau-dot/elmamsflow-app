@@ -24,11 +24,11 @@ export function Empty({ title, text, children }: { title: string; text: string; 
   );
 }
 
-export function Kpi({ label, value, href }: { label: string; value: ReactNode; href?: string }) {
+export function Kpi({ label, value, href, figure, num }: { label: string; value: ReactNode; href?: string; figure?: string; num?: number }) {
   const inner = (
     <>
       <small>{label}</small>
-      <b>{value}</b>
+      <b data-figure={figure} data-value={num}>{value}</b>
     </>
   );
   return href ? (
@@ -74,7 +74,7 @@ export function Pager({ total, page, per, href, noun = 'item' }: { total: number
     off ? <span className="ep-pg is-off" aria-hidden="true">{text}</span> : <Link className="ep-pg" href={href(n)} aria-label={label}>{text}</Link>;
   return (
     <div className="ep-pager">
-      <span className="ep-muted">{total.toLocaleString('en')} {noun}{total === 1 ? '' : 's'}</span>
+      <span className="ep-muted" data-count={total}>{total.toLocaleString('en')} {noun}{total === 1 ? '' : 's'}</span>
       {pages > 1 && <span>Page {p} of {pages}</span>}
       {pages > 1 && (
         <div className="ep-pager-nav">

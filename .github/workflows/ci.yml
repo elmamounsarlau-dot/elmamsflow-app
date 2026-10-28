@@ -84,6 +84,8 @@ jobs:
           npx next start -H 127.0.0.1 -p 3000 > app.log 2>&1 &
           for i in $(seq 1 60); do curl -sf -o /dev/null http://127.0.0.1:3000/login && break; sleep 1; done
       - run: OUT=e2e-results node e2e/audit.mjs
+      - name: Same audit in dark mode
+        run: THEME=dark OUT=e2e-results/dark node e2e/audit.mjs
       - name: Live tracking (signed webhook, forged webhook, auto-delivery, daily sync) against a fake 17TRACK
         run: |
           set -o pipefail; node e2e/tracking.mjs 2>&1 | tee /tmp/tracking.log || { echo "::error title=tracking::$(grep -E -A10 'not ok|Error|assert' /tmp/tracking.log | tr '\n' ' ' | cut -c1-1800)"; exit 1; }
@@ -109,6 +111,16 @@ jobs:
           bash supabase/local/up.sh > /dev/null
           bash supabase/local/wait-rest.sh
           set -o pipefail; node e2e/shipper.mjs 2>&1 | tee /tmp/shipper.log || { echo "::error title=shipper::$(grep -E -A10 'not ok|Error|assert' /tmp/shipper.log | tr '\n' ' ' | cut -c1-1800)"; exit 1; }
+      - name: The Overview tells the truth (every figure = the page it opens) and Full view / Quick view switching
+        run: |
+          bash supabase/local/up.sh > /dev/null
+          bash supabase/local/wait-rest.sh
+          set -o pipefail; node e2e/overview.mjs 2>&1 | tee /tmp/overview.log || { echo "::error title=overview::$(grep -E -A10 'not ok|Error|assert' /tmp/overview.log | tr '\n' ' ' | cut -c1-1800)"; exit 1; }
+      - name: Finance (rates, expenses and receipts, shipping costs, duties billed back, bank import, export, access)
+        run: |
+          bash supabase/local/up.sh > /dev/null
+          bash supabase/local/wait-rest.sh
+          set -o pipefail; node e2e/finance.mjs 2>&1 | tee /tmp/finance.log || { echo "::error title=finance::$(grep -E -A10 'not ok|Error|assert' /tmp/finance.log | tr '\n' ' ' | cut -c1-1800)"; exit 1; }
       - if: always()
         uses: actions/upload-artifact@v4
         with:

@@ -76,7 +76,7 @@ export function ImagePick({ name, current, label, hint, round = false, size = 11
 const MAX_TOTAL = 4 * 1024 * 1024;
 
 /** Several attachments (photos of damaged goods, PDFs): chips with previews, removable, images resized first. */
-export function FilesPick({ name, max = 4 }: { name: string; max?: number }) {
+export function FilesPick({ name, max = 4, hint, what = 'Drop photos or PDFs here, or' }: { name: string; max?: number; hint?: string; what?: string }) {
   const input = useRef<HTMLInputElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const [files, setList] = useState<{ f: File; url: string | null }[]>([]);
@@ -90,7 +90,7 @@ export function FilesPick({ name, max = 4 }: { name: string; max?: number }) {
     if (ok.length < list.length) setErr('Only photos and PDF files can be attached.');
     const next = [...files];
     for (const f of ok) {
-      if (next.length >= max) { setErr(`Up to ${max} files per message.`); break; }
+      if (next.length >= max) { setErr(max === 1 ? 'One file only: remove it first to choose another.' : `Up to ${max} files per message.`); break; }
       const s = await shrink(f);
       next.push({ f: s, url: s.type.startsWith('image/') && s.type !== 'image/heic' ? URL.createObjectURL(s) : null });
     }
@@ -107,8 +107,8 @@ export function FilesPick({ name, max = 4 }: { name: string; max?: number }) {
         onDrop={(e) => { e.preventDefault(); setOver(false); add(e.dataTransfer.files); }}
       >
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" /></svg>
-        <span>Drop photos or PDFs here, or <button type="button" className="ep-link" onClick={() => picker.current?.click()}>choose files</button></span>
-        <small>Up to {max} files · 4 MB in total · photos are resized automatically</small>
+        <span>{what} <button type="button" className="ep-link" onClick={() => picker.current?.click()}>choose files</button></span>
+        <small>{hint ?? `Up to ${max} files · 4 MB in total · photos are resized automatically`}</small>
       </div>
       <input ref={picker} type="file" multiple accept="image/jpeg,image/png,image/webp,image/heic,application/pdf" hidden onChange={(e) => { add(e.target.files); e.target.value = ''; }} />
       <input ref={input} type="file" name={name} multiple hidden />

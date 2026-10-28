@@ -54,13 +54,13 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
   // Back office: the Orders page opens on the overview of all brands; a brand (or "all") is chosen from there.
   // Old links with a tab, status or search (e.g. "Fix them →") open the all-brands list instead.
   if (ctx.backOffice && !f.c) {
-    if (f.t || f.s || f.q || f.src || f.country || f.from || f.to || f.svc) f.c = 'all';
+    if (f.t || f.s || f.q || f.src || f.country || f.from || f.to || f.svc || f.older || f.shipped) f.c = 'all';
     else return <OrdersOverview data={await ordersOverview()} canCreate={ctx.can('orders.create')} />;
   }
   const oneClient = ctx.backOffice && f.c !== 'all' ? f.c : '';
   const sb = await supabaseServer();
   const orgId = ctx.org?.id ?? null;
-  const scopeOnly = { ...f, q: '', src: '', country: '', from: '', to: '', svc: '' };
+  const scopeOnly = { ...f, q: '', src: '', country: '', from: '', to: '', svc: '', older: '', shipped: '' };
 
   const count = (fn: (q: ReturnType<typeof base>) => ReturnType<typeof base>) => fn(base()).then((r) => r.count ?? 0);
   const base = () => applyScope(sb.from('orders').select('id', { count: 'exact', head: true }), scopeOnly, orgId);
@@ -102,7 +102,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
   const staffHold = !!ctx.staffRole && ctx.can('orders.hold');
   const here = ordersHref(f);
   const issueTab = !!f.t;
-  const activeFilters = [f.src && CHANNELS[f.src], f.country, f.svc && (f.svc === 'ddp' ? 'DDP' : 'Express'), (f.from || f.to) && `${f.from || '…'} → ${f.to || '…'}`].filter(Boolean) as string[];
+  const activeFilters = [f.older && `Waiting over ${f.older} h`, f.shipped && `Shipped on ${new Date(`${f.shipped}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`, f.src && CHANNELS[f.src], f.country, f.svc && (f.svc === 'ddp' ? 'DDP' : 'Express'), (f.from || f.to) && `${f.from || '…'} → ${f.to || '…'}`].filter(Boolean) as string[];
   const exportHref = `/orders/export${here.replace(/^\/orders/, '')}`;
 
   return (
@@ -173,7 +173,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
 
           <div className="ep-orders-tools">
             <form action="/orders" className="ep-searchbox">
-              {['t', 's', 'src', 'country', 'from', 'to', 'c', 'svc'].map((k) => (f as unknown as Record<string, string>)[k] ? <input key={k} type="hidden" name={k} value={(f as unknown as Record<string, string>)[k]} /> : null)}
+              {['t', 's', 'src', 'country', 'from', 'to', 'shipped', 'older', 'c', 'svc'].map((k) => (f as unknown as Record<string, string>)[k] ? <input key={k} type="hidden" name={k} value={(f as unknown as Record<string, string>)[k]} /> : null)}
               {f.per !== 25 && <input type="hidden" name="per" value={f.per} />}
               <select name="field" defaultValue={f.field} aria-label="Search in">{SEARCH_FIELDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
               <label className="ep-searchbox-in">
@@ -198,7 +198,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
                   <label>To<input type="date" name="to" defaultValue={f.to} /></label>
                 </div>
                 <div className="ep-pop-foot">
-                  <Link href={ordersHref({ ...f, src: '', country: '', svc: '', from: '', to: '' }, { p: 1 })} className="ep-link">Reset all</Link>
+                  <Link href={ordersHref({ ...f, src: '', country: '', svc: '', from: '', to: '', older: '', shipped: '' }, { p: 1 })} className="ep-link">Reset all</Link>
                   <button className="ep-btn ep-btn--sm">Apply filters</button>
                 </div>
               </form>
@@ -213,7 +213,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
         {activeFilters.length > 0 && (
           <div className="ep-chips-active">
             {activeFilters.map((a) => <span key={a}>{a}</span>)}
-            <Link href={ordersHref({ ...f, src: '', country: '', svc: '', from: '', to: '' }, { p: 1 })} className="ep-link">Clear filters</Link>
+            <Link href={ordersHref({ ...f, src: '', country: '', svc: '', from: '', to: '', older: '', shipped: '' }, { p: 1 })} className="ep-link">Clear filters</Link>
           </div>
         )}
         {issueTab && f.t !== 'attention' && <p className="ep-orders-hint">{HOLD_KIND[f.t][2]}. {f.t === 'manual' ? 'Release them when they’re ready to ship.' : f.t === 'products' ? 'Import or add the products, then open the order and press “Match products again”.' : f.t === 'customs' ? 'Add the HS code and customs value on the product — the order releases by itself.' : f.t === 'address' ? 'Open the order to see the address, then fix it in your store or tell us in Support.' : 'They ship as soon as stock arrives.'}</p>}
@@ -316,9 +316,9 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
         </form>
 
         <div className="ep-pager">
-          <span className="ep-muted">{total.toLocaleString('en')} order{total === 1 ? '' : 's'}</span>
+          <span className="ep-muted" data-count={total}>{total.toLocaleString('en')} order{total === 1 ? '' : 's'}</span>
           <form action="/orders" className="ep-pager-per">
-            {Object.entries({ t: f.t, s: f.s, q: f.q, field: f.q ? f.field : '', src: f.src, country: f.country, from: f.from, to: f.to, c: f.c, svc: f.svc }).map(([k, v]) => v ? <input key={k} type="hidden" name={k} value={v} /> : null)}
+            {Object.entries({ t: f.t, s: f.s, q: f.q, field: f.q ? f.field : '', src: f.src, country: f.country, from: f.from, to: f.to, shipped: f.shipped, older: f.older, c: f.c, svc: f.svc }).map(([k, v]) => v ? <input key={k} type="hidden" name={k} value={v} /> : null)}
             <label>Rows per page
               <select name="per" defaultValue={String(f.per)} data-autosubmit>{PER_PAGE.map((n) => <option key={n} value={n}>{n}</option>)}</select>
             </label>

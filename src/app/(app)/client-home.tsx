@@ -54,7 +54,8 @@ export async function ClientHome({ ctx, welcome }: { ctx: Ctx; welcome: boolean 
   let todayIn = 0, todayOut = 0, delivered7 = 0;
   for (const o of recent) {
     const c = dayKey(o.created_at);
-    if (o.status !== 'cancelled' && rec.has(c)) { rec.set(c, rec.get(c)! + 1); if (c === today) todayIn++; }
+    // Every order that came in, like the Orders list for that day (also one cancelled later).
+    if (rec.has(c)) { rec.set(c, rec.get(c)! + 1); if (c === today) todayIn++; }
     if (o.shipped_at && ['shipped', 'delivered'].includes(o.status)) { const s = dayKey(o.shipped_at); if (out.has(s)) out.set(s, out.get(s)! + 1); if (s === today) todayOut++; }
     if (o.delivered_at && o.status === 'delivered' && now - Date.parse(o.delivered_at) < 7 * 864e5) delivered7++;
   }
@@ -120,10 +121,10 @@ export async function ClientHome({ ctx, welcome }: { ctx: Ctx; welcome: boolean 
           </div>
         </div>
         <div className="ep-ch-today" aria-label="Today">
-          <div><small>Received today</small><b><CountUp value={todayIn} /></b></div>
-          <div><small>Shipped today</small><b><CountUp value={todayOut} /></b></div>
+          <div><small>Received today</small><b data-figure="ordersToday" data-value={todayIn}><CountUp value={todayIn} /></b></div>
+          <div><small>Shipped today</small><b data-figure="shippedToday" data-value={todayOut}><CountUp value={todayOut} /></b></div>
           <div><small>Delivered · 7 days</small><b><CountUp value={delivered7} /></b></div>
-          <div><small>Sellable units</small><b><CountUp value={sellable} /></b></div>
+          <div><small>Sellable units</small><b data-figure="sellable" data-value={sellable}><CountUp value={sellable} /></b></div>
         </div>
       </header>
 

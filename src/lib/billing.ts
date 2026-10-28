@@ -1,5 +1,6 @@
 import 'server-only';
 import { supabaseAdmin } from './supabase/admin';
+import { convert, financeSettings } from './fx';
 
 export type Currency = 'USD' | 'EUR' | 'GBP';
 export const CURRENCIES: Currency[] = ['USD', 'EUR', 'GBP'];
@@ -61,6 +62,9 @@ export async function getRateCard(orgId: string): Promise<RateCard | null> {
   out.payment_terms_days = Number(out.payment_terms_days) || 14;
   return out as RateCard;
 }
+
+/** Invoice lines that pass duties through at cost start with this text. */
+export const DUTIES_LINE = 'Duties & taxes paid for you';
 
 const ON_HAND = new Set(['inbound', 'order', 'adjust', 'count']);
 
@@ -142,10 +146,28 @@ export async function computeCharges(orgId: string, rates: RateCard, start: Date
   add('shipping', `Shipping · ${nOrders} parcel${nOrders === 1 ? '' : 's'}`, nOrders, rates.shipping_base);
   add('shipping', `Shipping weight · ${kg.toLocaleString('en')} kg billed (each parcel rounded up to the full kg; ${w.actualKg.toLocaleString('en')} kg actual)${w.unknown ? ` · ${w.unknown} parcel${w.unknown === 1 ? '' : 's'} without a weight not included` : ''}`, kg, rates.shipping_per_kg);
   add('customs', `DDP customs handling · ${ddp} order${ddp === 1 ? '' : 's'}`, ddp, rates.ddp_order);
+  // Duties and taxes we paid at import for these DDP orders, billed back at cost (Finance settings can turn this off).
+  const fin = await financeSettings();
+  if (fin.bill_duties && os.length) {
+    const ids = (orders as { id: string }[]).map((o) => o.id);
+    let paid = 0, n = 0, missing = 0;
+    for (let k = 0; k < ids.length; k += 300) {
+      const { data, error } = await admin.from('order_costs').select('duties_paid, currency').in('order_id', ids.slice(k, k + 300)).gt('duties_paid', 0);
+      if (error) throw new Error(`Could not read the duties for this invoice: ${error.message}`);
+      for (const c of data ?? []) {
+        const v = convert(Number(c.duties_paid), c.currency, rates.currency, fin);
+        if (v === null) { missing++; continue; }
+        paid += v; n++;
+      }
+    }
+    if (missing) throw new Error(`Duties on ${missing} order${missing === 1 ? '' : 's'} can’t be converted to ${rates.currency}: add the exchange rate in Finance → Settings.`);
+    if (paid > 0) add('customs', `${DUTIES_LINE} · ${n} order${n === 1 ? '' : 's'}`, 1, r2(paid));
+  }
   add('receiving', `Receiving · ${cartons} carton${cartons === 1 ? '' : 's'} on ${ins.length} inbound${ins.length === 1 ? '' : 's'}`, cartons, rates.receiving_carton);
   add('receiving', `Counting in · ${unitsIn.toLocaleString('en')} units`, unitsIn, rates.receiving_unit);
   add('storage', `Storage · avg ${Math.round(unitDays / days).toLocaleString('en')} units over ${days} day${days === 1 ? '' : 's'}`, unitMonths, rates.storage_unit_month);
-  const subtotal = r2(lines.reduce((a, l) => a + l.amount, 0));
+  // Duties passed through at cost don't count towards the monthly minimum.
+  const subtotal = r2(lines.filter((l) => !l.description.startsWith(DUTIES_LINE)).reduce((a, l) => a + l.amount, 0));
   if (rates.monthly_minimum > subtotal && days >= 28) add('other', 'Monthly minimum top-up', 1, r2(rates.monthly_minimum - subtotal));
   const total = r2(lines.reduce((a, l) => a + l.amount, 0));
   return { lines, total, stats: { orders: nOrders, units, kg, kgActual: w.actualKg, noWeight: w.unknown, ddp, cartons, unitsIn, avgStored: Math.round(unitDays / days) } };

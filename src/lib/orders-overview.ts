@@ -48,11 +48,10 @@ export async function ordersOverview(days = 14) {
   for (const o of rows) {
     const b = brands.get(o.org_id);
     const c = dayKey(o.created_at);
-    if (o.status !== 'cancelled') {
-      if (received.has(c)) received.set(c, received.get(c)! + 1);
-      if (c === today) t.received++;
-      if (c === yesterday) t.receivedY++;
-    }
+    // Every order that came in counts as received (also one cancelled later), like the Orders list for that day.
+    if (received.has(c)) received.set(c, received.get(c)! + 1);
+    if (c === today) t.received++;
+    if (c === yesterday) t.receivedY++;
     const s = o.shipped_at ? dayKey(o.shipped_at) : null;
     if (s && ['shipped', 'delivered'].includes(o.status)) {
       if (shipped.has(s)) shipped.set(s, shipped.get(s)! + 1);
@@ -66,7 +65,7 @@ export async function ordersOverview(days = 14) {
     if (open && !o.warehouse_id) noWarehouse++;
     if (!b) continue;
     if (!b.lastOrderAt || o.created_at > b.lastOrderAt) b.lastOrderAt = o.created_at;
-    if (o.status !== 'cancelled') {
+    {
       const i = keys.indexOf(c);
       if (i >= 0) b.spark[i]++;
       if (c === today) b.today++;

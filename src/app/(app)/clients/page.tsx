@@ -40,7 +40,7 @@ export default async function Clients() {
           )}
         </section>
         {ctx.can('clients.manage') && (
-          <section className="ep-card ep-card--side">
+          <section className="ep-card ep-card--side" id="new-client">
             <h2>New client workspace</h2>
             <p className="ep-muted ep-small" style={{ marginBottom: '1rem' }}>Only brands you approve get access. Their admin receives a private link by email and can then invite their own team.</p>
             <form action={createClient} className="ep-form">
