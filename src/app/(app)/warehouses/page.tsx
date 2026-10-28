@@ -70,11 +70,11 @@ export default async function Warehouses() {
                   <tr key={w.id}>
                     <td><b>{w.name}</b><small>{[w.city, w.province].filter(Boolean).join(', ') || '—'}</small></td>
                     <td className="ep-mono">{w.code}</td>
-                    <td className="ep-right">{t.onHand.toLocaleString('en')}</td>
+                    <td className="ep-right" data-figure={`wh-${w.name}`} data-value={t.onHand}>{t.onHand.toLocaleString('en')}</td>
                     <td className="ep-right">{t.q.toLocaleString('en')}</td>
                     <td className="ep-right">{t.r.toLocaleString('en')}</td>
                     <td className="ep-right"><b>{t.free.toLocaleString('en')}</b></td>
-                    <td className="ep-right">{(openOrders ?? []).filter((o) => o.warehouse_id === w.id).length}</td>
+                    <td className="ep-right" data-figure={`whopen-${w.name}`} data-value={(openOrders ?? []).filter((o) => o.warehouse_id === w.id).length}>{(openOrders ?? []).filter((o) => o.warehouse_id === w.id).length}</td>
                     <td><Badge map={ACTIVE} value={String(w.active)} /></td>
                     {isOwner && (
                       <td>

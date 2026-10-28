@@ -2,7 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { isOwner, requireCtx, shippingOnly } from '@/lib/session';
-import { Burger, ClickableRows, Flash, NavCloser, ResponsiveTables } from '@/components/client';
+import { Burger, ClickableRows, Flash, NavCloser, ResponsiveTables, SettleNudge } from '@/components/client';
 import { Arrow } from '@/components/ui';
 import { NavLinks, type NavItem } from './nav';
 import { exitViewAs } from './view-as';
@@ -24,6 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     items.push({ href: '/tracking', label: 'Tracking', icon: 'tracking' });
     if (ctx.can('support.reply')) items.push({ href: '/support', label: 'Support', icon: 'support' });
     if (ctx.can('invoices.view')) items.push({ href: '/invoices', label: 'Invoices', icon: 'invoices' });
+    if (ctx.can('billing.manage')) items.push({ href: '/finance', label: 'Finance', icon: 'finance' });
     if (ctx.can('integrations.manage')) items.push({ href: '/integrations', label: 'Stores', icon: 'stores' });
     if (ctx.can('team.manage')) items.push({ href: '/team', label: 'Team', icon: 'team' });
     if (isOwner(ctx)) items.push({ href: '/activity', label: 'Activity', icon: 'activity' });
@@ -98,6 +99,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <ClickableRows />
       <ResponsiveTables />
       <NavCloser />
+      <SettleNudge />
     </div>
   );
 }

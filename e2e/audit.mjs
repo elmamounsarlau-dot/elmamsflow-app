@@ -5,6 +5,7 @@
 import { chromium } from 'playwright-core';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
 import { cookiesFor } from './session.mjs';
 
 const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:3000';
@@ -20,7 +21,7 @@ const INBOUND = '1c000000-0000-0000-0000-000000000005';
 const ATLAS = '11111111-1111-1111-1111-111111111111';
 const KIT = 'a0000000-0000-0000-0000-0000000000f1';
 
-const STAFF_PAGES = ['/', '/clients', `/clients/${ATLAS}`, '/orders', `/orders?c=${ATLAS}`, '/orders?c=all', '/orders?t=attention', `/orders/${ORDER}`, `/orders/${HELD}`, '/orders/new', '/orders/import', '/inventory', `/inventory/${PRODUCT}`, '/inventory/new', '/inventory/import', '/inventory/decisions', '/inbounds', `/inbounds/${INBOUND}`, '/inbounds/new', '/tracking', '/support', '/support/7a000000-0000-0000-0000-000000000002', '/support/new', '/invoices', '/invoices/1a000000-0000-0000-0000-000000000002', '/integrations', '/integrations/1e000000-0000-0000-0000-000000000001', '/integrations/new', '/warehouses', '/transfers', '/transfers/new', '/transfers/new?kind=allocation', '/transfers/:first', '/team', '/activity', '/settings', '/settings/billing'];
+const STAFF_PAGES = ['/', '/clients', `/clients/${ATLAS}`, '/orders', `/orders?c=${ATLAS}`, '/orders?c=all', '/orders?t=attention', `/orders/${ORDER}`, `/orders/${HELD}`, '/orders/new', '/orders/import', '/inventory', `/inventory/${PRODUCT}`, '/inventory/new', '/inventory/import', '/inventory/decisions', '/inbounds', `/inbounds/${INBOUND}`, '/inbounds/new', '/tracking', '/support', '/support/7a000000-0000-0000-0000-000000000002', '/support/new', '/invoices', '/invoices/1a000000-0000-0000-0000-000000000002', '/integrations', '/integrations/1e000000-0000-0000-0000-000000000001', '/integrations/new', '/warehouses', '/transfers', '/transfers/new', '/transfers/new?kind=allocation', '/transfers/:first', '/team', '/activity', '/settings', '/settings/billing', '/finance', '/finance/expenses', '/finance/import', '/finance/settings'];
 const CLIENT_PAGES = ['/', '/notifications', '/orders', `/orders/${ORDER}`, `/orders/${HELD}`, '/orders/new', '/orders/import', '/inventory', `/inventory/${PRODUCT}`, `/inventory/${KIT}`, '/inventory/new', '/inbounds', '/inbounds/new', '/tracking', '/reports', '/support', '/support/new', '/invoices', '/invoices/1a000000-0000-0000-0000-000000000002', '/pricing', '/integrations', '/team', '/settings', '/settings/company'];
 const ROLES = [
   { key: 'owner', email: 'owner@local.test', pages: STAFF_PAGES },
@@ -28,7 +29,10 @@ const ROLES = [
   { key: 'shipper', email: 'shipper@local.test', pages: ['/shipping', '/shipping?s=packed', '/orders', `/orders/${ORDER}`, '/tracking'] },
   { key: 'client-admin', email: 'admin@atlas.local.test', pages: CLIENT_PAGES },
   { key: 'client-ops', email: 'ops@atlas.local.test', pages: ['/', '/notifications', '/orders', '/inventory', '/team'] },
+  // The brand's Quick view (this person chose it).
+  { key: 'client-quick', email: 'admin@nova.local.test', before: "update profiles set home_view = 'quick' where email = 'admin@nova.local.test'", pages: ['/'] },
 ];
+const THEME = process.env.THEME === 'dark' ? 'dark' : 'light';
 const WIDTHS = [{ name: '375', width: 375, height: 812, mobile: true }, { name: '768', width: 768, height: 1024, mobile: true }, { name: 'desktop', width: 1440, height: 900, mobile: false }];
 
 const slug = (p) => (p === '/' ? 'home' : p.replace(/^\//, '').replace(/[/?=&:]/g, '_'));
@@ -36,7 +40,8 @@ const report = [];
 const browser = await chromium.launch({ ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}) });
 
 for (const role of ROLES) {
-  const cookies = await cookiesFor(role.email, BASE);
+  if (role.before) execFileSync('psql', ['-X', '-At', '-d', process.env.LOCAL_DB ?? 'elm_local', '-c', role.before]);
+  const cookies = [...await cookiesFor(role.email, BASE), ...(THEME === 'dark' ? [{ name: 'elm_theme', value: 'dark', domain: new URL(BASE).hostname, path: '/' }] : [])];
   for (const w of WIDTHS) {
     const ctx = await browser.newContext({ viewport: { width: w.width, height: w.height }, isMobile: w.mobile, hasTouch: w.mobile, deviceScaleFactor: 1, reducedMotion: 'reduce' }); // final state: entrance animations would skew contrast checks
     await ctx.addCookies(cookies);

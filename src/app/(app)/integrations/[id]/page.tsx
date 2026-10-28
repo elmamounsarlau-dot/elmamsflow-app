@@ -62,7 +62,7 @@ export default async function StorePage({ params }: { params: Promise<{ id: stri
         <section className="ep-card ep-card--flush">
           <div className="ep-card-head ep-pad"><h2>What happened</h2><span className="ep-muted ep-small">Latest 25 events</span></div>
           {(events ?? []).length === 0 ? <Empty title="Waiting for the first order" text="Paid orders appear here as soon as your customers check out." /> : (
-            <ul className="ep-events">
+            <ul className="ep-events" tabIndex={0} aria-label="Store sync history">
               {(events ?? []).map((e) => {
                 const [l, t] = EVENT[e.kind] ?? [e.kind, 'mute'];
                 return <li key={e.id}><span className={`ep-st ep-st--${t}`}>{l}</span><span>{e.detail}</span><small>{fmtDate(e.created_at, true)}</small></li>;

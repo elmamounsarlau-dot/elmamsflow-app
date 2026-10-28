@@ -255,3 +255,29 @@ export function Reveal() {
 export function PrintButton({ label = 'Print or save as PDF' }: { label?: string }) {
   return <button type="button" className="ep-btn ep-btn--ghost" onClick={() => window.print()}>{label}</button>;
 }
+
+/**
+ * After a form is sent (or the Overview view is switched), React sometimes keeps the finished page change waiting
+ * until something else on the page updates. For a few seconds after each submit, this gives React that update,
+ * so a saved form always moves on (and a button never stays on "Working…").
+ */
+export function SettleNudge() {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    let timer = 0;
+    let until = 0;
+    const loop = () => {
+      if (Date.now() > until) { timer = 0; return; }
+      setTick((t) => (t + 1) % 1000);
+      timer = window.setTimeout(loop, 200);
+    };
+    const kick = () => {
+      until = Date.now() + 8000;
+      if (!timer) timer = window.setTimeout(loop, 200);
+    };
+    document.addEventListener('submit', kick, true);
+    window.addEventListener('elm:busy', kick);
+    return () => { document.removeEventListener('submit', kick, true); window.removeEventListener('elm:busy', kick); clearTimeout(timer); };
+  }, []);
+  return null;
+}

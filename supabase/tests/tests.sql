@@ -634,3 +634,32 @@ select t.raises('tickets: an unknown category is refused', $q$update public.tick
 select t.works('tickets: a category can be set', $q$update public.tickets set category = 'damaged' where id = '7a000000-0000-0000-0000-000000000001'$q$);
 select t.denied('company profile: a client cannot write its organisation row directly', $q$update public.organizations set vat_number = 'X' where id = '11111111-1111-1111-1111-111111111111'$q$);
 reset role;
+
+-- =====================================================================
+-- 11. Finance (0018): only owner / manager / finance see money and costs
+-- =====================================================================
+insert into public.order_costs (order_id, org_id, label_cost, duties_paid, currency) values
+  ('0a000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 42.5, 12, 'CNY');
+insert into public.expenses (spent_on, category, payee, amount, currency) values ('2026-10-01', 'rent', 'Ningbo warehouse', 1480, 'USD');
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000a1');
+select t.ok('finance: the owner sees expenses', (select count(*) = 1 from public.expenses));
+select t.works('finance: the owner adds an expense', $q$insert into public.expenses (spent_on, category, payee, amount, currency) values ('2026-10-02', 'software', 'App', 90, 'USD')$q$);
+select t.works('finance: the owner sets the reporting currency', $q$update public.finance_settings set report_currency = 'USD', fx = '{"EUR": 1.08}' where id = 1$q$);
+select t.raises('finance: an expense needs a known category', $q$insert into public.expenses (spent_on, category, payee, amount, currency) values ('2026-10-02', 'party', 'x', 1, 'USD')$q$);
+select t.raises('finance: an expense amount is positive', $q$insert into public.expenses (spent_on, category, payee, amount, currency) values ('2026-10-02', 'other', 'x', -5, 'USD')$q$);
+select t.ok('finance: the owner sees shipping costs', (select count(*) = 1 from public.order_costs));
+select t.login('00000000-0000-0000-0000-0000000000a3');
+select t.ok('finance: the warehouse sees the shipping costs it types', (select count(*) = 1 from public.order_costs));
+select t.ok('finance: the warehouse does not see expenses', (select count(*) = 0 from public.expenses));
+select t.denied('finance: the warehouse cannot add an expense', $q$insert into public.expenses (spent_on, category, payee, amount, currency) values ('2026-10-02', 'other', 'x', 1, 'USD')$q$);
+select t.ok('finance: the warehouse cannot read finance settings', (select count(*) = 0 from public.finance_settings));
+select t.login('00000000-0000-0000-0000-0000000000b1');
+select t.ok('finance: a client never sees what shipping cost us', (select count(*) = 0 from public.order_costs));
+select t.ok('finance: a client never sees expenses', (select count(*) = 0 from public.expenses));
+select t.ok('finance: a client never sees finance settings', (select count(*) = 0 from public.finance_settings));
+select t.denied('finance: a client cannot add an expense', $q$insert into public.expenses (spent_on, category, payee, amount, currency) values ('2026-10-02', 'other', 'x', 1, 'USD')$q$);
+select t.denied('finance: a client cannot write shipping costs', $q$insert into public.order_costs (order_id, org_id, label_cost, currency) values ('0a000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 1, 'USD')$q$);
+select t.login('00000000-0000-0000-0000-0000000000a4');
+select t.ok('finance: the shipper does not see expenses', (select count(*) = 0 from public.expenses));
+reset role;

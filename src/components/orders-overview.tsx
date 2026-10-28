@@ -4,23 +4,30 @@ import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-/** Number that counts up from 0 when it appears (skipped for people who prefer less motion). */
+/**
+ * Number that counts up from 0 when it appears (skipped for people who prefer less motion).
+ * It animates the text on screen directly instead of through React state: a state update made while the page is
+ * switching (a form or a view change still finishing) could leave that change waiting forever.
+ */
 export function CountUp({ value, ms = 900 }: { value: number; ms?: number }) {
-  const [n, setN] = useState(value);
+  const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
-    if (typeof window === 'undefined' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || value <= 0) { setN(value); return; }
+    const node = ref.current?.firstChild;
+    if (!node) return;
+    const final = value.toLocaleString('en');
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || value <= 0) return;
     let raf = 0;
     const t0 = performance.now();
     const tick = (t: number) => {
       const p = Math.min(1, (t - t0) / ms);
-      setN(Math.round(value * (1 - Math.pow(1 - p, 3))));
+      node.nodeValue = Math.round(value * (1 - Math.pow(1 - p, 3))).toLocaleString('en');
       if (p < 1) raf = requestAnimationFrame(tick);
     };
-    setN(0);
+    node.nodeValue = '0';
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => { cancelAnimationFrame(raf); node.nodeValue = final; };
   }, [value, ms]);
-  return <>{n.toLocaleString('en')}</>;
+  return <span ref={ref} className="ep-countup">{value.toLocaleString('en')}</span>;
 }
 
 type C = { id: string; name: string; code: string | null; open?: number };

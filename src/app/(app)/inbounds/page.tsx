@@ -77,7 +77,7 @@ export default async function Inbounds({ searchParams }: { searchParams: Promise
         </Link>
         <Link href={href('late')} className={`ep-sum-card${late.length ? ' is-alert' : ''}`}>
           <small>Overdue</small>
-          <b>{late.length}</b>
+          <b data-figure="late" data-value={late.length}>{late.length}</b>
           <span>{late.length ? 'Past their expected date' : 'Everything on schedule'}</span>
         </Link>
         <div className="ep-sum-card">

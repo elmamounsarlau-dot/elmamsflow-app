@@ -45,7 +45,10 @@ export default async function Tracking({ searchParams }: { searchParams: Promise
   const page = Math.min(pageOf(sp.p), Math.max(1, Math.ceil(list.length / PER)));
   const rows = list.slice((page - 1) * PER, page * PER);
   const done = all.filter((o) => o.delivered_at && o.shipped_at);
-  const avg = done.length ? done.reduce((a, o) => a + (Date.parse(o.delivered_at!) - Date.parse(o.shipped_at!)) / 864e5, 0) / done.length : 0;
+  // Door to door over the last 30 days (the same figure as on the Overview).
+  const since30 = new Date(Date.now() - 30 * 864e5).toISOString();
+  const recent = done.filter((o) => o.status === 'delivered' && o.delivered_at! >= since30);
+  const avg = recent.length ? recent.reduce((a, o) => a + (Date.parse(o.delivered_at!) - Date.parse(o.shipped_at!)) / 864e5, 0) / recent.length : 0;
   const href = (t: string, p = 1) => `/tracking${t || p > 1 ? '?' : ''}${new URLSearchParams({ ...(t ? { t } : {}), ...(p > 1 ? { p: String(p) } : {}) })}`;
   const problems = all.filter(TABS[3][2]).length;
   return (
@@ -55,9 +58,9 @@ export default async function Tracking({ searchParams }: { searchParams: Promise
       </PageHead>
       <div className="ep-kpis ep-kpis--4">
         <Kpi label="In transit" value={all.filter((o) => o.status === 'shipped').length} />
-        <Kpi label="Problems" value={problems} href={problems ? href('problem') : undefined} />
+        <Kpi label="Problems" value={problems} href={problems ? href('problem') : undefined} figure="problems" num={problems} />
         <Kpi label="Delivered" value={done.length} />
-        <Kpi label="Average door to door" value={avg ? <>{avg.toFixed(1)} <i>days</i></> : '—'} />
+        <Kpi label="Door to door · 30 days" value={avg ? <>{avg.toFixed(1)} <i>days</i></> : '—'} figure="doorToDoor" num={avg ? Number(avg.toFixed(1)) : -1} />
       </div>
       <section className="ep-card ep-card--flush">
         <div className="ep-tabbar">

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import type { FeedItem, Pipe, Speed } from '@/lib/owner-dashboard';
 import { CountUp } from './orders-overview';
 
@@ -14,7 +15,7 @@ const CAP = [90, 60, 360] as const;
  * Open orders as a living picture: an orange core (all open orders) and three slowly turning rings,
  * one dot per order — inner to pack (and on hold), middle packed, outer on the road.
  */
-export function Pulse({ pipe, label = 'open', links }: { pipe: Pipe; label?: string; links: { toPack: string; hold: string; packed: string; road: string } }) {
+export function Pulse({ pipe, label = 'open', links, client = false }: { pipe: Pipe; label?: string; links: { toPack: string; hold: string; packed: string; road: string }; client?: boolean }) {
   const total = pipe.toPack + pipe.hold + pipe.packed + pipe.road;
   const rnd = rng(11);
   const ring = (n: number, cap: number, r: number, size: number, jitter: number, hold = 0) => {
@@ -47,10 +48,10 @@ export function Pulse({ pipe, label = 'open', links }: { pipe: Pipe; label?: str
         <text x="200" y="227" textAnchor="middle" className="ds-core-l">{label.toUpperCase()}</text>
       </svg>
       <ul className="ds-pulse-legend">
-        <li><Link href={links.toPack}><i className="ds-sw ds-sw--pack" />{label === 'open' ? 'To pack' : 'Being prepared'}<b><CountUp value={pipe.toPack} /></b></Link></li>
-        <li><Link href={links.hold}><i className="ds-sw ds-sw--hold" />On hold<b><CountUp value={pipe.hold} /></b></Link></li>
-        <li><Link href={links.packed}><i className="ds-sw ds-sw--packed" />Packed<b><CountUp value={pipe.packed} /></b></Link></li>
-        <li><Link href={links.road}><i className="ds-sw ds-sw--road" />On the road<b><CountUp value={pipe.road} /></b></Link></li>
+        <li><Link href={links.toPack} data-figure="pipe-toPack" data-value={pipe.toPack}><i className="ds-sw ds-sw--pack" />{client ? 'Being prepared' : 'To pack'}<b><CountUp value={pipe.toPack} /></b></Link></li>
+        <li><Link href={links.hold} data-figure="pipe-hold" data-value={pipe.hold}><i className="ds-sw ds-sw--hold" />On hold<b><CountUp value={pipe.hold} /></b></Link></li>
+        <li><Link href={links.packed} data-figure="pipe-packed" data-value={pipe.packed}><i className="ds-sw ds-sw--packed" />Packed<b><CountUp value={pipe.packed} /></b></Link></li>
+        <li><Link href={links.road} data-figure="pipe-road" data-value={pipe.road}><i className="ds-sw ds-sw--road" />On the road<b><CountUp value={pipe.road} /></b></Link></li>
       </ul>
       {scaled && <small className="ds-note">Busy day: each dot stands for a few orders.</small>}
     </div>
@@ -60,7 +61,7 @@ export function Pulse({ pipe, label = 'open', links }: { pipe: Pipe; label?: str
 const rateTone = (r: number | null) => (r === null ? 'none' : r >= 90 ? 'ok' : r >= 75 ? 'warn' : 'err');
 
 /** "Are we keeping our promise?" Shipped within 24 h over 7 days, and what is waiting to be packed, by age. */
-export function SpeedPanel({ speed, href, lateHref, title = 'Shipping speed' }: { speed: Speed; href: string; lateHref: string; title?: string }) {
+export function SpeedPanel({ speed, href, lateHref, title = 'Shipping speed', waitingLabel = 'Waiting to be packed' }: { speed: Speed; href: string; lateHref: string; title?: string; waitingLabel?: string }) {
   const [a, b, c, d] = speed.ages;
   const w = Math.max(1, speed.waiting);
   const late = c + d;
@@ -82,8 +83,8 @@ export function SpeedPanel({ speed, href, lateHref, title = 'Shipping speed' }: 
         </ol>
       </div>
       <div className="ds-ages">
-        <div className="ds-head ds-head--sub"><span className="ds-lbl">Waiting to be packed · {speed.waiting.toLocaleString('en')} order{speed.waiting === 1 ? '' : 's'}, by age</span>
-          {late ? <Link className="ds-late" href={lateHref}>{late} over 24 h → open</Link> : <span className="ds-ok">none late</span>}</div>
+        <div className="ds-head ds-head--sub"><span className="ds-lbl">{waitingLabel} · {speed.waiting.toLocaleString('en')} order{speed.waiting === 1 ? '' : 's'}, by age</span>
+          {late ? <Link className="ds-late" href={lateHref} data-figure="speed-late" data-value={late}>{late} over 24 h → open</Link> : <span className="ds-ok">none late</span>}</div>
         <div className="ds-stack" aria-hidden="true">
           {[a, b, c, d].map((n, i) => n ? <i key={i} className={`ds-age ds-age--${i}`} style={{ width: `${(n / w) * 100}%`, animationDelay: `${i * 100}ms` }} /> : null)}
           {!speed.waiting && <i className="ds-age ds-age--empty" style={{ width: '100%' }} />}
@@ -130,5 +131,16 @@ export function Feed({ items }: { items: FeedItem[] }) {
     <div className="ds-feed" aria-label="Latest events">
       <div className="ds-feed-track">{row}<span aria-hidden="true" className="ds-feed-dup">{row}</span></div>
     </div>
+  );
+}
+
+/** A figure tile: the whole tile opens the page that shows the same figure. */
+export function Tile({ label, href, figure, value, children, sub, tone, delay = 0 }: { label: string; href: string; figure: string; value: number; children: ReactNode; sub?: ReactNode; tone?: 'err' | 'warn'; delay?: number }) {
+  return (
+    <Link className={`ds-k${tone ? ` ds-k--${tone}` : ''}`} href={href} style={{ animationDelay: `${delay}ms` }} data-figure={figure} data-value={value}>
+      <span className="ds-lbl">{label}</span>
+      {children}
+      {sub && <span className="ds-ks">{sub}</span>}
+    </Link>
   );
 }

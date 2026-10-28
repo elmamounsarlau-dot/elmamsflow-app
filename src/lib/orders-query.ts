@@ -22,7 +22,14 @@ export const PER_PAGE = [10, 25, 50, 100];
 
 export type OrderFilters = {
   s: string; t: string; field: string; q: string; src: string; country: string; from: string; to: string; c: string; svc: string; per: number; p: number;
+  /** Only orders waiting longer than this many hours (24 or 48), counted from when they arrived. */
+  older: string;
+  /** Shipped on this day (China time, the warehouse day). */
+  shipped: string;
 };
+
+/** Midnight of a warehouse day (China time, UTC+8, no daylight saving), as an ISO time. */
+export const chinaDayStart = (day: string, plusDays = 0) => new Date(Date.parse(`${day}T00:00:00+08:00`) + plusDays * 864e5).toISOString();
 
 const clean = (v: string) => v.replace(/[,()*%\\]/g, ' ').trim().slice(0, 80);
 
@@ -41,20 +48,25 @@ export function parseFilters(sp: Record<string, string | undefined>, backOffice:
     svc: sp.svc === 'ddp' || sp.svc === 'express' ? sp.svc : '',
     per,
     p: Math.max(1, parseInt(sp.p ?? '1', 10) || 1),
+    older: sp.older === '24' || sp.older === '48' ? sp.older : '',
+    shipped: /^\d{4}-\d{2}-\d{2}$/.test(sp.shipped ?? '') ? sp.shipped! : '',
   };
 }
 
 /** Narrow a Supabase orders query by everything except the status / problem tab. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function applyScope<Q extends { eq: any; or: any; ilike: any; gte: any; lt: any }>(q: Q, f: OrderFilters, orgId: string | null): Q {
+export function applyScope<Q extends { eq: any; or: any; ilike: any; gte: any; lt: any; in: any }>(q: Q, f: OrderFilters, orgId: string | null): Q {
   let x = q;
   if (orgId) x = x.eq('org_id', orgId);
   else if (f.c && f.c !== 'all') x = x.eq('org_id', f.c);
   if (f.src) x = x.eq('source', f.src);
   if (f.country) x = x.eq('country', f.country);
   if (f.svc) x = x.eq('service', f.svc);
-  if (f.from) x = x.gte('created_at', `${f.from}T00:00:00Z`);
-  if (f.to) x = x.lt('created_at', new Date(Date.parse(`${f.to}T00:00:00Z`) + 864e5).toISOString());
+  // Dates are warehouse days (China time), like every date shown in the app.
+  if (f.from) x = x.gte('created_at', chinaDayStart(f.from));
+  if (f.to) x = x.lt('created_at', chinaDayStart(f.to, 1));
+  if (f.shipped) x = x.in('status', ['shipped', 'delivered']).gte('shipped_at', chinaDayStart(f.shipped)).lt('shipped_at', chinaDayStart(f.shipped, 1));
+  if (f.older) x = x.lt('created_at', new Date(Date.now() - Number(f.older) * 3600e3).toISOString());
   if (f.q) {
     const like = `%${f.q}%`;
     if (f.field === 'order') x = x.or(`number.ilike.${like},store_ref.ilike.${like}`);
@@ -77,7 +89,7 @@ export function applyTab<Q extends { eq: any }>(q: Q, f: OrderFilters): Q {
 export function ordersHref(f: OrderFilters, patch: Partial<Record<keyof OrderFilters, string | number>> = {}) {
   const m = { ...f, ...patch } as Record<string, string | number>;
   const u = new URLSearchParams();
-  for (const k of ['t', 's', 'field', 'q', 'src', 'country', 'from', 'to', 'c', 'svc', 'per', 'p']) {
+  for (const k of ['t', 's', 'field', 'q', 'src', 'country', 'from', 'to', 'shipped', 'c', 'svc', 'older', 'per', 'p']) {
     const v = m[k];
     if (v === '' || v === undefined) continue;
     if (k === 'field' && (v === 'order' || !m.q)) continue;

@@ -24,21 +24,27 @@ export default async function Support({ searchParams }: { searchParams: Promise<
   ]);
   // Open first, then answered, then closed; newest first inside each.
   const order = { open: 0, answered: 1, closed: 2 } as Record<string, number>;
-  const sorted = [...all].sort((a, b) => order[a.status] - order[b.status]);
+  const st = ['open', 'answered', 'closed'].includes(sp.s ?? '') ? sp.s! : '';
+  const sorted = [...all].filter((t) => !st || t.status === st).sort((a, b) => order[a.status] - order[b.status]);
   const count = sorted.length;
   const list = sorted.slice((page - 1) * PER, page * PER);
+  const tabHref = (k: string, p = 1) => `/support${k || p > 1 ? '?' : ''}${new URLSearchParams({ ...(k ? { s: k } : {}), ...(p > 1 ? { p: String(p) } : {}) })}`;
+  const TABS: [string, string][] = [['', 'All'], ['open', 'Waiting for our reply'], ['answered', 'Answered'], ['closed', 'Closed']];
   return (
     <>
       <PageHead crumb="Support" title="Support" sub="Ask us anything about an order, stock or billing — answers stay here with the history." />
       <div className="ep-bar"><p className="ep-muted">{ctx.backOffice ? 'Questions from every client.' : 'Questions about an order, your stock or an invoice.'}</p>{!ctx.backOffice && ctx.can('support.reply') && <Link className="ep-btn" href="/support/new">New ticket <Arrow /></Link>}</div>
-      <section className="ep-card">
-        {list.length === 0 ? <Empty title="No tickets yet" text="Messages and answers stay together in one thread." /> : (
-          <table className="ep-table">
+      <section className="ep-card ep-card--flush">
+        <div className="ep-tabbar">
+          {TABS.map(([k, l]) => <Link key={k} href={tabHref(k)} className={st === k ? 'is-on' : ''}>{ctx.backOffice || k !== 'open' ? l : 'Waiting for a reply'}<em>{(k ? all.filter((t) => t.status === k) : all).length}</em></Link>)}
+        </div>
+        {list.length === 0 ? <Empty title={all.length ? 'Nothing here' : 'No tickets yet'} text={all.length ? 'No ticket in this view.' : 'Messages and answers stay together in one thread.'} /> : (
+          <div className="ep-tablewrap"><table className="ep-table">
             <thead><tr><th>Subject</th><th>Topic</th>{ctx.backOffice && <th>Client</th>}<th>Order</th><th>Updated</th><th>Status</th></tr></thead>
             <tbody>{list.map((t) => <tr key={t.id} data-href={`/support/${t.id}`}><td><b>{t.subject}</b></td><td><span className="ep-tk-cat">{TICKET_CATEGORY[t.category]?.[0] ?? 'Other'}</span></td>{ctx.backOffice && <td>{names[t.org_id]}</td>}<td>{t.order_ref ? `#${t.order_ref}` : '—'}</td><td>{fmtDate(t.updated_at, true)}</td><td><Badge map={TICKET_STATUS} value={t.status} /></td></tr>)}</tbody>
-          </table>
+          </table></div>
         )}
-        <Pager total={count ?? 0} page={page} per={PER} href={(n) => (n > 1 ? `/support?p=${n}` : '/support')} noun="ticket" />
+        <Pager total={count ?? 0} page={page} per={PER} href={(n) => tabHref(st, n)} noun="ticket" />
       </section>
     </>
   );

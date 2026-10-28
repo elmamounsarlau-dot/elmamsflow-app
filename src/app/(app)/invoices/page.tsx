@@ -57,7 +57,7 @@ export default async function Invoices({ searchParams }: { searchParams: Promise
   const TABS: [string, string, Inv[]][] = [
     ['all', 'All', all],
     ...(staff ? [['draft', 'Drafts', drafts] as [string, string, Inv[]]] : []),
-    ['open', 'Open', open.filter((i) => !isOverdue(i))],
+    ['open', 'To be paid', open],
     ['overdue', 'Overdue', overdue],
     ['paid', 'Paid', all.filter((i) => i.status === 'paid')],
   ];
@@ -111,7 +111,7 @@ export default async function Invoices({ searchParams }: { searchParams: Promise
         ) : (
           <div className="ep-sum-card">
             <small>This month so far</small>
-            <b className="ep-sum-money">{running ? money(running.total, runCur) : '—'}</b>
+            <b className="ep-sum-money" data-figure="running" data-value={running ? Math.round(running.total) : -1}>{running ? money(running.total, runCur) : '—'}</b>
             <span>{running ? 'Invoiced on the 1st of next month' : 'Your price list is being set up'}</span>
           </div>
         )}
@@ -137,7 +137,7 @@ export default async function Invoices({ searchParams }: { searchParams: Promise
           </div>
         </form>
         <div className="ep-tabbar">
-          {TABS.map(([k, l, rows]) => <Link key={k} href={href(k)} className={tab[0] === k ? 'is-on' : ''}>{l}<em>{rows.length}</em></Link>)}
+          {TABS.map(([k, l, rows]) => <Link key={k} href={href(k)} className={tab[0] === k ? 'is-on' : ''}>{l}<em data-figure={`tab-${k}`} data-value={rows.length}>{rows.length}</em></Link>)}
         </div>
         {list.length === 0 ? (
           <Empty title={all.length ? 'Nothing here' : 'No invoices yet'} text={all.length ? 'Try another tab.' : staff ? 'Set a price list on each client, then create the month’s invoices.' : 'Your first invoice arrives at the start of next month.'} />

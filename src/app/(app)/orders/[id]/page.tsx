@@ -8,6 +8,7 @@ import { Submit } from '@/components/client';
 import { cancelOrder, editOrderShipTo, refreshTracking, reverseShipment, updateOrder } from '../actions';
 import { rematchProducts, resendTracking } from '../../integrations/actions';
 import { getWarehouses, shippingWarehouses, whLabel } from '@/lib/warehouses';
+import { financeSettings, MONEY_CURRENCIES } from '@/lib/fx';
 
 export default async function OrderPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireCtx();
@@ -17,11 +18,16 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   if (ctx.org) q = q.eq('org_id', ctx.org.id);
   const { data: o } = await q.maybeSingle();
   if (!o) notFound();
-  const [{ data: items }, whs, { data: events }] = await Promise.all([
+  // What this parcel cost us (label, duties): our team only, never clients, and not in "view as client".
+  const seesCosts = !!ctx.staffRole && !ctx.viewingAs && (ctx.can('orders.warehouse') || ctx.can('billing.manage'));
+  const [{ data: items }, whs, { data: events }, { data: cost }, fin] = await Promise.all([
     sb.from('order_items').select('qty, products(id, sku, name, weight_g, hs_code, customs_value, photo_path)').eq('order_id', id),
     getWarehouses(),
     o.tracking ? sb.from('tracking_events').select('at, description, location').eq('order_id', id).eq('tracking', o.tracking).order('at', { ascending: false }).limit(60) : Promise.resolve({ data: [] as { at: string | null; description: string; location: string | null }[] }),
+    seesCosts ? sb.from('order_costs').select('label_cost, duties_paid, currency').eq('order_id', id).maybeSingle() : Promise.resolve({ data: null as { label_cost: number | null; duties_paid: number | null; currency: string } | null }),
+    seesCosts ? financeSettings() : Promise.resolve(null),
   ]);
+  const costCur = cost?.currency ?? fin?.cost_currency ?? 'CNY';
   const wh = whs.find((w) => w.id === o.warehouse_id);
   const canMove = ['new', 'on_hold'].includes(o.status);
   const steps: [string, string | null, boolean][] = [
@@ -173,6 +179,17 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
                   <>
                     <div className="ep-row2"><label>Carrier<input name="carrier" defaultValue={o.carrier ?? ''} placeholder="e.g. YunExpress" /></label><label>Weight (g)<input type="number" name="weight_g" defaultValue={o.weight_g || ''} /></label></div>
                     <label>Tracking number<input name="tracking" defaultValue={o.tracking ?? ''} autoComplete="off" /></label>
+                    {seesCosts && (
+                      <fieldset className="ep-costs">
+                        <legend>What it cost us <small>team only · goes to Finance, never shown to the client</small></legend>
+                        <input type="hidden" name="costs" value="1" />
+                        <div className={o.service === 'ddp' ? 'ep-row3' : 'ep-row2'}>
+                          <label>Label cost<input type="number" name="label_cost" step="0.01" min="0" max="100000" inputMode="decimal" defaultValue={cost?.label_cost ?? ''} placeholder="0.00" /></label>
+                          {o.service === 'ddp' && <label>Duties paid<input type="number" name="duties_paid" step="0.01" min="0" max="100000" inputMode="decimal" defaultValue={cost?.duties_paid ?? ''} placeholder="0.00" /></label>}
+                          <label>Currency<select name="cost_currency" defaultValue={costCur}>{MONEY_CURRENCIES.map((c) => <option key={c}>{c}</option>)}</select></label>
+                        </div>
+                      </fieldset>
+                    )}
                     <label>{o.label_path ? 'Replace the label (photo or PDF)' : 'Label (photo or PDF)'}
                       <input type="file" name="label" accept="image/*,application/pdf" capture="environment" />
                       <small className="ep-muted">{o.label_path ? 'A label is already saved.' : shippedAlready ? 'Optional for orders already in transit.' : 'Needed to mark it in transit.'}</small>
