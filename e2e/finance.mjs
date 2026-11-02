@@ -95,6 +95,8 @@ console.log('ok  a client cost in CNY is added and edited; a mistaken expense is
 
 // 4. The shipper types the label cost and the duties on a DDP order; the brand never sees them.
 const ddp = sql(`select id || '|' || number from orders where org_id = '${ATLAS}' and service = 'ddp' and status = 'shipped' order by shipped_at desc limit 1`).split('|');
+// Early in a month the latest seeded shipment can fall in the previous month: ship it today so it counts in this month.
+sql(`update orders set shipped_at = now() where id = '${ddp[0]}'`);
 const wh = await as('warehouse@local.test');
 await go(wh, `/orders/${ddp[0]}`);
 assert.equal(await wh.locator('#ship [name=cost_currency]').inputValue(), 'CNY');
