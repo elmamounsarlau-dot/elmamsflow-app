@@ -663,3 +663,39 @@ select t.denied('finance: a client cannot write shipping costs', $q$insert into 
 select t.login('00000000-0000-0000-0000-0000000000a4');
 select t.ok('finance: the shipper does not see expenses', (select count(*) = 0 from public.expenses));
 reset role;
+
+-- =====================================================================
+-- 12. B2B (0019): only owner / manager / finance; clients and other team roles never see it
+-- =====================================================================
+insert into public.b2b_clients (id, name, country) values ('b2b00000-0000-0000-0000-000000000001', 'Atlas Distribution', 'MA');
+insert into public.b2b_orders (id, number, client_id, title, stage, currency) values ('b2b00000-0000-0000-0000-0000000000a1', 'B2B-0001', 'b2b00000-0000-0000-0000-000000000001', 'Tiles', 'Quote', 'MAD');
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000a1');
+select t.ok('b2b: the owner sees B2B orders', (select count(*) = 1 from public.b2b_orders));
+select t.works('b2b: the owner adds a client', $q$insert into public.b2b_clients (name, country) values ('Maison Nour', 'FR')$q$);
+select t.works('b2b: the owner adds a line', $q$insert into public.b2b_lines (order_id, description, qty, unit_price, price_currency, rate) values ('b2b00000-0000-0000-0000-0000000000a1', 'Tiles', 10, 112, 'CNY', 1.4)$q$);
+select t.raises('b2b: a line is priced or a percentage, not both', $q$insert into public.b2b_lines (order_id, description, unit_price, pct) values ('b2b00000-0000-0000-0000-0000000000a1', 'x', 1, 5)$q$);
+select t.raises('b2b: a client country is a 2-letter code', $q$insert into public.b2b_clients (name, country) values ('x', 'Morocco')$q$);
+select t.ok('b2b: numbers come in order', (select public.b2b_take_number('facture') = 1 and public.b2b_take_number('facture') = 2));
+select t.works('b2b: the owner records a payment', $q$insert into public.b2b_payments (order_id, amount, currency, paid_on) values ('b2b00000-0000-0000-0000-0000000000a1', 100, 'MAD', '2026-10-02')$q$);
+select t.works('b2b: the owner issues a document', $q$insert into public.b2b_docs (order_id, kind, template, number, issued_on, currency, total, data) values ('b2b00000-0000-0000-0000-0000000000a1', 'facture', 'ma', '0001/10/2026', '2026-10-02', 'MAD', 1568, '{}')$q$);
+select t.raises('b2b: a document number is used once', $q$insert into public.b2b_docs (order_id, kind, template, number, issued_on, currency, total, data) values ('b2b00000-0000-0000-0000-0000000000a1', 'facture', 'ma', '0001/10/2026', '2026-10-02', 'MAD', 1, '{}')$q$);
+select t.works('b2b: deleting a document does nothing', $q$delete from public.b2b_docs$q$);
+select t.ok('b2b: an issued document cannot be deleted', (select count(*) = 1 from public.b2b_docs));
+select t.login('00000000-0000-0000-0000-0000000000a2');
+select t.ok('b2b: a manager sees B2B orders', (select count(*) = 1 from public.b2b_orders));
+select t.login('00000000-0000-0000-0000-0000000000a3');
+select t.ok('b2b: the warehouse does not see B2B orders', (select count(*) = 0 from public.b2b_orders));
+select t.ok('b2b: the warehouse does not see B2B clients', (select count(*) = 0 from public.b2b_clients));
+select t.raises('b2b: the warehouse cannot take a number', $q$select public.b2b_take_number('facture')$q$);
+select t.login('00000000-0000-0000-0000-0000000000a4');
+select t.ok('b2b: the shipper does not see B2B orders', (select count(*) = 0 from public.b2b_orders));
+select t.login('00000000-0000-0000-0000-0000000000b1');
+select t.ok('b2b: a client never sees B2B orders', (select count(*) = 0 from public.b2b_orders));
+select t.ok('b2b: a client never sees B2B costs', (select count(*) = 0 from public.b2b_costs));
+select t.ok('b2b: a client never sees B2B documents', (select count(*) = 0 from public.b2b_docs));
+select t.ok('b2b: a client never sees B2B settings', (select count(*) = 0 from public.b2b_settings));
+select t.denied('b2b: a client cannot add a B2B client', $q$insert into public.b2b_clients (name) values ('x')$q$);
+select t.login('00000000-0000-0000-0000-0000000000b2');
+select t.ok('b2b: a client finance role never sees B2B payments', (select count(*) = 0 from public.b2b_payments));
+reset role;

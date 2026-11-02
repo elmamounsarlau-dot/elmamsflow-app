@@ -5,6 +5,7 @@ import { Submit } from '@/components/client';
 import { Arrow } from '@/components/ui';
 import { createAllInvoices } from '../invoices/actions';
 import { CAT_TONE, FinanceNav, fm, fm2, MonthPick, requireFinance, Warnings } from './ui';
+import { AllFinance, B2BFinance, scopeOf, ScopeSwitch } from './scope';
 
 export const metadata = { title: 'Finance' };
 
@@ -15,6 +16,9 @@ export default async function Finance({ searchParams }: { searchParams: Promise<
   const sp = await searchParams;
   const cur = await currentYm();
   const ym = ymOk(sp.m) && sp.m! <= cur ? sp.m! : cur;
+  const scope = scopeOf(sp.scope);
+  if (scope === 'b2b') return <B2BFinance ym={ym} />;
+  if (scope === 'all') return <AllFinance ym={ym} />;
   const [f, ms, hist, tz] = await Promise.all([monthFinance(ym), moneyStatus(), history(ym), invoiceTz()]);
   const c = f.currency;
   const { rev, exp } = f;
@@ -57,6 +61,7 @@ export default async function Finance({ searchParams }: { searchParams: Promise<
           </form>
         </div>
       </div>
+      <ScopeSwitch on="fulfillment" m={ym} />
       <FinanceNav on="/finance" m={ym} />
 
       <Warnings items={[

@@ -186,3 +186,41 @@ test('orders CSV: rows group into orders, countries resolve, bad rows are flagge
   assert.ok(orders[1].errors.some((e) => /NOPE is not one of your products/.test(e)));
   assert.ok(orders[1].errors.some((e) => /quantity/.test(e)));
 });
+
+test('B2B: line amounts, % lines on the lines above, TVA and discount', async () => {
+  const { totals } = await import('../src/lib/b2b');
+  // The Devis sample: tiles in Yuan, freight in $, duties as %, forwarder flat, delivery, 5% commission on everything above
+  const t = totals([
+    { kind: 'goods', description: 'Carrelage', qty: 1200, unit_price: 112, price_currency: 'CNY', rate: 1.4, pct: null },
+    { kind: 'freight', description: 'Fret', qty: 1, unit_price: 4800, price_currency: 'USD', rate: 10, pct: null },
+    { kind: 'customs', description: 'Douanes', qty: null, unit_price: null, rate: 1, pct: 20 },
+    { kind: 'forwarder', description: 'Transitaire', qty: null, unit_price: 3500, price_currency: 'MAD', rate: 1, pct: null },
+    { kind: 'delivery', description: 'Livraison', qty: 1, unit_price: 4000, price_currency: 'MAD', rate: 1, pct: null },
+  ], 0, 0);
+  assert.deepEqual(t.amounts, [188160, 48000, 47232, 3500, 4000]);
+  assert.equal(t.ht, 290892);
+  const v = totals([{ kind: 'goods', description: 'x', qty: 3, unit_price: 10.005, rate: 1, pct: null }], 20, 5);
+  assert.equal(v.ht, 30.02);
+  assert.equal(v.tva, 6);
+  assert.equal(v.ttc, 31.02);
+});
+
+test('B2B: amounts in French and English words, document numbers', async () => {
+  const { amountFr, amountEn, frWords, docNumber, numMa } = await import('../src/lib/b2b');
+  assert.equal(amountFr(3720, 'MAD'), 'Trois mille sept cent vingt dirhams');
+  assert.equal(amountFr(48300, 'USD'), 'Quarante-huit mille trois cents dollars américains');
+  assert.equal(amountFr(300300, 'MAD'), 'Trois cent mille trois cents dirhams');
+  assert.equal(amountFr(1, 'EUR'), 'Un euro');
+  assert.equal(amountFr(71.5, 'MAD'), 'Soixante-et-onze dirhams et cinquante centimes');
+  assert.equal(frWords(80), 'quatre-vingts');
+  assert.equal(frWords(80000), 'quatre-vingt mille');
+  assert.equal(frWords(200000000), 'deux cents millions');
+  assert.equal(frWords(91), 'quatre-vingt-onze');
+  assert.equal(frWords(21), 'vingt-et-un');
+  assert.equal(amountEn(31800, 'USD'), 'Thirty-one thousand eight hundred US dollars');
+  assert.equal(amountEn(26250.05, 'EUR'), 'Twenty-six thousand two hundred fifty euros and five cents');
+  assert.equal(docNumber('facture', 113, '2024-11-04'), '0113/11/2024');
+  assert.equal(docNumber('invoice', 57, '2026-09-30'), 'B2B-INV-0057');
+  assert.equal(docNumber('order', 31, '2026-09-30'), 'B2B-0031');
+  assert.equal(numMa(1234567.5), '1 234 567.50');
+});

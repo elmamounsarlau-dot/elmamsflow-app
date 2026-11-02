@@ -24,7 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     items.push({ href: '/tracking', label: 'Tracking', icon: 'tracking' });
     if (ctx.can('support.reply')) items.push({ href: '/support', label: 'Support', icon: 'support' });
     if (ctx.can('invoices.view')) items.push({ href: '/invoices', label: 'Invoices', icon: 'invoices' });
-    if (ctx.can('billing.manage')) items.push({ href: '/finance', label: 'Finance', icon: 'finance' });
+    if (ctx.can('billing.manage')) items.push({ href: '/finance', label: 'Finance', icon: 'finance' }, { href: '/b2b', label: 'B2B', icon: 'b2b' });
     if (ctx.can('integrations.manage')) items.push({ href: '/integrations', label: 'Stores', icon: 'stores' });
     if (ctx.can('team.manage')) items.push({ href: '/team', label: 'Team', icon: 'team' });
     if (isOwner(ctx)) items.push({ href: '/activity', label: 'Activity', icon: 'activity' });

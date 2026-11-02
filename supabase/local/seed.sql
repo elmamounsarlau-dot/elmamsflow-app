@@ -160,3 +160,29 @@ insert into public.bundle_items (bundle_id, component_id, qty) values
 update public.organizations set legal_name = 'Atlas Home Goods SAS', billing_address = E'12 Rue de Rivoli\n75001 Paris\nFrance', invoice_email = 'compta@atlas.local.test', website = 'https://atlas.local.test'
 where id = '11111111-1111-1111-1111-111111111111';
 update public.tickets set category = 'order' where org_id = '11111111-1111-1111-1111-111111111111';
+
+-- B2B (0019): two wholesale clients, two orders
+update public.b2b_settings set next_order = 3, next_facture = 114, next_devis = 2, next_invoice = 57 where id = 1;
+insert into public.b2b_clients (id, name, country, ice, address, currency) values
+  ('b2b00000-0000-0000-0000-000000000001', 'Atlas Distribution SARL', 'MA', '001234567000089', E'Zone industrielle Sidi Bouzekri\nMeknès', 'MAD'),
+  ('b2b00000-0000-0000-0000-000000000002', 'Maison Nour SAS', 'FR', null, E'14 rue de Charonne\n75011 Paris', 'USD')
+on conflict do nothing;
+update public.b2b_clients set vat_number = 'FR 12 345678901' where id = 'b2b00000-0000-0000-0000-000000000002';
+insert into public.b2b_orders (id, number, client_id, title, stage, currency, incoterm, transport, origin, destination, container, eta) values
+  ('b2b00000-0000-0000-0000-0000000000a1', 'B2B-0001', 'b2b00000-0000-0000-0000-000000000001', 'Porcelain tiles 60×60, 1 × 40HQ', 'Shipped', 'MAD', 'CIF', 'sea', 'Shekou', 'Casablanca → Meknès', 'MSKU 123456-7', current_date + 12),
+  ('b2b00000-0000-0000-0000-0000000000a2', 'B2B-0002', 'b2b00000-0000-0000-0000-000000000002', 'Linen fabric, 96 rolls', 'Quote', 'USD', 'DDP', 'air', 'Shaoxing', 'Paris CDG', null, null)
+on conflict do nothing;
+insert into public.b2b_lines (order_id, position, kind, description, qty, unit, unit_price, price_currency, rate, pct) values
+  ('b2b00000-0000-0000-0000-0000000000a1', 1, 'goods', 'Carrelage porcelaine 60×60 gris', 1200, 'm²', 112, 'CNY', 1.4, null),
+  ('b2b00000-0000-0000-0000-0000000000a1', 2, 'freight', 'Fret maritime 40HQ (Shekou → Casablanca)', 1, 'cont.', 4800, 'USD', 10, null),
+  ('b2b00000-0000-0000-0000-0000000000a1', 3, 'customs', 'Frais de douanes', null, null, null, null, 1, 20),
+  ('b2b00000-0000-0000-0000-0000000000a1', 4, 'forwarder', 'Transitaire', null, null, 3500, 'MAD', 1, null),
+  ('b2b00000-0000-0000-0000-0000000000a2', 1, 'goods', 'Linen fabric, 100% linen, 260 cm', 6500, 'm', 3.9, 'USD', 1, null);
+insert into public.b2b_costs (order_id, category, payee, amount, currency, paid_on) values
+  ('b2b00000-0000-0000-0000-0000000000a1', 'goods', 'Foshan tiles factory', 21000, 'USD', current_date - 20),
+  ('b2b00000-0000-0000-0000-0000000000a1', 'freight', 'Shekou forwarder', 3900, 'USD', current_date - 10);
+insert into public.b2b_payments (order_id, amount, currency, paid_on, method, note) values
+  ('b2b00000-0000-0000-0000-0000000000a1', 90000, 'MAD', current_date - 25, 'bank', 'Deposit');
+insert into public.b2b_events (order_id, text, stage, at) values
+  ('b2b00000-0000-0000-0000-0000000000a1', 'Order created at “Quote”', 'Quote', now() - interval '30 days'),
+  ('b2b00000-0000-0000-0000-0000000000a1', 'In production → Shipped', 'Shipped', now() - interval '8 days');
