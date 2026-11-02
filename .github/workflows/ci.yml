@@ -121,6 +121,11 @@ jobs:
           bash supabase/local/up.sh > /dev/null
           bash supabase/local/wait-rest.sh
           set -o pipefail; node e2e/finance.mjs 2>&1 | tee /tmp/finance.log || { echo "::error title=finance::$(grep -E -A10 'not ok|Error|assert' /tmp/finance.log | tr '\n' ' ' | cut -c1-1800)"; exit 1; }
+      - name: B2B (orders, lines in any currency, stages, costs, payments, Devis / Facture / invoice, Finance switch, access)
+        run: |
+          bash supabase/local/up.sh > /dev/null
+          bash supabase/local/wait-rest.sh
+          set -o pipefail; node e2e/b2b.mjs 2>&1 | tee /tmp/b2b.log || { echo "::error title=b2b::$(grep -E -A10 'not ok|Error|assert' /tmp/b2b.log | tr '\n' ' ' | cut -c1-1800)"; exit 1; }
       - if: always()
         uses: actions/upload-artifact@v4
         with:
