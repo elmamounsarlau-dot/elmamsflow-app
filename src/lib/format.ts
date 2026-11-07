@@ -48,7 +48,9 @@ export function greeting() {
 }
 
 export function siteUrl() {
-  return (process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')).replace(/\/$/, '');
+  // Production always uses the public address (app.elmamsflow.com), never the *.vercel.app one.
+  const fallback = process.env.VERCEL_ENV === 'production' ? 'https://app.elmamsflow.com' : process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+  return (process.env.NEXT_PUBLIC_SITE_URL || fallback).replace(/\/$/, '');
 }
 
 /** Redirect target with a message shown at the top of the page. */
