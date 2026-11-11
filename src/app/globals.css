@@ -2031,7 +2031,7 @@ a.fn-t:hover { transform: translateY(-3px); box-shadow: 0 24px 40px -30px var(--
 .fn-inline-check { display: inline-flex !important; }
 .fn-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .fn-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font: 700 .76rem var(--body); color: var(--ink); }
-.fn-chip small { display: inline; font-size: .7rem; color: inherit; opacity: .7; }
+.fn-chip small { display: inline; font-size: .7rem; font-weight: 600; color: inherit; }
 .fn-chip.is-on { background: var(--inverse); border-color: var(--inverse); color: var(--on-inverse); }
 .fn-cat-pill { display: inline-flex; align-items: center; min-height: 24px; padding: 0 9px; border-radius: 999px; font: 700 .72rem var(--body); white-space: nowrap; }
 .fn-xtable tr.is-editing td { background: var(--ice); }
