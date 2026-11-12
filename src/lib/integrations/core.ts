@@ -15,6 +15,7 @@ export type Integration = {
   token_enc: string | null;
   token_expires_at: string | null;
   settings: { auto_import?: boolean; push_tracking?: boolean };
+  role?: 'store' | 'bridge';
   last_sync_at: string | null;
   last_error: string | null;
   orders_imported: number;
@@ -97,20 +98,25 @@ function holdReason(unmatched: string[], noCustoms: boolean, noAddress: boolean)
 }
 
 /** Create (or cancel) the Elmamsflow order for one store order. Safe to call twice for the same order. */
-export async function importOrder(i: Integration, o: ExtOrder): Promise<'imported' | 'exists' | 'updated' | 'cancelled' | 'skipped'> {
+export async function importOrder(i: Integration, o: ExtOrder, touched: string[] = []): Promise<'imported' | 'exists' | 'updated' | 'cancelled' | 'skipped'> {
   const admin = supabaseAdmin();
   const { data: existing } = await admin.from('orders').select('id, number, status').eq('integration_id', i.id).eq('external_id', o.external_id).maybeSingle();
 
   if (o.cancelled) {
     if (existing && ['new', 'on_hold'].includes(existing.status)) {
-      await admin.from('orders').update({ status: 'cancelled' }).eq('id', existing.id);
+      // The store already knows (it cancelled it): don't tell it again.
+      await admin.from('orders').update({ status: 'cancelled', store_state: 'cancelled||' }).eq('id', existing.id);
+      touched.push(existing.id);
       await admin.from('activity_log').insert({ org_id: i.org_id, action: 'order_cancelled', detail: `#${existing.number} · cancelled in ${o.ref ? `the store (${o.ref})` : 'the store'}` });
       await logEvent(i, 'cancelled', `${o.ref} cancelled in the store → #${existing.number} cancelled`);
       return 'cancelled';
     }
     return 'skipped';
   }
-  if (existing) return (await syncShipTo(i, existing.id, o)) ? 'updated' : 'exists';
+  if (existing) {
+    if (await syncShipTo(i, existing.id, o)) { touched.push(`~${existing.id}`); return 'updated'; } // ~ = the address changed
+    return 'exists';
+  }
   if (!o.shippable) return 'skipped';
 
   const { data: prods } = await admin.from('products').select('id, sku, hs_code, customs_value, ext_ref, kind').eq('org_id', i.org_id);
@@ -129,6 +135,7 @@ export async function importOrder(i: Integration, o: ExtOrder): Promise<'importe
     throw new Error(error?.message ?? 'Could not create the order');
   }
   if (m.items.length) await admin.from('order_items').insert(m.items.map((it) => ({ ...it, order_id: order.id })));
+  touched.push(order.id);
   await admin.from('integrations').update({ orders_imported: (i.orders_imported ?? 0) + 1, last_error: null }).eq('id', i.id);
   i.orders_imported = (i.orders_imported ?? 0) + 1;
   await admin.from('activity_log').insert({ org_id: i.org_id, action: 'order_created', detail: `#${order.number} · ${o.ref} from ${KIND_LABEL[i.kind]}` });
@@ -240,6 +247,3 @@ export async function rematchOrder(orderId: string) {
   return { ok: !reason, message: reason ? `Still on hold: ${reason}` : 'All products matched. The order is ready for the warehouse.' };
 }
 
-export function tracking17(number: string) {
-  return `https://t.17track.net/en#nums=${encodeURIComponent(number)}`;
-}

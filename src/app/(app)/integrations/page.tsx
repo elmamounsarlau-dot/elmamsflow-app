@@ -3,9 +3,10 @@ import { redirect } from 'next/navigation';
 import { requireCtx } from '@/lib/session';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { orgNames } from '@/lib/data';
-import { fmtDate, siteUrl } from '@/lib/format';
-import { trackKey, trackQuota } from '@/lib/track17';
-import { CopyLink } from '@/components/client';
+import { fmtDate } from '@/lib/format';
+import { Submit } from '@/components/client';
+import { BRIDGE_SCOPES } from '@/lib/integrations/bridge';
+import { bridgeSyncNow, connectBridge, disconnectBridge } from './actions';
 import { KIND_LABEL, STORE_STATUS, type Integration } from '@/lib/integrations/core';
 import { Arrow, Empty } from '@/components/ui';
 
@@ -15,13 +16,19 @@ export const metadata = { title: 'Stores' };
 export default async function Stores() {
   const ctx = await requireCtx();
   if (!ctx.can('integrations.manage')) redirect('/?err=' + encodeURIComponent('You don’t have access to stores.'));
-  let q = supabaseAdmin().from('integrations').select('id, org_id, kind, store_url, name, status, last_sync_at, last_error, orders_imported, created_at').neq('status', 'disconnected').order('created_at', { ascending: false });
+  let q = supabaseAdmin().from('integrations').select('id, org_id, kind, role, store_url, name, status, last_sync_at, last_error, orders_imported, created_at').neq('status', 'disconnected').eq('role', 'store').order('created_at', { ascending: false });
   if (ctx.org) q = q.eq('org_id', ctx.org.id);
   const [{ data }, names] = await Promise.all([q, ctx.backOffice ? orgNames() : Promise.resolve({} as Record<string, string>)]);
   const list = (data ?? []) as Integration[];
   const canConnect = !!ctx.org || ctx.backOffice;
-  const showTrack = ctx.staffRole === 'owner' && !ctx.viewingAs;
-  const quota = showTrack ? await trackQuota() : null;
+  const showBridge = !!ctx.staffRole && ['owner', 'manager'].includes(ctx.staffRole) && !ctx.viewingAs;
+  const admin = supabaseAdmin();
+  const [{ data: bridge }, { data: coded }, { data: waiting }] = showBridge ? await Promise.all([
+    admin.from('integrations').select('id, store_url, name, status, last_error, created_at').eq('role', 'bridge').eq('status', 'active').maybeSingle(),
+    admin.from('organizations').select('id, name, client_code').not('client_code', 'is', null).order('client_code'),
+    admin.from('orders').select('id, number, bridge_error, bridge_sent_at, status').or('bridge_error.not.is.null,and(bridge_sent_at.lt.' + new Date(Date.now() - 48 * 3600e3).toISOString() + ',status.in.(new,packed))').limit(20),
+  ]) : [{ data: null }, { data: null }, { data: null }];
+  const { data: events } = bridge ? await admin.from('integration_events').select('kind, detail, created_at').eq('integration_id', bridge.id).order('created_at', { ascending: false }).limit(8) : { data: null };
 
   return (
     <>
@@ -76,25 +83,63 @@ export default async function Stores() {
         )}
       </section>
 
-      {showTrack && (
-        <section className="ep-card ep-card--team" style={{ marginBottom: '1.2rem' }}>
+      {showBridge && (
+        <section className="ep-card ep-card--team" id="bridge" style={{ marginBottom: '1.2rem' }}>
           <div className="ep-card-head">
-            <h2>Carrier tracking · 17TRACK</h2>
-            <span className={`ep-st ep-st--${trackKey() ? (quota ? 'ok' : 'warn') : 'mute'}`}>{trackKey() ? (quota ? 'Connected' : 'Key set, not answering') : 'Not connected'}</span>
+            <h2>Warehouse partner · bridge store</h2>
+            <span className={`ep-st ep-st--${bridge ? (bridge.last_error ? 'warn' : 'ok') : 'mute'}`}>{bridge ? (bridge.last_error ? 'Check' : 'Connected') : 'Not connected'}</span>
           </div>
-          <p className="ep-small" style={{ marginBottom: '.8rem' }}>Every parcel that ships with a tracking number is followed automatically. Carrier updates arrive live; Delivered closes the order by itself.</p>
-          {trackKey() ? (
+          <p className="ep-small" style={{ marginBottom: '.8rem' }}>Clients’ orders are copied to your own Shopify store (the bridge), where the partner (ST Fulfill) picks them up. Whatever the partner does there — on hold, shipped with tracking, delivered, cancelled — comes back here and then to the client’s store. Clients never see the bridge or the partner.</p>
+          {bridge ? (
             <>
-              {quota && <p className="ep-small ep-muted" style={{ marginBottom: '.8rem' }}>Tracking quota: <b>{quota.quota_remain.toLocaleString('en')}</b> of {quota.quota_total.toLocaleString('en')} numbers left (1 per parcel).</p>}
-              <p className="ep-small" style={{ marginBottom: '.4rem' }}>Webhook URL — paste it in 17TRACK → Settings → Webhook:</p>
-              <CopyLink value={`${siteUrl()}/api/tracking/17track`} label="Copy URL" />
+              <p className="ep-small"><b>{bridge.name}</b> · {bridge.store_url} · connected {fmtDate(bridge.created_at)}</p>
+              {bridge.last_error && <p className="ep-note ep-note--warn">{bridge.last_error}</p>}
+              <div className="ep-subblock">
+                <div className="ep-card-head"><h3>Clients shipping through it</h3><span className="ep-muted ep-small">{(coded ?? []).length}</span></div>
+                {(coded ?? []).length === 0 ? <Empty title="None yet" text="Open a client and give it a client code (Warehouse partner & payment)." /> : (
+                  <div className="ep-tablewrap"><table className="ep-table">
+                    <thead><tr><th>Code</th><th>Client</th></tr></thead>
+                    <tbody>{(coded ?? []).map((c) => <tr key={c.id} data-href={`/clients/${c.id}#partner`}><td><b className="ep-mono">{c.client_code}</b></td><td><Link href={`/clients/${c.id}#partner`}>{c.name}</Link></td></tr>)}</tbody>
+                  </table></div>
+                )}
+              </div>
+              {(waiting ?? []).length > 0 && (
+                <div className="ep-subblock">
+                  <div className="ep-card-head"><h3>Needs a look</h3><span className="ep-st ep-st--warn">{(waiting ?? []).length}</span></div>
+                  <div className="ep-tablewrap"><table className="ep-table">
+                    <thead><tr><th>Order</th><th>What’s wrong</th></tr></thead>
+                    <tbody>{(waiting ?? []).map((o) => (
+                      <tr key={o.id} data-href={`/orders/${o.id}#links`}><td><Link href={`/orders/${o.id}#links`}><b>#{o.number}</b></Link></td><td><small>{o.bridge_error ? `Not at the warehouse: ${o.bridge_error}` : `At the warehouse since ${fmtDate(o.bridge_sent_at, true)}, not shipped — check stock and payment in ST Fulfill`}</small></td></tr>
+                    ))}</tbody>
+                  </table></div>
+                </div>
+              )}
+              {(events ?? []).length > 0 && (
+                <details className="ep-edit">
+                  <summary><span>Latest activity</span><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M5.5 8l4.5 4.5L14.5 8" /></svg></summary>
+                  <ul className="ep-activity">{(events ?? []).map((e, k) => <li key={k}><b>{e.kind === 'error' ? 'Problem' : 'Update'}</b><span>{e.detail}</span><small>{fmtDate(e.created_at, true)}</small></li>)}</ul>
+                </details>
+              )}
+              <div className="ep-form-foot" style={{ gap: '.5rem' }}>
+                <form action={bridgeSyncNow}><Submit className="ep-btn ep-btn--sm">Check the warehouse now</Submit></form>
+                {ctx.staffRole === 'owner' && <form action={disconnectBridge}><Submit className="ep-btn ep-btn--sm ep-btn--ghost" confirm="Switch off the bridge? New orders will stay here until you connect it again.">Switch off</Submit></form>}
+              </div>
             </>
           ) : (
-            <ol className="ep-small" style={{ paddingLeft: '1.2rem', display: 'grid', gap: '.3rem' }}>
-              <li>Create an account at api.17track.net and copy your <b>Security Key</b> (Settings).</li>
-              <li>Vercel → elmamsflow-app → Settings → Environment Variables: add <code>TRACK17_API_KEY</code> (Production, Sensitive), then redeploy.</li>
-              <li>Come back here and copy the webhook URL into 17TRACK.</li>
-            </ol>
+            <>
+              <ol className="ep-small" style={{ paddingLeft: '1.2rem', display: 'grid', gap: '.3rem', marginBottom: '.9rem' }}>
+                <li>In the bridge Shopify store: <b>Settings → Apps and sales channels → Develop apps → Create an app</b> (name it “Elmamsflow”).</li>
+                <li><b>Configure Admin API scopes</b> and tick: <code>{BRIDGE_SCOPES.join(', ')}</code>. Save, then <b>Install app</b>.</li>
+                <li>Copy the <b>Admin API access token</b> (shown once) and the <b>API secret key</b>, and paste them below.</li>
+                <li>In ST Fulfill, connect this same store (Store Management).</li>
+              </ol>
+              <form action={connectBridge} className="ep-form" style={{ maxWidth: '34rem' }}>
+                <label>Bridge store address<input name="store" placeholder="elmamsflow-bridge.myshopify.com" required autoComplete="off" /></label>
+                <label>Admin API access token<input name="token" type="password" required autoComplete="off" /></label>
+                <label>API secret key<input name="api_secret" type="password" required autoComplete="off" /></label>
+                <Submit className="ep-btn">Connect the bridge store</Submit>
+              </form>
+            </>
           )}
         </section>
       )}

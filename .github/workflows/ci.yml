@@ -79,17 +79,13 @@ jobs:
           node supabase/local/env.mjs >> "$GITHUB_ENV"
       - name: Build and start the app against the local stack
         run: |
-          node e2e/fake17track.mjs > fake17.log 2>&1 &
           npm run build
           npx next start -H 127.0.0.1 -p 3000 > app.log 2>&1 &
           for i in $(seq 1 60); do curl -sf -o /dev/null http://127.0.0.1:3000/login && break; sleep 1; done
       - run: OUT=e2e-results node e2e/audit.mjs
       - name: Same audit in dark mode
         run: THEME=dark OUT=e2e-results/dark node e2e/audit.mjs
-      - name: Live tracking (signed webhook, forged webhook, auto-delivery, daily sync) against a fake 17TRACK
-        run: |
-          set -o pipefail; node e2e/tracking.mjs 2>&1 | tee /tmp/tracking.log || { echo "::error title=tracking::$(grep -E -A10 'not ok|Error|assert' /tmp/tracking.log | tr '\n' ' ' | cut -c1-1800)"; exit 1; }
-      - name: Store address changes reach held orders (needs a fresh seed)
+      - name: Store address changes, and the full loop client store → bridge store → partner → back (fake Shopify), prepaid balance
         run: |
           bash supabase/local/up.sh > /dev/null
           bash supabase/local/wait-rest.sh

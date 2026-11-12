@@ -94,20 +94,19 @@ export function csvCell(v: unknown) {
   return /[",\n;\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-/** Live carrier status from 17TRACK (label, badge tone, plain explanation). */
+/** The parcel's journey as the carrier reports it through Shopify (label, badge tone). */
 export const CARRIER_STATUS: Record<string, [string, string]> = {
-  NotFound: ['Not scanned yet', 'mute'],
-  InfoReceived: ['Label created', 'mute'],
-  InTransit: ['In transit', 'go'],
-  AvailableForPickup: ['Ready for pickup', 'pk'],
-  OutForDelivery: ['Out for delivery', 'pk'],
-  Delivered: ['Delivered', 'ok'],
-  DeliveryFailure: ['Delivery failed', 'err'],
-  Exception: ['Problem', 'err'],
-  Expired: ['No updates', 'warn'],
-  Stopped: ['Tracking stopped', 'mute'],
+  LABEL_PRINTED: ['Label created', 'mute'],
+  LABEL_PURCHASED: ['Label created', 'mute'],
+  CONFIRMED: ['With the carrier', 'go'],
+  IN_TRANSIT: ['In transit', 'go'],
+  READY_FOR_PICKUP: ['Ready for pickup', 'pk'],
+  OUT_FOR_DELIVERY: ['Out for delivery', 'pk'],
+  ATTEMPTED_DELIVERY: ['Delivery attempted', 'warn'],
+  DELIVERED: ['Delivered', 'ok'],
+  FAILURE: ['Delivery failed', 'err'],
 };
-export const CARRIER_PROBLEM = ['DeliveryFailure', 'Exception', 'Expired'];
+export const CARRIER_PROBLEM = ['FAILURE', 'ATTEMPTED_DELIVERY'];
 
 /** Support ticket topics: [label, short hint]. */
 export const TICKET_CATEGORY: Record<string, [string, string]> = {

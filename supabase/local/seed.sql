@@ -12,6 +12,10 @@ insert into auth.users (id, email, last_sign_in_at, email_confirmed_at, raw_user
 insert into public.organizations (id, kind, name, country, phone, default_warehouse_id) values
   ('11111111-1111-1111-1111-111111111111', 'client', 'Atlas Home Goods', 'FR', '+33 1 23 45 67 89', (select id from public.warehouses where code = 'NB')),
   ('22222222-2222-2222-2222-222222222222', 'client', 'Nova Skincare Ltd', 'GB', '+44 20 7946 0000', (select id from public.warehouses where code = 'GZ'));
+-- Like the live clients from before prepaid balances: invoiced monthly (tests that need prepaid switch it on).
+update public.organizations set billing_mode = 'invoice' where kind = 'client';
+-- Where prepaid clients send top-ups (fictional details).
+update public.wallet_settings set min_topup = 100, methods = '[{"label": "Bank transfer (USD)", "details": "Account name: Example Trading Ltd\nAccount number: 000-000000-000 (example)\nSWIFT: EXAMPLEXX"}, {"label": "USDT (TRC20)", "details": "Wallet: TExampleWalletAddress000000000000 (example)"}]'::jsonb where id = 1;
 
 insert into public.memberships (org_id, user_id, role, status)
 select o.id, u.id::uuid, u.role, 'active' from (values

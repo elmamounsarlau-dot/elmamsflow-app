@@ -2301,3 +2301,11 @@ a.ds-pill { min-width: 28px; min-height: 28px; justify-content: center; }
 .bb-mform .ep-row2, .bb-mform .ep-row3, .bb-side .ep-row2 { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); }
 .bb .ep-form input, .bb .ep-form select { min-width: 0; }
 .bb .ep-form input[type="date"] { padding-right: .5rem; }
+
+/* Prepaid balance */
+.ep-sum-card--cta { border: 1.5px solid var(--orange); background: linear-gradient(180deg, rgba(247,148,29,.08), transparent 70%), var(--surface); }
+.ep-sum-card--cta b { color: var(--navy); }
+.ep-sum-card--cta b::after { content: ' →'; color: var(--orange); }
+.ep-amount-in { width: 6.5rem; }
+.ep-subblock { margin-top: 1.1rem; padding-top: 1.1rem; border-top: 1px dashed var(--line); display: grid; gap: .7rem; }
+.ep-subblock h3 { font: 600 1rem/1.2 var(--display); color: var(--navy); letter-spacing: -.01em; }

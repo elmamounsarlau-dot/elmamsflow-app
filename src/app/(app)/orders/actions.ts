@@ -7,8 +7,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { itemsFromForm } from '@/lib/data';
 import { logActivity } from '@/lib/log';
 import { str, withMsg } from '@/lib/format';
-import { pushTracking } from '@/lib/integrations/service';
-import { refreshOrders, registerOrders, syncTracking, trackKey, trackShippedOrder } from '@/lib/track17';
+import { afterOrderChange } from '@/lib/integrations/flow';
 import { saveLabel } from '@/lib/labels';
 import { MONEY_CURRENCIES } from '@/lib/fx';
 import { editShipTo } from '@/lib/integrations/core';
@@ -41,6 +40,7 @@ export async function createOrder(fd: FormData) {
     redirect(withMsg('/orders/new', `The order wasn’t saved: ${itemsErr.message}`, 'err'));
   }
   await logActivity(sb, ctx.userId, orgId, 'order_created', `#${order.number} · ${str(fd, 'customer')}, ${country}`);
+  await afterOrderChange([order.id]);
   redirect(withMsg(`/orders/${order.id}`, missing ? `#${order.number} created and put on hold: add the HS code and customs value to its products.` : `#${order.number} created.`, missing ? 'warn' : 'ok'));
 }
 
@@ -54,10 +54,9 @@ export async function updateOrder(fd: FormData) {
   const next = str(fd, 'status');
   const label = fd.get('label');
   const file = label instanceof File && label.size > 0 ? label : null;
-  // Handing a parcel to the carrier needs its tracking number and the label (photo or PDF): that's the proof clients see.
+  // Handing a parcel to the carrier needs its tracking number (the label photo is optional).
   if (['shipped', 'delivered'].includes(next) && !['shipped', 'delivered'].includes(cur.status)) {
     if (!str(fd, 'tracking') && !cur.tracking) redirect(withMsg(`/orders/${id}#ship`, 'Add the tracking number to mark it in transit.', 'warn'));
-    if (!file && !cur.label_path) redirect(withMsg(`/orders/${id}#ship`, 'Add the label photo (or PDF) to mark it in transit.', 'warn'));
   }
   if (file && ctx.can('orders.warehouse')) {
     try {
@@ -83,12 +82,11 @@ export async function updateOrder(fd: FormData) {
     const costErr = await saveOrderCosts(cur, fd, ctx.userId);
     if (costErr) redirect(withMsg(`/orders/${id}#ship`, `Order saved, but the costs weren’t: ${costErr}`, 'warn'));
   }
-  // Shipped with a tracking number: tell the client's store (Shopify / WooCommerce).
-  const shipped = ['shipped', 'delivered'].includes(str(fd, 'status'));
-  const pushed = shipped ? await pushTracking(id).catch((e) => (e as Error).message) : null;
-  // Start live tracking with 17TRACK (a failure here is retried by the daily sync).
-  if (shipped) await trackShippedOrder(id).catch(() => null);
-  redirect(withMsg(`/orders/${id}`, pushed === 'ok' ? 'Order saved. Tracking sent to the client’s store.' : pushed ? `Order saved, but tracking couldn’t be sent to the store: ${pushed}` : 'Order saved.', pushed && pushed !== 'ok' ? 'warn' : 'ok'));
+  // The warehouse copy, the prepaid balance and the client's own store follow.
+  await afterOrderChange([id]);
+  const { data: after } = await supabaseAdmin().from('orders').select('store_error, integration_id, store_state, status').eq('id', id).maybeSingle();
+  const storeErr = after?.integration_id && after.store_error ? after.store_error : null;
+  redirect(withMsg(`/orders/${id}`, storeErr ? `Order saved, but the client’s store wasn’t updated: ${storeErr}` : after?.integration_id ? 'Order saved. The client’s store is updated.' : 'Order saved.', storeErr ? 'warn' : 'ok'));
 }
 
 async function saveOrderCosts(order: { id: string; number: string; org_id: string }, fd: FormData, by: string): Promise<string | null> {
@@ -122,7 +120,11 @@ export async function cancelOrder(fd: FormData) {
   const id = str(fd, 'id');
   const sb = await supabaseServer();
   const { error } = await sb.rpc('cancel_order', { p_order: id });
-  redirect(withMsg(`/orders/${id}`, error ? error.message : 'Order cancelled.', error ? 'err' : 'ok'));
+  if (error) redirect(withMsg(`/orders/${id}`, error.message, 'err'));
+  // Refund the customer in the client's store too? (Only asked when the order came from a store.)
+  if (fd.has('refund')) await supabaseAdmin().from('orders').update({ cancel_refund: fd.get('refund') === 'yes' }).eq('id', id);
+  await afterOrderChange([id]);
+  redirect(withMsg(`/orders/${id}`, 'Order cancelled.'));
 }
 
 /** Row and bulk actions from the Orders list: hold, release, cancel. */
@@ -141,6 +143,7 @@ export async function ordersListAction(fd: FormData) {
     const { data, error } = await sb.rpc('hold_orders', { p_orders: ids, p_hold: act === 'hold', p_reason: str(fd, 'reason') || null });
     if (error) redirect(withMsg(back, error.message, 'err'));
     const done = Number(data ?? 0);
+    await afterOrderChange(ids);
     const verb = act === 'hold' ? 'put on hold' : 'released';
     const why = act === 'hold' ? 'only new orders the warehouse hasn’t started can be held' : 'held for a product, customs or address problem — fix that and they release by themselves';
     redirect(withMsg(back, done === n ? `${s(done)} ${verb}.` : `${s(done)} ${verb}; ${n - done} skipped (${why}).`, done === n ? 'ok' : 'warn'));
@@ -159,6 +162,7 @@ export async function ordersListAction(fd: FormData) {
       const { error } = await sb.rpc('cancel_order', { p_order: id });
       if (!error) done++;
     }
+    await afterOrderChange(ids);
     redirect(withMsg(back, done === n ? `${s(done)} cancelled.` : `${s(done)} cancelled; ${n - done} couldn’t be (already packed or shipped).`, done === n ? 'ok' : 'warn'));
   }
   redirect(back);
@@ -173,43 +177,6 @@ export async function reverseShipment(fd: FormData) {
   const sb = await supabaseServer();
   const { error } = await sb.rpc('reverse_shipment', { p_order: id, p_reason: str(fd, 'reason').slice(0, 300), p_evidence: str(fd, 'evidence').slice(0, 500) });
   redirect(withMsg(`/orders/${id}`, error ? error.message : 'Shipment reversed. The units are back in stock and the order is cancelled. Both steps are in the history.', error ? 'err' : 'ok'));
-}
-
-/** Staff: fetch the latest carrier data for one order now (registers it first if 17TRACK doesn't know it yet). */
-export async function refreshTracking(fd: FormData) {
-  const id = str(fd, 'id');
-  const ctx = await getCtx();
-  if (!ctx?.staffRole) redirect(withMsg(`/orders/${id}`, 'You don’t have access to that.', 'err'));
-  if (!trackKey()) redirect(withMsg(`/orders/${id}`, '17TRACK isn’t connected yet. Add TRACK17_API_KEY in Vercel.', 'warn'));
-  const { data: o } = await supabaseAdmin().from('orders').select('id, tracking, status, tracking_registered_at').eq('id', id).maybeSingle();
-  if (!o?.tracking || !['shipped', 'delivered'].includes(o.status)) redirect(withMsg(`/orders/${id}`, 'Add a tracking number and mark it shipped first.', 'warn'));
-  let msg = '';
-  try {
-    if (!o.tracking_registered_at) {
-      const r = await registerOrders([{ id: o.id, tracking: o.tracking }]);
-      msg = r.accepted ? 'Sent to 17TRACK. The first carrier update usually arrives within minutes to a few hours.' : 'Not accepted by 17TRACK. Check the tracking number.';
-    } else {
-      const r = await refreshOrders([{ id: o.id, tracking: o.tracking }]);
-      msg = r.delivered ? 'Carrier confirms delivery: order marked Delivered.' : 'Tracking refreshed.';
-    }
-  } catch (e) {
-    redirect(withMsg(`/orders/${id}`, (e as Error).message, 'err'));
-  }
-  redirect(withMsg(`/orders/${id}`, msg));
-}
-
-/** Staff: run the tracking sync now (same as the daily job). */
-export async function syncTrackingNow() {
-  const ctx = await getCtx();
-  if (!ctx?.staffRole) redirect(withMsg('/tracking', 'You don’t have access to that.', 'err'));
-  let msg = '';
-  try {
-    const r = await syncTracking();
-    msg = !r.configured ? '17TRACK isn’t connected yet. Add TRACK17_API_KEY in Vercel.' : `Sync done: ${r.registered} parcel${r.registered === 1 ? '' : 's'} sent to 17TRACK, ${r.refreshed} refreshed, ${r.delivered} newly delivered${r.rejected ? `, ${r.rejected} not accepted (check the numbers)` : ''}.`;
-  } catch (e) {
-    redirect(withMsg('/tracking', (e as Error).message, 'err'));
-  }
-  redirect(withMsg('/tracking', msg));
 }
 
 /** Fix the customer's name, address, phone or email before the warehouse packs the order. */
@@ -234,5 +201,6 @@ export async function editOrderShipTo(fd: FormData) {
     zip: str(fd, 'zip').slice(0, 20) || null, country,
   }, ctx.userId);
   if ('error' in res && res.error) redirect(withMsg(to, res.error, 'err'));
+  await afterOrderChange([`~${o.id}`]);
   redirect(withMsg(to, ('message' in res && res.message) || 'Saved.', 'held' in res && res.held ? 'warn' : 'ok'));
 }

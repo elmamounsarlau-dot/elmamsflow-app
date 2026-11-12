@@ -6,6 +6,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { supabaseServer } from '@/lib/supabase/server';
 import { logActivity } from '@/lib/log';
 import { siteUrl, str, withMsg } from '@/lib/format';
+import { payInvoiceFromWallet } from '@/lib/wallet';
 import { CURRENCIES, draftInvoice, getRateCard, lastMonth, money, RATE_FIELDS, retotal, stripeReady } from '@/lib/billing';
 
 async function billing(back: string) {
@@ -115,6 +116,9 @@ export async function issueInvoice(fd: FormData) {
   const due = new Date(Date.now() + (rates?.payment_terms_days ?? 14) * 864e5).toISOString().slice(0, 10);
   await supabaseAdmin().from('invoices').update({ status: 'open', issued_at: new Date().toISOString(), due_date: due, notes: str(fd, 'notes') || inv.notes }).eq('id', id);
   await logActivity(supabaseAdmin(), ctx.userId, inv.org_id, 'invoice_issued', `${inv.number} · ${money(inv.total, inv.currency)}`);
+  // Prepaid clients: the part their orders didn't already pay is taken from the balance, and the invoice is paid.
+  const fromBalance = await payInvoiceFromWallet(id, ctx.userId).catch(() => null);
+  if (fromBalance) redirect(withMsg(`/invoices/${id}`, `${inv.number} issued and paid from the prepaid balance (${money(fromBalance.already, inv.currency)} already paid by its orders, ${money(Math.max(0, fromBalance.rest), inv.currency)} taken now).`));
   redirect(withMsg(`/invoices/${id}`, `${inv.number} issued. The client sees it now, due ${due}.`));
 }
 

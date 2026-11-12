@@ -3,6 +3,7 @@
 import { getCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { afterOrderChange } from '@/lib/integrations/flow';
 import { logActivity } from '@/lib/log';
 import { groupOrders, parseCsv } from '@/lib/csv';
 
@@ -60,6 +61,7 @@ export async function importOrdersCsv(payload: string): Promise<Result> {
     await supabaseAdmin().from('orders').delete().in('id', created.map((c) => c.id));
     return { ok: false, message: `Nothing was imported: ${itemsErr.message}` };
   }
+  await afterOrderChange(created.map((c) => c.id));
   const held = created.filter((c) => c.status === 'on_hold').length;
   await logActivity(sb, ctx.userId, orgId, 'orders_imported', `${created.length} order${created.length === 1 ? '' : 's'} from ${String(data.file).slice(0, 80)}${held ? ` · ${held} on hold` : ''}`);
   return {

@@ -8,6 +8,8 @@ export const HOLD_KIND: Record<string, [string, string, string]> = {
   address: ['Address', 'Address issue', 'The shipping address is incomplete'],
   stock: ['Stock', 'Out of stock', 'Not enough sellable stock'],
   manual: ['Manual hold', 'Manual hold', 'Held on purpose, until someone releases it'],
+  balance: ['Balance', 'Top up needed', 'The prepaid balance can’t cover it yet; a top-up releases it'],
+  partner: ['Warehouse', 'Warehouse paused', 'The warehouse paused it; check ST Fulfill'],
 };
 
 export const SEARCH_FIELDS: [string, string][] = [

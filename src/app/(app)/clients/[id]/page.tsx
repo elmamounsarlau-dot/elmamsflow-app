@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { shippingOnly } from '@/lib/session';
 import { readFlashLink } from '@/lib/link-flash';
@@ -11,12 +12,17 @@ import { getOrgRoles } from '@/lib/roles-db';
 import { computeCharges, CURRENCIES, getRateCard, invoiceTz, lastMonth, money, monthBounds, RATE_FIELDS, ymOf } from '@/lib/billing';
 import { createInvoice, saveRateCard } from '../../invoices/actions';
 import { Arrow, Back, Empty, Kpi, TeamOnly } from '@/components/ui';
-import { CopyLink, Submit } from '@/components/client';
+import { CopyButton, CopyLink, Submit } from '@/components/client';
 import { PendingLink } from '@/components/access';
 import type { AccessLink } from '@/lib/invite';
 import { Fragment } from 'react';
 import { inviteClientMember, memberLink, toggleClient, updateClient } from '../actions';
 import { viewAs } from '../../view-as';
+import { BalanceKpis, EntriesTable, walletEntries } from '../../invoices/wallet';
+import { adjustWalletAction, savePartnerSettings } from '../../invoices/wallet-actions';
+import { sendClientProducts } from '../../integrations/actions';
+import { supabaseAdmin } from '@/lib/supabase/admin';
+import { bridgeSkuOf } from '@/lib/integrations/bridge';
 import { getWarehouses, shippingWarehouses } from '@/lib/warehouses';
 
 export default async function ClientPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string>> }) {
@@ -44,6 +50,13 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
   const groups = [...new Set(RATE_FIELDS.map((f) => f.group))];
   const linkFor = new Map(((links ?? []) as AccessLink[]).map((l) => [l.user_id, l]));
   const back = `/clients/${id}`;
+  const [moves, { data: prods }, { data: bridge }] = billingOn ? await Promise.all([
+    walletEntries(id, 6),
+    supabaseAdmin().from('products').select('sku, name, bridge_sku, bridge_error').eq('org_id', id).eq('kind', 'item').order('sku'),
+    supabaseAdmin().from('integrations').select('id').eq('role', 'bridge').eq('status', 'active').maybeSingle(),
+  ]) : [[], { data: null }, { data: null }];
+  const skuRows = org.client_code ? (prods ?? []).map((p) => ({ sku: bridgeSkuOf(org.client_code, p.sku), name: p.name, sent: !!p.bridge_sku, error: p.bridge_error as string | null })) : [];
+  const skuList = skuRows.map((p) => `${p.sku}\t${p.name}`).join('\n');
   return (
     <>
       <Back href="/clients">All clients</Back>
@@ -131,6 +144,70 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
                   <span className="ep-small">Invoices are drafted automatically on the 1st. Need it now?</span>
                   <Submit className="ep-btn ep-btn--ghost">Create {monthBounds(lastMonth(tz)).label} invoice</Submit>
                 </form>
+              )}
+            </section>
+          )}
+          {billingOn && (
+            <section className="ep-card ep-card--team" id="partner">
+              <h2>Warehouse partner &amp; payment</h2>
+              <TeamOnly />
+              <form action={savePartnerSettings} className="ep-form">
+                <input type="hidden" name="org" value={org.id} />
+                <fieldset className="ep-rates">
+                  <legend>Warehouse partner</legend>
+                  <div className="ep-row4">
+                    <label>Client code<input name="client_code" defaultValue={org.client_code ?? ''} maxLength={6} placeholder="e.g. TOF" /><small>SKU prefix at the partner · empty = not shipped through the bridge</small></label>
+                    <label>When we cancel a store order<select name="cancel_refund" defaultValue={org.cancel_refund ? 'yes' : 'no'}><option value="no">Cancel only</option><option value="yes">Cancel + refund</option></select><small>Refund their customer in Shopify?</small></label>
+                  </div>
+                </fieldset>
+                <fieldset className="ep-rates">
+                  <legend>Payment</legend>
+                  <div className="ep-row4">
+                    <label>How they pay<select name="billing_mode" defaultValue={org.billing_mode ?? 'invoice'}><option value="prepaid">Prepaid</option><option value="invoice">Monthly invoice</option></select><small>Prepaid: they top up first</small></label>
+                    <label>Credit allowed<input name="credit_limit" type="number" min={0} step="0.01" defaultValue={Number(org.credit_limit ?? 0)} /><small>orders still ship down to −this</small></label>
+                    <label>Warn under<input name="low_balance" type="number" min={0} step="0.01" defaultValue={Number(org.low_balance ?? 100)} /><small>low-balance warning</small></label>
+                  </div>
+                </fieldset>
+                <div className="ep-form-foot"><Submit>Save</Submit></div>
+              </form>
+              {org.billing_mode === 'prepaid' && (
+                <div className="ep-subblock">
+                  <div className="ep-card-head"><h3>Balance</h3><Link className="ep-link ep-small" href="/invoices/topups">All top-ups <Arrow /></Link></div>
+                  <BalanceKpis orgId={org.id} />
+                  <EntriesTable rows={moves} compact />
+                  <form action={adjustWalletAction} className="ep-form ep-row4" style={{ marginTop: '.8rem', alignItems: 'end' }}>
+                    <input type="hidden" name="org" value={org.id} />
+                    <label>Correction<input name="amount" type="number" step="0.01" placeholder="+50 or −20" required /></label>
+                    <label style={{ gridColumn: 'span 2' }}>Reason<input name="note" maxLength={300} required placeholder="e.g. bank fee refunded" /></label>
+                    <Submit className="ep-btn ep-btn--ghost">Adjust balance</Submit>
+                  </form>
+                </div>
+              )}
+              {org.client_code && (
+                <div className="ep-subblock">
+                  <div className="ep-card-head">
+                    <h3>SKUs at the partner</h3>
+                    <div className="ep-row-actions">
+                      {skuList && <CopyButton value={skuList} label="Copy SKU list" />}
+                    </div>
+                  </div>
+                  <p className="ep-small ep-muted">ST Fulfill must hold this client’s stock under exactly these SKUs.</p>
+                  {skuRows.length === 0 ? <Empty title="No products yet" text="Products appear here once the client adds or imports them." /> : (
+                    <div className="ep-tablewrap">
+                      <table className="ep-table">
+                        <thead><tr><th>SKU at the partner</th><th>Product</th><th>Bridge store</th></tr></thead>
+                        <tbody>{skuRows.map((p) => (
+                          <tr key={p.sku}><td><b className="ep-mono">{p.sku}</b></td><td>{p.name}</td><td>{p.error ? <span className="ep-st ep-st--err" title={p.error}>Failed</span> : p.sent ? <span className="ep-st ep-st--ok">Sent</span> : <span className="ep-st ep-st--mute">Not yet</span>}</td></tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                  )}
+                  <div className="ep-form-foot">
+                    {bridge ? (
+                      <form action={sendClientProducts}><input type="hidden" name="org_id" value={org.id} /><input type="hidden" name="back" value={`/clients/${org.id}#partner`} /><Submit className="ep-btn ep-btn--ghost">Send products to the bridge store</Submit></form>
+                    ) : <span className="ep-small ep-muted">Connect the bridge store in Stores first.</span>}
+                  </div>
+                </div>
               )}
             </section>
           )}

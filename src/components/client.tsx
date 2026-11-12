@@ -88,6 +88,24 @@ export function CopyLink({ value, label = 'Copy link' }: { value: string; label?
   );
 }
 
+/** A button that copies text (no visible field), e.g. a list of SKUs. */
+export function CopyButton({ value, label = 'Copy', className = 'ep-btn ep-btn--ghost' }: { value: string; label?: string; className?: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={async () => {
+        try { await navigator.clipboard.writeText(value); } catch { /* old browsers: nothing to do */ }
+        setDone(true);
+        setTimeout(() => setDone(false), 2000);
+      }}
+    >
+      {done ? 'Copied' : label}
+    </button>
+  );
+}
+
 export function PasswordField({ name, label, strength, autoComplete = 'new-password', autoFocus }: { name: string; label: string; strength?: boolean; autoComplete?: string; autoFocus?: boolean }) {
   const [show, setShow] = useState(false);
   const [score, setScore] = useState(0);

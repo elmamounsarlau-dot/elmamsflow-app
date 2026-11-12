@@ -9,6 +9,8 @@ import { CATEGORY, computeCharges, getRateCard, INVOICE_STATUS, invoiceTz, isOve
 import { Arrow, Badge, Empty } from '@/components/ui';
 import { Submit } from '@/components/client';
 import { createAllInvoices } from './actions';
+import { EntriesTable, walletEntries } from './wallet';
+import { balanceOf } from '@/lib/wallet';
 
 export const metadata = { title: 'Invoices' };
 
@@ -54,6 +56,10 @@ export default async function Invoices({ searchParams }: { searchParams: Promise
     }
   }
 
+  const bal = ctx.org ? await balanceOf(ctx.org.id) : null;
+  const prepaid = !!bal?.prepaid;
+  const moves = prepaid && ctx.org ? await walletEntries(ctx.org.id, 8) : [];
+
   const TABS: [string, string, Inv[]][] = [
     ['all', 'All', all],
     ...(staff ? [['draft', 'Drafts', drafts] as [string, string, Inv[]]] : []),
@@ -92,16 +98,30 @@ export default async function Invoices({ searchParams }: { searchParams: Promise
           <b className="ep-sum-money">{sum(open)}</b>
           <span>{open.length} invoice{open.length === 1 ? '' : 's'} to be paid</span>
         </Link>
-        <Link href={href('overdue')} className={`ep-sum-card${overdue.length ? ' is-alert' : ''}`}>
+        {prepaid && bal ? (
+          <>
+            <Link href="/invoices/balance" className={`ep-sum-card${bal.balance < 0 ? ' is-alert' : bal.balance < bal.lowBalance ? ' is-warn' : ''}`}>
+              <small>Balance</small>
+              <b className={`ep-sum-money${bal.balance > 0 ? ' ep-good' : ''}`} data-figure="balance" data-value={Math.round(bal.balance)}>{money(bal.balance, bal.currency)}</b>
+              <span>{bal.pending ? `${money(bal.pending, bal.currency)} on its way` : bal.balance < 0 ? 'New orders wait for a top-up' : bal.balance < bal.lowBalance ? 'Running low' : 'Pays each order when it ships'}</span>
+            </Link>
+            <Link href="/invoices/topup" className="ep-sum-card ep-sum-card--cta">
+              <small>Add money</small>
+              <b>Top up</b>
+              <span>Bank transfer or USDT</span>
+            </Link>
+          </>
+        ) : null}
+        {!prepaid && <Link href={href('overdue')} className={`ep-sum-card${overdue.length ? ' is-alert' : ''}`}>
           <small>Overdue</small>
           <b className="ep-sum-money">{sum(overdue)}</b>
           <span>{overdue.length ? `${overdue.length} past the due date` : 'Nothing overdue'}</span>
-        </Link>
-        <Link href={href('paid')} className="ep-sum-card">
+        </Link>}
+        {!prepaid && <Link href={href('paid')} className="ep-sum-card">
           <small>Paid · last 90 days</small>
           <b className={`ep-sum-money${paid90.length ? ' ep-good' : ''}`}>{sum(paid90)}</b>
           <span>Bank transfer or card</span>
-        </Link>
+        </Link>}
         {staff ? (
           <Link href={href('draft')} className={`ep-sum-card${drafts.length ? ' is-warn' : ''}`}>
             <small>Drafts to review</small>
@@ -125,6 +145,13 @@ export default async function Invoices({ searchParams }: { searchParams: Promise
               <div key={c}><small>{CATEGORY[c]}</small><b>{money(n, runCur)}</b></div>
             ))}
           </div>
+        </section>
+      )}
+
+      {prepaid && (
+        <section className="ep-card ep-card--flush">
+          <div className="ep-card-head ep-pad"><h2>Balance movements</h2><Link className="ep-link ep-small" href="/invoices/balance">All history <Arrow /></Link></div>
+          <EntriesTable rows={moves} />
         </section>
       )}
 

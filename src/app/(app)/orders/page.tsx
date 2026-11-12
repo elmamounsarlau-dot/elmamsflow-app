@@ -1,4 +1,7 @@
+import { after } from 'next/server';
+import { sweepSoon } from '@/lib/integrations/flow';
 import Link from 'next/link';
+import { trackingLink } from '@/lib/carriers';
 import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
@@ -27,7 +30,7 @@ const STATUS_HELP: Record<string, string> = {
 type Row = {
   id: string; number: string; store_ref: string | null; customer: string; email: string | null; city: string | null; country: string;
   created_at: string; status: string; org_id: string; carrier: string | null; tracking: string | null; service: string; source: string | null;
-  integration_id: string | null; external_id: string | null; hold_kind: string | null; hold_reason: string | null; held_at: string | null; warehouse_id: string | null;
+  integration_id: string | null; external_id: string | null; hold_kind: string | null; hold_reason: string | null; held_at: string | null; warehouse_id: string | null; tracking_url: string | null;
   order_items: { qty: number }[];
 };
 
@@ -50,6 +53,8 @@ const Ico = ({ d, s = 16 }: { d: keyof typeof I; s?: number }) => (
 
 export default async function Orders({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const ctx = await requireCtx();
+  // While the team works, keep the warehouse partner, balances and clients' stores in step (at most every 3 min).
+  if (ctx.staffRole) after(() => sweepSoon());
   const f = parseFilters(await searchParams, ctx.backOffice);
   // Back office: the Orders page opens on the overview of all brands; a brand (or "all") is chosen from there.
   // Old links with a tab, status or search (e.g. "Fix them →") open the all-brands list instead.
@@ -67,7 +72,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
 
   const from = (f.p - 1) * f.per;
   const listQ = applyTab(applyScope(
-    sb.from('orders').select('id, number, store_ref, customer, email, city, country, created_at, status, org_id, carrier, tracking, service, source, integration_id, external_id, hold_kind, hold_reason, held_at, warehouse_id, order_items(qty)', { count: 'exact' }),
+    sb.from('orders').select('id, number, store_ref, customer, email, city, country, created_at, status, org_id, carrier, tracking, tracking_url, service, source, integration_id, external_id, hold_kind, hold_reason, held_at, warehouse_id, order_items(qty)', { count: 'exact' }),
     f, orgId,
   ), f).order(f.t ? 'held_at' : 'created_at', { ascending: false, nullsFirst: false }).range(from, from + f.per - 1);
 
@@ -299,7 +304,7 @@ export default async function Orders({ searchParams }: { searchParams: Promise<R
                           <div className="ep-oacts">
                             <Link className="ep-oact" href={`/orders/${o.id}`} title={`Open order #${o.number}`}><Ico d="open" s={15} /></Link>
                             {storeUrl && st && <a className="ep-oact ep-oact--go" href={storeUrl} target="_blank" rel="noreferrer" title={`View in ${CHANNELS[st.kind]}`}><Ico d="store" s={15} /></a>}
-                            {o.tracking && <a className="ep-oact ep-oact--go" href={`https://t.17track.net/en#nums=${encodeURIComponent(o.tracking)}`} target="_blank" rel="noreferrer" title={`Track ${o.tracking}`}><Ico d="track" s={15} /></a>}
+                            {o.tracking && <a className="ep-oact ep-oact--go" href={trackingLink(o.carrier, o.tracking, o.tracking_url) ?? '#'} target="_blank" rel="noreferrer" title={`Track ${o.tracking}`}><Ico d="track" s={15} /></a>}
                             {canHold && o.status === 'new' && <Act className="ep-oact ep-oact--warn" value={`hold:${o.id}`} title={`Hold order #${o.number}`} confirm={`Put #${o.number} on hold? The warehouse won’t pack it until it’s released.`}><Ico d="hold" s={15} /></Act>}
                             {canRelease && <Act className="ep-oact ep-oact--ok" value={`release:${o.id}`} title={`Release order #${o.number}`}><Ico d="release" s={15} /></Act>}
                             {canCreate && ['new', 'on_hold'].includes(o.status) && <Act className="ep-oact ep-oact--err" value={`cancel:${o.id}`} title={`Cancel order #${o.number}`} confirm={`Cancel #${o.number}?`}><Ico d="cancel" s={15} /></Act>}

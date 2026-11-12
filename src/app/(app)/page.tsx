@@ -1,3 +1,5 @@
+import { after } from 'next/server';
+import { sweepSoon } from '@/lib/integrations/flow';
 import { redirect } from 'next/navigation';
 import { requireCtx, shippingOnly } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
@@ -10,6 +12,8 @@ export const metadata = { title: 'Overview' };
 
 export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const ctx = await requireCtx();
+  // While the team works, keep the warehouse partner, balances and clients' stores in step (at most every 3 min).
+  if (ctx.staffRole) after(() => sweepSoon());
   if (shippingOnly(ctx)) redirect('/shipping');
   const sp = await searchParams;
   // Our team: the whole business on one page.

@@ -38,9 +38,9 @@ export const getNotices = cache(async (ctx: Ctx): Promise<Notice[]> => {
     can('invoices.view')
       ? sb.from('invoices').select('id, number, total, currency, due_date, issued_at').eq('org_id', org).eq('status', 'open').order('due_date', { ascending: true, nullsFirst: false })
       : Promise.resolve({ data: [] as { id: string; number: string; total: number; currency: string; due_date: string | null; issued_at: string | null }[] }),
-    sb.from('orders').select('id, number, tracking, tracking_status, tracking_last_event, tracking_error, tracking_last_event_at, shipped_at')
+    sb.from('orders').select('id, number, tracking, shipment_status, shipped_at')
       .eq('org_id', org).eq('status', 'shipped')
-      .or('tracking_status.in.(DeliveryFailure,Exception,Expired,AvailableForPickup),tracking_error.not.is.null,tracking.is.null')
+      .or('shipment_status.in.(FAILURE,ATTEMPTED_DELIVERY,READY_FOR_PICKUP),tracking.is.null')
       .order('shipped_at', { ascending: false }).limit(50),
     sb.from('tickets').select('id, subject, updated_at').eq('org_id', org).eq('status', 'answered').order('updated_at', { ascending: false }).limit(20),
     sb.from('inbounds').select('id, ref, status, eta').eq('org_id', org).in('status', ['announced', 'in_transit']).lt('eta', today).limit(20),
@@ -89,12 +89,12 @@ export const getNotices = cache(async (ctx: Ctx): Promise<Notice[]> => {
 
   for (const o of trackIssues.data ?? []) {
     if (!o.tracking) continue; // shipped without a number is the warehouse's to fix, not the client's
-    const label = o.tracking_status ? CARRIER_STATUS[o.tracking_status]?.[0] ?? o.tracking_status : 'Not tracked';
-    const pickup = o.tracking_status === 'AvailableForPickup';
+    const label = o.shipment_status ? CARRIER_STATUS[o.shipment_status]?.[0] ?? o.shipment_status : 'In transit';
+    const pickup = o.shipment_status === 'READY_FOR_PICKUP';
     out.push({
-      key: `trk:${o.id}`, level: pickup ? 'info' : 'warn', kind: 'tracking', at: o.tracking_last_event_at ?? o.shipped_at,
+      key: `trk:${o.id}`, level: pickup ? 'info' : 'warn', kind: 'tracking', at: o.shipped_at,
       title: pickup ? `Parcel #${o.number} is waiting at a pickup point` : `Parcel #${o.number}: ${label.toLowerCase()}`,
-      detail: o.tracking_last_event || o.tracking_error || 'The carrier reports a problem with this parcel.',
+      detail: 'The carrier reports a problem with this parcel. Open the tracking to see the latest scan.',
       href: `/orders/${o.id}#carrier`, cta: pickup ? 'Tell your customer' : 'See tracking',
     });
   }
