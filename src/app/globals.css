@@ -2306,6 +2306,6 @@ a.ds-pill { min-width: 28px; min-height: 28px; justify-content: center; }
 .ep-sum-card--cta { border: 1.5px solid var(--orange); background: linear-gradient(180deg, rgba(247,148,29,.08), transparent 70%), var(--surface); }
 .ep-sum-card--cta b { color: var(--navy); }
 .ep-sum-card--cta b::after { content: ' →'; color: var(--orange); }
-.ep-bal-line { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; align-items: baseline; margin-bottom: .7rem; }
-.ep-bal-line b { font: 600 1.35rem/1.1 var(--display); color: var(--navy); }
-.ep-bal-line small { color: var(--muted); font-size: .78rem; }
+.ep-amount-in { width: 6.5rem; }
+.ep-subblock { margin-top: 1.1rem; padding-top: 1.1rem; border-top: 1px dashed var(--line); display: grid; gap: .7rem; }
+.ep-subblock h3 { font: 600 1rem/1.2 var(--display); color: var(--navy); letter-spacing: -.01em; }

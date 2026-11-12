@@ -26,14 +26,17 @@ export default async function TopupDetail({ params }: { params: Promise<{ id: st
       <div className="ep-head"><div><p className="ep-crumb">Invoices · Top up</p><h1>{done ? 'Top-up received' : e.status === 'rejected' ? 'Top-up not received' : 'Send your payment'}</h1>
         <p>{done ? `${money(Number(e.amount), e.currency)} was added to your balance on ${fmtDate(e.confirmed_at, true)}.` : e.status === 'rejected' ? 'We didn’t receive this payment. If you sent it, write to us in Support with the proof.' : `Send ${money(Number(e.amount), e.currency)} using the details below, with your reference. We confirm it as soon as it arrives.`}</p></div></div>
       {!done && e.status !== 'rejected' && (
-        <section className="ep-card" style={{ maxWidth: '40rem' }}>
-          <p className="ep-eyebrow"><i />Your reference</p>
-          <p style={{ fontSize: '1.6rem', fontWeight: 800, letterSpacing: '.04em', margin: '.2rem 0 .6rem' }} className="ep-mono">{e.ref}</p>
-          <CopyLink value={e.ref ?? ''} label="Copy reference" />
-          <h2 style={{ marginTop: '1.2rem' }}>{e.method}</h2>
-          {m ? <pre className="ep-small" style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', background: 'var(--soft, #f4f6fb)', padding: '.8rem 1rem', borderRadius: '10px' }}>{m.details}</pre> : <p className="ep-note ep-note--warn">These details changed. Please start a new top-up.</p>}
-          <p className="ep-small ep-muted" style={{ marginTop: '.8rem' }}>Announced {fmtDate(e.created_at, true)}. Orders waiting for a top-up are released automatically once we confirm it.</p>
-        </section>
+        <>
+          <div className="ep-linkbox" style={{ maxWidth: '44rem' }}>
+            <div><p className="ep-eyebrow"><i />Your reference · {money(Number(e.amount), e.currency)}</p><p>Write <b className="ep-mono">{e.ref}</b> in the payment description so we can match it.</p></div>
+            <CopyLink value={e.ref ?? ''} label="Copy reference" />
+          </div>
+          <section className="ep-card" style={{ maxWidth: '44rem' }}>
+            <h2>{e.method}</h2>
+            {m ? <p className="ep-address" style={{ whiteSpace: 'pre-line', marginTop: '.6rem' }}>{m.details}</p> : <p className="ep-note ep-note--warn">These details changed. Please start a new top-up.</p>}
+            <p className="ep-small ep-muted">Announced {fmtDate(e.created_at, true)}. Orders waiting for a top-up are released automatically once we confirm it.</p>
+          </section>
+        </>
       )}
     </>
   );

@@ -94,21 +94,33 @@ export default async function Stores() {
             <>
               <p className="ep-small"><b>{bridge.name}</b> · {bridge.store_url} · connected {fmtDate(bridge.created_at)}</p>
               {bridge.last_error && <p className="ep-note ep-note--warn">{bridge.last_error}</p>}
-              <p className="ep-small" style={{ margin: '.6rem 0 .3rem' }}>Clients shipping through it (client code → SKU prefix):</p>
-              <p className="ep-small">{(coded ?? []).length ? (coded ?? []).map((c) => <span key={c.id} className="ep-chip" style={{ marginRight: '.35rem' }}><Link href={`/clients/${c.id}#partner`}>{c.client_code} · {c.name}</Link></span>) : <span className="ep-muted">None yet. Open a client and give it a code.</span>}</p>
+              <div className="ep-subblock">
+                <div className="ep-card-head"><h3>Clients shipping through it</h3><span className="ep-muted ep-small">{(coded ?? []).length}</span></div>
+                {(coded ?? []).length === 0 ? <Empty title="None yet" text="Open a client and give it a client code (Warehouse partner & payment)." /> : (
+                  <div className="ep-tablewrap"><table className="ep-table">
+                    <thead><tr><th>Code</th><th>Client</th></tr></thead>
+                    <tbody>{(coded ?? []).map((c) => <tr key={c.id} data-href={`/clients/${c.id}#partner`}><td><b className="ep-mono">{c.client_code}</b></td><td><Link href={`/clients/${c.id}#partner`}>{c.name}</Link></td></tr>)}</tbody>
+                  </table></div>
+                )}
+              </div>
               {(waiting ?? []).length > 0 && (
-                <div className="ep-note ep-note--warn" style={{ marginTop: '.7rem' }}>
-                  <b>Needs a look:</b>
-                  <ul style={{ margin: '.3rem 0 0 1rem' }}>{(waiting ?? []).map((o) => <li key={o.id}><Link href={`/orders/${o.id}#links`}>#{o.number}</Link> · {o.bridge_error ? `not at the warehouse: ${o.bridge_error}` : `at the warehouse since ${fmtDate(o.bridge_sent_at, true)}, not shipped yet — check ST Fulfill (stock, payment)`}</li>)}</ul>
+                <div className="ep-subblock">
+                  <div className="ep-card-head"><h3>Needs a look</h3><span className="ep-st ep-st--warn">{(waiting ?? []).length}</span></div>
+                  <div className="ep-tablewrap"><table className="ep-table">
+                    <thead><tr><th>Order</th><th>What’s wrong</th></tr></thead>
+                    <tbody>{(waiting ?? []).map((o) => (
+                      <tr key={o.id} data-href={`/orders/${o.id}#links`}><td><Link href={`/orders/${o.id}#links`}><b>#{o.number}</b></Link></td><td><small>{o.bridge_error ? `Not at the warehouse: ${o.bridge_error}` : `At the warehouse since ${fmtDate(o.bridge_sent_at, true)}, not shipped — check stock and payment in ST Fulfill`}</small></td></tr>
+                    ))}</tbody>
+                  </table></div>
                 </div>
               )}
               {(events ?? []).length > 0 && (
-                <details className="ep-edit" style={{ marginTop: '.7rem' }}>
-                  <summary><span>Latest activity</span></summary>
-                  <ul className="ep-small" style={{ margin: '.4rem 0 0 1rem' }}>{(events ?? []).map((e, k) => <li key={k}>{fmtDate(e.created_at, true)} · {e.detail}</li>)}</ul>
+                <details className="ep-edit">
+                  <summary><span>Latest activity</span><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M5.5 8l4.5 4.5L14.5 8" /></svg></summary>
+                  <ul className="ep-activity">{(events ?? []).map((e, k) => <li key={k}><b>{e.kind === 'error' ? 'Problem' : 'Update'}</b><span>{e.detail}</span><small>{fmtDate(e.created_at, true)}</small></li>)}</ul>
                 </details>
               )}
-              <div style={{ display: 'flex', gap: '.5rem', marginTop: '.8rem', flexWrap: 'wrap' }}>
+              <div className="ep-form-foot" style={{ gap: '.5rem' }}>
                 <form action={bridgeSyncNow}><Submit className="ep-btn ep-btn--sm">Check the warehouse now</Submit></form>
                 {ctx.staffRole === 'owner' && <form action={disconnectBridge}><Submit className="ep-btn ep-btn--sm ep-btn--ghost" confirm="Switch off the bridge? New orders will stay here until you connect it again.">Switch off</Submit></form>}
               </div>
