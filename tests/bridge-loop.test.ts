@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- the fake Shopify below takes loosely-typed GraphQL variables */
 // The whole loop, against the LOCAL test stack and a fake Shopify (npm run test:stack). Never production.
 //   client's Shopify → Elmamsflow → bridge Shopify → partner → bridge Shopify → Elmamsflow → client's Shopify
 // Plus the prepaid balance: orders wait when it is too low, are paid when they ship, and a top-up releases them.
