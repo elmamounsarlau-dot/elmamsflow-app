@@ -128,15 +128,22 @@ export default async function Stores() {
           ) : (
             <>
               <ol className="ep-small" style={{ paddingLeft: '1.2rem', display: 'grid', gap: '.3rem', marginBottom: '.9rem' }}>
-                <li>In the bridge Shopify store: <b>Settings → Apps and sales channels → Develop apps → Create an app</b> (name it “Elmamsflow”).</li>
-                <li><b>Configure Admin API scopes</b> and tick: <code>{BRIDGE_SCOPES.join(', ')}</code>. Save, then <b>Install app</b>.</li>
-                <li>Copy the <b>Admin API access token</b> (shown once) and the <b>API secret key</b>, and paste them below.</li>
+                <li>Signed in as the owner of the bridge store, open <b>dev.shopify.com/dashboard</b> and click <b>Create app</b>. Name it “Elmamsflow”.</li>
+                <li>In the app version, set the <b>Admin API scopes</b>:<br /><code className="ep-scopes">{BRIDGE_SCOPES.join(', ')}</code></li>
+                <li>Under <b>Protected customer data</b>, allow access to <b>name, phone and address</b> — the warehouse needs them to ship.</li>
+                <li><b>Release</b> the version, then <b>Install</b> the app on the bridge store.</li>
+                <li>Open the app’s <b>Settings</b> and copy the <b>Client ID</b> and <b>Client secret</b> below.</li>
                 <li>In ST Fulfill, connect this same store (Store Management).</li>
               </ol>
               <form action={connectBridge} className="ep-form" style={{ maxWidth: '34rem' }}>
                 <label>Bridge store address<input name="store" placeholder="elmamsflow-bridge.myshopify.com" required autoComplete="off" /></label>
-                <label>Admin API access token<input name="token" type="password" required autoComplete="off" /></label>
-                <label>API secret key<input name="api_secret" type="password" required autoComplete="off" /></label>
+                <label>Client ID<input name="client_id" autoComplete="off" /></label>
+                <label>Client secret<input name="client_secret" type="password" autoComplete="off" /></label>
+                <details className="ep-edit">
+                  <summary><span>Older custom app instead (Admin API token)</span></summary>
+                  <label>Admin API access token<input name="token" type="password" autoComplete="off" /></label>
+                  <label>API secret key<input name="api_secret" type="password" autoComplete="off" /></label>
+                </details>
                 <Submit className="ep-btn">Connect the bridge store</Submit>
               </form>
             </>
