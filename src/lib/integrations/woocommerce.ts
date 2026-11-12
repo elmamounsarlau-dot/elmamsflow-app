@@ -113,11 +113,6 @@ export async function wooOpenOrders(i: Integration, since: Date) {
 }
 
 /** Complete the order in WooCommerce and add the tracking number as a note the customer receives. */
-export async function wooFulfil(i: Integration, id: string, carrier: string | null, tracking: string) {
-  await wooCall(i, `/orders/${encodeURIComponent(id)}/notes`, { method: 'POST', body: { note: `Your order has shipped${carrier ? ` with ${carrier}` : ''}. Tracking number: ${tracking} — follow it at https://t.17track.net/en#nums=${encodeURIComponent(tracking)}`, customer_note: true } });
-  await wooCall(i, `/orders/${encodeURIComponent(id)}`, { method: 'PUT', body: { status: 'completed' } });
-}
-
 const TO_G: Record<string, number> = { g: 1, kg: 1000, lbs: 453.592, oz: 28.3495 };
 
 export async function wooProducts(i: Integration) {

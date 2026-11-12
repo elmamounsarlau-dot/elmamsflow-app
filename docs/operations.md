@@ -90,26 +90,34 @@ All three run automatically on GitHub for every push and pull request (`.github/
   **allocation** (Transfers → New → *Allocate*) with evidence of where they physically are.
 - A warehouse can be closed only when it holds no stock and has no open orders, inbounds or transfers.
 
-## 7. Live carrier tracking (17TRACK, migration 0015)
+## 7. Warehouse partner through the bridge store, two-way order status, prepaid balance (migration 0020)
 
-Every order that ships with a tracking number is followed automatically:
+17TRACK was removed (Nov 2026). Tracking links now open the carrier's own page.
 
-1. **Ship it** (order page → status *In transit* + tracking number). The app registers the number with 17TRACK at once
-   (carrier auto-detected; the order id rides along as the tag).
-2. **17TRACK pushes each carrier scan** to `/api/tracking/17track`. Only pushes signed with your API key are accepted
-   (`sign` header, SHA-256). The order shows the live status, latest scan, ETA and full history — clients see it too.
-3. **Delivered closes itself**: the order turns *Delivered* with the carrier's delivery date (logged as
-   "Delivered (carrier confirmed)"). *Problem*, *Delivery failed* and *No updates* show in Tracking → Problems.
-4. **Daily safety net** (`/api/cron/tracking`, 02:00 UTC, needs `CRON_SECRET`): registers anything missed and refreshes
-   parcels that went quiet. Staff can run it any time with **Sync now** on the Tracking page, or **Refresh now** on an order.
+**The loop.** client's Shopify / WooCommerce → Elmamsflow → **bridge store** (our own Shopify store, connected to the
+partner ST Fulfill) → the partner ships → bridge store → Elmamsflow → client's store. Clients never see the bridge or the partner.
 
-**Set up (once):**
+- A client ships through the bridge when it has a **client code** (Clients → client → *Warehouse partner & payment*).
+  Its products go to the bridge store as `CODE-SKU` (a SKU already starting with the code is kept as is). The partner
+  must hold the client's stock under exactly those SKUs ("Copy SKU list for ST").
+- Bridge orders are real, paid orders (manual payment, no money moves), **without the customer's email**, with no
+  notifications, tagged with the client code and noted with the Elmamsflow number.
+- Whatever changes on a bridge order (on hold, in progress, fulfilled + tracking, carrier journey, delivered, cancelled)
+  arrives by webhook, updates the Elmamsflow order (`partner_set_status`, service role only) and is mirrored to the
+  client's store: On hold, released, In progress, Fulfilled + tracking (customer emailed by their store), shipment
+  events (In transit, Out for delivery, Delivered…), Cancelled (refund in their store only if chosen).
+- Backup: `/api/cron/sync` (daily, `CRON_SECRET`), "Check the warehouse now" on Stores, and an automatic light pass at
+  most every 3 minutes while the team uses Orders / Overview. Orders at the partner for 48 h without shipping, or not
+  sent, show under *Needs action* and on Stores.
 
-1. Create an account at <https://api.17track.net>, open **Settings → Security** and copy the **Security Key**.
-   The free plan includes a small number of tracking numbers; each parcel uses 1. Buy a plan that matches your volume.
-2. Vercel → elmamsflow-app → Settings → Environment Variables → add `TRACK17_API_KEY` (Production, Sensitive) → Redeploy.
-3. In the app: **Stores** page → *Carrier tracking · 17TRACK* shows *Connected* and the quota. Copy the **webhook URL**
-   (`https://<your app>/api/tracking/17track`) into 17TRACK → **Settings → Webhook**, version v2.4, and save.
-4. Ship one real parcel and check its order page: *Carrier updates* appears within minutes to a few hours of the first scan.
+**Connect the bridge store (once).** Stores → *Warehouse partner · bridge store*: create a custom app in the bridge
+Shopify store with the scopes listed there, install it, paste the Admin API access token and API secret key.
+Client stores need `write_orders` and `write_fulfillments` too for the new statuses: existing Shopify connections must
+be re-approved once (Dev Dashboard app: add the scopes and reinstall; custom app: tick them and reinstall).
 
-The key is never stored in the database or shown in the app. Changing an order's tracking number restarts tracking for the new number.
+**Prepaid balance.** Clients set to *Prepaid* top up first (Invoices → Top up → method + amount → their own
+reference). Billing confirms it on *Invoices → Top-ups* (the amount that arrived can be corrected). Each shipped order
+is charged at the client's price list; the month's invoice takes the rest (storage, receiving, duties, minimum) from
+the balance and is marked paid. When the balance (+ allowed credit) can't cover a new order, it waits ("Top up
+needed") and is not sent to the partner; a confirmed top-up releases waiting orders, oldest first. Payment methods
+and the minimum are in Settings → Billing details → *Top-ups*. Existing clients stay on monthly invoices until switched.

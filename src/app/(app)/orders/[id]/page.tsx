@@ -2,10 +2,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 import { CARRIER_PROBLEM, CARRIER_STATUS, COUNTRIES, countryList, fmtDate, ORDER_STATUS } from '@/lib/format';
 import { Arrow, Back, Badge, TeamOnly, Thumb } from '@/components/ui';
 import { Submit } from '@/components/client';
-import { cancelOrder, editOrderShipTo, refreshTracking, reverseShipment, updateOrder } from '../actions';
+import { cancelOrder, editOrderShipTo, reverseShipment, updateOrder } from '../actions';
+import { trackingLink } from '@/lib/carriers';
 import { rematchProducts, resendTracking } from '../../integrations/actions';
 import { getWarehouses, shippingWarehouses, whLabel } from '@/lib/warehouses';
 import { financeSettings, MONEY_CURRENCIES } from '@/lib/fx';
@@ -20,10 +22,9 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   if (!o) notFound();
   // What this parcel cost us (label, duties): our team only, never clients, and not in "view as client".
   const seesCosts = !!ctx.staffRole && !ctx.viewingAs && (ctx.can('orders.warehouse') || ctx.can('billing.manage'));
-  const [{ data: items }, whs, { data: events }, { data: cost }, fin] = await Promise.all([
+  const [{ data: items }, whs, { data: cost }, fin] = await Promise.all([
     sb.from('order_items').select('qty, products(id, sku, name, weight_g, hs_code, customs_value, photo_path)').eq('order_id', id),
     getWarehouses(),
-    o.tracking ? sb.from('tracking_events').select('at, description, location').eq('order_id', id).eq('tracking', o.tracking).order('at', { ascending: false }).limit(60) : Promise.resolve({ data: [] as { at: string | null; description: string; location: string | null }[] }),
     seesCosts ? sb.from('order_costs').select('label_cost, duties_paid, currency').eq('order_id', id).maybeSingle() : Promise.resolve({ data: null as { label_cost: number | null; duties_paid: number | null; currency: string } | null }),
     seesCosts ? financeSettings() : Promise.resolve(null),
   ]);
@@ -39,7 +40,8 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const staffView = !!ctx.staffRole && (ctx.can('orders.hold') || ctx.can('orders.warehouse'));
   const canHoldIt = ctx.can('orders.hold');
   const statuses = ctx.can('orders.warehouse') ? Object.keys(ORDER_STATUS).filter((k) => canHoldIt || !['on_hold', 'cancelled'].includes(k)) : ['new', 'on_hold'];
-  const shippedAlready = ['shipped', 'delivered'].includes(o.status);
+  // When cancelling: does this client usually want its customer refunded in the store?
+  const refundDefault = o.integration_id ? !!(await supabaseAdmin().from('organizations').select('cancel_refund').eq('id', o.org_id).maybeSingle()).data?.cancel_refund : false;
   const isPdf = (o.label_path ?? '').endsWith('.pdf');
   const canEdit = ['new', 'on_hold'].includes(o.status) && (ctx.can('orders.create') || (!!ctx.staffRole && ctx.can('orders.hold')));
   return (
@@ -53,7 +55,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
       </div>
       {o.status === 'on_hold' && o.hold_reason && (
         <div className="ep-fixbar" style={{ cursor: 'default' }}>
-          <span><b>On hold:</b> {o.hold_reason}{o.hold_kind === 'address' && o.integration_id ? <> — fix it in {o.source === 'shopify' ? 'Shopify' : 'WooCommerce'} and this order updates by itself.</> : null}</span>
+          <span><b>On hold:</b> {o.hold_reason}{o.hold_kind === 'address' && o.integration_id ? <> — fix it in {o.source === 'shopify' ? 'Shopify' : 'WooCommerce'} and this order updates by itself.</> : null}{o.hold_kind === 'balance' ? <> <Link className="ep-link" href="/invoices/topup">Top up now</Link></> : null}</span>
           {o.external_lines && <form action={rematchProducts}><input type="hidden" name="order" value={o.id} /><Submit className="ep-btn ep-btn--sm">{o.hold_kind === 'address' ? 'Check the store again' : 'Match products again'}</Submit></form>}
         </div>
       )}
@@ -78,33 +80,18 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
             <ol className="ep-steps">
               {steps.map(([l, d, done]) => <li key={l} className={done ? 'done' : ''}><b>{l}</b><span>{d && done ? fmtDate(d, true) : done ? 'Done' : 'Waiting'}</span></li>)}
             </ol>
-            {o.tracking && <p className="ep-track">{o.carrier ? `${o.carrier} · ` : ''}<b>{o.tracking}</b> <a className="ep-link" target="_blank" rel="noopener noreferrer" href={`https://t.17track.net/en#nums=${encodeURIComponent(o.tracking)}`}>Track parcel <Arrow /></a></p>}
+            {o.tracking && <p className="ep-track">{o.carrier ? `${o.carrier} · ` : ''}<b>{o.tracking}</b> <a className="ep-link" target="_blank" rel="noopener noreferrer" href={trackingLink(o.carrier, o.tracking, o.tracking_url) ?? '#'}>Track parcel <Arrow /></a></p>}
+            {o.shipment_status && ['shipped', 'delivered'].includes(o.status) && (
+              <p className="ep-small" style={{ marginTop: '.5rem' }}>Carrier: <Badge map={CARRIER_STATUS} value={o.shipment_status} />{CARRIER_PROBLEM.includes(o.shipment_status) && <span className="ep-warn"> · {ctx.backOffice ? 'check with the carrier' : 'our team is on it'}</span>}</p>
+            )}
           </section>
-          {o.tracking && ['shipped', 'delivered'].includes(o.status) && (
-            <section className="ep-card" id="carrier">
-              <div className="ep-card-head">
-                <h2>Carrier updates</h2>
-                {o.tracking_status ? <Badge map={CARRIER_STATUS} value={o.tracking_status} /> : <span className="ep-muted ep-small">{o.tracking_registered_at ? 'Waiting for the first carrier scan' : o.tracking_error ? 'Not tracked' : 'Starting live tracking…'}</span>}
-              </div>
-              {o.tracking_error && !o.tracking_status && <p className="ep-note ep-note--warn">17TRACK couldn’t track this number: {o.tracking_error}</p>}
-              {o.tracking_status && CARRIER_PROBLEM.includes(o.tracking_status) && <p className="ep-note ep-note--warn">The carrier reports a problem. Check the latest update{ctx.backOffice ? ' and contact the carrier if needed' : '; our team is notified'}.</p>}
-              {o.tracking_last_event && (
-                <p className="ep-small" style={{ marginBottom: '.6rem' }}>
-                  <b>{o.tracking_last_event}</b>{o.tracking_last_location ? ` · ${o.tracking_last_location}` : ''}
-                  <br /><span className="ep-muted">{o.tracking_last_event_at ? fmtDate(o.tracking_last_event_at, true) : ''}{o.tracking_eta && o.status !== 'delivered' ? ` · Expected by ${fmtDate(o.tracking_eta)}` : ''}</span>
-                </p>
-              )}
-              {(events ?? []).length > 0 && (
-                <ol className="ep-events">
-                  {(events ?? []).map((e, i) => (
-                    <li key={i}><span className="ep-muted ep-small">{e.at ? fmtDate(e.at, true) : '—'}</span><b>{e.description}</b>{e.location && <small>{e.location}</small>}</li>
-                  ))}
-                </ol>
-              )}
-              <p className="ep-small ep-muted" style={{ marginTop: '.6rem' }}>Live from the carrier via 17TRACK{o.tracking_checked_at ? ` · last checked ${fmtDate(o.tracking_checked_at, true)}` : ''}.</p>
-              {ctx.staffRole && (
-                <form action={refreshTracking} style={{ marginTop: '.6rem' }}><input type="hidden" name="id" value={o.id} /><Submit className="ep-btn ep-btn--sm ep-btn--ghost">{o.tracking_registered_at ? 'Refresh now' : 'Start tracking now'}</Submit></form>
-              )}
+          {ctx.backOffice && (o.bridge_id || o.bridge_error || o.store_error) && (
+            <section className="ep-card ep-card--team" id="links">
+              <h2>Warehouse &amp; store links</h2>
+              <TeamOnly />
+              {o.bridge_name && <p className="ep-small">At the warehouse (bridge store) as <b>{o.bridge_name}</b>{o.bridge_sent_at ? ` · sent ${fmtDate(o.bridge_sent_at, true)}` : ''}.</p>}
+              {o.bridge_error && <p className="ep-note ep-note--warn">Not at the warehouse yet: {o.bridge_error}. It is retried automatically; fix the cause (often a product SKU) if it stays.</p>}
+              {o.store_error && <p className="ep-note ep-note--warn">The client’s store wasn’t updated: {o.store_error}</p>}
             </section>
           )}
           {o.label_path && (
@@ -192,18 +179,29 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
                     )}
                     <label>{o.label_path ? 'Replace the label (photo or PDF)' : 'Label (photo or PDF)'}
                       <input type="file" name="label" accept="image/*,application/pdf" capture="environment" />
-                      <small className="ep-muted">{o.label_path ? 'A label is already saved.' : shippedAlready ? 'Optional for orders already in transit.' : 'Needed to mark it in transit.'}</small>
+                      <small className="ep-muted">{o.label_path ? 'A label is already saved.' : 'Optional.'}</small>
                     </label>
                   </>
                 )}
                 <Submit className="ep-btn ep-btn--full">Save</Submit>
-                <p className="ep-small ep-muted">In transit needs the tracking number and the label. It takes the items out of stock, sends tracking to the client’s store and starts live tracking.</p>
+                <p className="ep-small ep-muted">In transit needs the tracking number. It takes the items out of stock and updates the client’s store (and the warehouse copy).</p>
               </form>
             </section>
           )}
           {['new', 'on_hold'].includes(o.status) && ctx.can('orders.create') && (
             <section className="ep-card">
-              <form action={cancelOrder}><input type="hidden" name="id" value={o.id} /><Submit className="ep-btn ep-btn--ghost ep-btn--full" confirm="Cancel this order?">Cancel order</Submit></form>
+              <form action={cancelOrder} className="ep-form">
+                <input type="hidden" name="id" value={o.id} />
+                {o.integration_id && (
+                  <label>In {o.source === 'woocommerce' ? 'the WooCommerce store' : 'the Shopify store'}
+                    <select name="refund" defaultValue={refundDefault ? 'yes' : 'no'}>
+                      <option value="no">Cancel only (refund the customer yourself)</option>
+                      {o.source !== 'woocommerce' && <option value="yes">Cancel and refund the customer</option>}
+                    </select>
+                  </label>
+                )}
+                <Submit className="ep-btn ep-btn--ghost ep-btn--full" confirm="Cancel this order?">Cancel order</Submit>
+              </form>
             </section>
           )}
           {ctx.staffRole === 'owner' && ['shipped', 'delivered'].includes(o.status) && o.stock_out && (

@@ -9,7 +9,10 @@ import { seal, randomSecret } from '@/lib/integrations/crypto';
 import { KIND_LABEL, loadIntegration, logEvent, rematchOrder, type Integration, type Kind } from '@/lib/integrations/core';
 import { normalizeShop, shopifyConnect, type ShopifySecrets } from '@/lib/integrations/shopify';
 import { normalizeWooUrl, wooCall, wooConnect, type WooSecrets } from '@/lib/integrations/woocommerce';
-import { importProducts, pushTracking, refreshFromStore, refreshLines, registerWebhooks, syncOrders, webhookUrl } from '@/lib/integrations/service';
+import { importProducts, refreshFromStore, refreshLines, registerWebhooks, syncOrders, webhookUrl } from '@/lib/integrations/service';
+import { syncClientStore } from '@/lib/integrations/store-sync';
+import { afterOrderChange, sweepOrders } from '@/lib/integrations/flow';
+import { BRIDGE_SCOPES, loadBridge, syncClientProducts } from '@/lib/integrations/bridge';
 
 /** Who may manage a client's stores: the client's own admins, or Elmamsflow owner/managers. */
 function allowed(ctx: Ctx | null, orgId: string) {
@@ -157,6 +160,7 @@ export async function rematchProducts(fd: FormData) {
   if (fresh === 'updated' && after?.status === 'new') redirect(withMsg(`/orders/${id}`, 'New address received from the store. The order is ready for the warehouse.'));
   if (after?.hold_kind === 'address') redirect(withMsg(`/orders/${id}`, fresh === 'error' ? 'The store couldn’t be reached. Try again in a minute.' : 'The address in the store is still incomplete. Fix it in the store; this order updates by itself.', 'warn'));
   const r = await rematchOrder(id);
+  await afterOrderChange([id]);
   redirect(withMsg(`/orders/${id}`, r.message, r.ok ? 'ok' : 'warn'));
 }
 
@@ -164,7 +168,75 @@ export async function resendTracking(fd: FormData) {
   const ctx = await getCtx();
   const id = str(fd, 'order');
   if (!ctx?.staffRole || !ctx.can('orders.warehouse')) redirect(withMsg(`/orders/${id}`, 'You don’t have access to that.', 'err'));
-  await supabaseAdmin().from('orders').update({ pushed_at: null }).eq('id', id);
-  const r = await pushTracking(id);
-  redirect(withMsg(`/orders/${id}`, r === 'ok' ? 'Tracking sent to the store.' : `Not sent: ${r ?? 'nothing to send'}`, r === 'ok' ? 'ok' : 'err'));
+  await supabaseAdmin().from('orders').update({ pushed_at: null, store_state: null }).eq('id', id);
+  const r = await syncClientStore(id);
+  redirect(withMsg(`/orders/${id}`, r === 'ok' ? 'The client’s store is updated.' : `Not sent: ${r ?? 'nothing to send'}`, r === 'ok' ? 'ok' : 'err'));
 }
+
+// ---------- The bridge store (our own Shopify store, connected to the fulfilment partner) ----------
+
+export async function connectBridge(fd: FormData) {
+  const ctx = await getCtx();
+  const back = '/integrations#bridge';
+  if (!ctx?.staffRole || !['owner', 'manager'].includes(ctx.staffRole) || ctx.viewingAs) redirect(withMsg(back, 'Only the owner or a manager can connect the bridge store.', 'err'));
+  const storeUrl = normalizeShop(str(fd, 'store'));
+  const token = str(fd, 'token');
+  const apiSecret = str(fd, 'api_secret');
+  if (!storeUrl) redirect(withMsg(back, 'Use the bridge store’s .myshopify.com address, e.g. elmamsflow-bridge.myshopify.com', 'err'));
+  if (!token || !apiSecret) redirect(withMsg(back, 'Paste the Admin API access token and the API secret key.', 'err'));
+  const secrets: ShopifySecrets = { mode: 'token', token, api_secret: apiSecret };
+  let name = '';
+  try {
+    name = (await shopifyConnect(storeUrl!, secrets)).name;
+  } catch (e) {
+    redirect(withMsg(back, (e as Error).message, 'err'));
+  }
+  const admin = supabaseAdmin();
+  const { data: ownerOrg } = await admin.from('organizations').select('id').eq('kind', 'owner').limit(1).maybeSingle();
+  if (!ownerOrg) redirect(withMsg(back, 'Your company workspace wasn’t found.', 'err'));
+  // Only one bridge at a time: an older one is switched off.
+  await admin.from('integrations').update({ status: 'paused' }).eq('role', 'bridge').neq('store_url', storeUrl!);
+  const { data: row, error } = await admin.from('integrations').upsert({
+    org_id: ownerOrg!.id, kind: 'shopify', role: 'bridge', store_url: storeUrl!, name, status: 'active', secret_enc: seal(secrets), token_enc: null, token_expires_at: null,
+    settings: { auto_import: false, push_tracking: false }, last_error: null, created_by: ctx!.userId,
+  }, { onConflict: 'org_id,kind,store_url' }).select('*').single();
+  if (error || !row) redirect(withMsg(back, error?.message ?? 'Could not save the connection.', 'err'));
+  const i = row as Integration;
+  await logEvent(i, 'connected', `Bridge store connected: ${name}`);
+  await logActivity(admin, ctx!.userId, null, 'store_connected', `Bridge store · ${name}`);
+  const hookErrors = await registerWebhooks(i).catch((e) => [(e as Error).message]);
+  if (hookErrors.length) await admin.from('integrations').update({ last_error: hookErrors[0].slice(0, 500) }).eq('id', i.id);
+  redirect(withMsg(back, hookErrors.length ? `${name} is connected, but updates from the warehouse aren’t set up yet: ${hookErrors[0]}` : `${name} is connected as the bridge store. Give each client a client code, then send its products.`, hookErrors.length ? 'warn' : 'ok'));
+}
+
+export async function bridgeSyncNow() {
+  const ctx = await getCtx();
+  if (!ctx?.staffRole || !ctx.can('integrations.manage')) redirect(withMsg('/integrations#bridge', 'You don’t have access to that.', 'err'));
+  try {
+    const r = await sweepOrders();
+    redirect(withMsg('/integrations#bridge', `Done: ${r.bridgeChecked} order${r.bridgeChecked === 1 ? '' : 's'} checked at the warehouse, ${r.synced} brought up to date.`));
+  } catch (e) {
+    if ((e as { digest?: string }).digest?.startsWith('NEXT_REDIRECT')) throw e;
+    redirect(withMsg('/integrations#bridge', (e as Error).message, 'err'));
+  }
+}
+
+export async function sendClientProducts(fd: FormData) {
+  const ctx = await getCtx();
+  const org = str(fd, 'org_id');
+  const back = str(fd, 'back').startsWith('/') ? str(fd, 'back') : `/clients/${org}`;
+  if (!ctx?.staffRole || !ctx.can('integrations.manage')) redirect(withMsg(back, 'You don’t have access to that.', 'err'));
+  const r = await syncClientProducts(org).catch((e) => ({ error: (e as Error).message }));
+  if ('error' in r) redirect(withMsg(back, r.error as string, 'err'));
+  redirect(withMsg(back, r.errors.length ? `${r.done} product${r.done === 1 ? '' : 's'} in the bridge store; ${r.errors.length} failed: ${r.errors[0]}` : `${r.done} product${r.done === 1 ? '' : 's'} in the bridge store. The partner must hold the stock under exactly these SKUs.`, r.errors.length ? 'warn' : 'ok'));
+}
+
+export async function disconnectBridge() {
+  const ctx = await getCtx();
+  if (!ctx?.staffRole || ctx.staffRole !== 'owner') redirect(withMsg('/integrations#bridge', 'Only the owner can do that.', 'err'));
+  const b = await loadBridge();
+  if (b) await supabaseAdmin().from('integrations').update({ status: 'paused' }).eq('id', b.id);
+  redirect(withMsg('/integrations#bridge', 'The bridge store is switched off. New orders stay here until you connect it again.'));
+}
+
+export const bridgeScopes = async () => BRIDGE_SCOPES;

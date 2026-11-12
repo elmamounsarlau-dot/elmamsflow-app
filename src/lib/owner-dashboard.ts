@@ -71,7 +71,7 @@ function doorToDoor(rows: { shipped_at: string | null; delivered_at: string | nu
 }
 
 /** "Tracking → Problems": in transit with a carrier problem, a tracking error, or no tracking number. */
-const problemFilter = `tracking_status.in.(${CARRIER_PROBLEM.join(',')}),tracking_error.not.is.null,tracking.is.null`;
+const problemFilter = `shipment_status.in.(${CARRIER_PROBLEM.join(',')}),tracking.is.null`;
 
 // ======================================================================
 // Owner / team
@@ -165,6 +165,11 @@ export async function ownerDashboard(ctx: Ctx) {
   const late24 = speed.ages[2] + speed.ages[3];
   const work = ctx.can('orders.warehouse') || ctx.can('orders.hold');
   const pending = (links.data ?? []) as unknown[];
+  const adm = supabaseAdmin();
+  const [topups, stuck] = await Promise.all([
+    money ? adm.from('wallet_entries').select('id', { count: 'exact', head: true }).eq('kind', 'topup').eq('status', 'pending') : Promise.resolve({ count: 0 }),
+    work ? adm.from('orders').select('id', { count: 'exact', head: true }).or(`bridge_error.not.is.null,and(bridge_sent_at.lt.${new Date(Date.now() - 48 * 3600e3).toISOString()},status.in.(new,packed))`) : Promise.resolve({ count: 0 }),
+  ]);
   const actions = ([
     work && { key: 'pack', n: pipe.toPack, tone: 'blue', label: `Orders to pack${speed.oldestH !== null ? ` · oldest ${speed.oldestH} h` : ''}`, href: '/orders?c=all&s=new' },
     work && { key: 'late', n: late24, tone: 'err', label: 'Waiting over 24 h', href: '/orders?c=all&s=new&older=24' },
@@ -176,6 +181,8 @@ export async function ownerDashboard(ctx: Ctx) {
     ctx.can('integrations.manage') && { key: 'stores', n: storeErr, tone: 'err', label: 'Store connection errors', href: '/integrations' },
     money && { key: 'drafts', n: ms!.drafts.n, tone: 'warn', label: 'Invoice drafts to review & issue', href: '/invoices?t=draft' },
     money && { key: 'overdue', n: ms!.overdue.n, tone: 'err', label: 'Invoices overdue to chase', href: '/invoices?t=overdue' },
+    money && { key: 'topups', n: topups.count ?? 0, tone: 'blue', label: 'Top-ups to confirm (check your account)', href: '/invoices/topups' },
+    work && { key: 'partner', n: stuck.count ?? 0, tone: 'err', label: 'At the warehouse partner over 48 h, or not sent', href: '/integrations#bridge' },
     (owner || ctx.staffRole === 'manager') && { key: 'links', n: pending.length, tone: 'blue', label: 'People who haven’t signed in yet', href: '#pending' },
   ] as (Action | false)[]).filter((x): x is Action => !!x);
 

@@ -699,3 +699,51 @@ select t.denied('b2b: a client cannot add a B2B client', $q$insert into public.b
 select t.login('00000000-0000-0000-0000-0000000000b2');
 select t.ok('b2b: a client finance role never sees B2B payments', (select count(*) = 0 from public.b2b_payments));
 reset role;
+
+-- =====================================================================
+-- 0020: prepaid balance, client codes, the partner moving orders
+-- =====================================================================
+reset role;
+insert into public.wallet_entries (org_id, kind, amount, currency, status, ref) values
+  ('11111111-1111-1111-1111-111111111111', 'topup', 200, 'USD', 'confirmed', 'A-TOP-1'),
+  ('11111111-1111-1111-1111-111111111111', 'topup', 50, 'USD', 'pending', 'A-TOP-2'),
+  ('22222222-2222-2222-2222-222222222222', 'topup', 999, 'USD', 'confirmed', 'B-TOP-1');
+select t.ok('wallet: balance counts confirmed money only', public.wallet_balance('11111111-1111-1111-1111-111111111111') = 200);
+select t.raises('wallet: a top-up is money in', $q$insert into public.wallet_entries (org_id, kind, amount, currency) values ('11111111-1111-1111-1111-111111111111', 'topup', -5, 'USD')$q$);
+select t.raises('wallet: an order charge is money out', $q$insert into public.wallet_entries (org_id, kind, amount, currency) values ('11111111-1111-1111-1111-111111111111', 'charge', 5, 'USD')$q$);
+select t.raises('wallet: only top-ups can wait for confirmation', $q$insert into public.wallet_entries (org_id, kind, amount, currency, status) values ('11111111-1111-1111-1111-111111111111', 'adjust', 5, 'USD', 'pending')$q$);
+select t.raises('wallet: a reference is used once', $q$insert into public.wallet_entries (org_id, kind, amount, currency, ref) values ('11111111-1111-1111-1111-111111111111', 'topup', 5, 'USD', 'A-TOP-1')$q$);
+select t.raises('client code: 2–6 letters or digits starting with a letter', $q$update public.organizations set client_code = 'to-f' where id = '11111111-1111-1111-1111-111111111111'$q$);
+select t.works('client code: a valid code', $q$update public.organizations set client_code = 'TOF' where id = '11111111-1111-1111-1111-111111111111'$q$);
+select t.raises('client code: two clients never share one', $q$update public.organizations set client_code = 'TOF' where id = '22222222-2222-2222-2222-222222222222'$q$);
+insert into public.orders (id, org_id, customer, address, country, status, hold_reason) values
+  ('0c000000-0000-0000-0000-0000000000b1', '11111111-1111-1111-1111-111111111111', 'Wallet test', '1 Rue', 'FR', 'on_hold', 'Balance: top up your balance so this order can ship'),
+  ('0c000000-0000-0000-0000-0000000000b2', '11111111-1111-1111-1111-111111111111', 'Partner test', '1 Rue', 'FR', 'on_hold', 'Warehouse: paused this order');
+insert into public.order_items (order_id, product_id, qty) values ('0c000000-0000-0000-0000-0000000000b2', 'a0000000-0000-0000-0000-000000000002', 1);
+select t.ok('hold: a balance hold is its own kind', (select hold_kind = 'balance' from public.orders where id = '0c000000-0000-0000-0000-0000000000b1'));
+select t.ok('hold: a warehouse pause is its own kind', (select hold_kind = 'partner' from public.orders where id = '0c000000-0000-0000-0000-0000000000b2'));
+select t.works('partner: the server moves an order (shipped, with tracking)', $q$select public.partner_set_status('0c000000-0000-0000-0000-0000000000b2', 'shipped', 'YunExpress', 'YT 123-456')$q$);
+select t.ok('partner: … status, carrier and clean tracking saved', (select status = 'shipped' and carrier = 'YunExpress' and tracking = 'YT123456' and shipped_at is not null from public.orders where id = '0c000000-0000-0000-0000-0000000000b2'));
+select t.ok('partner: … and the units left the warehouse stock once', (select count(*) = 1 from public.stock_moves where ref = (select number from public.orders where id = '0c000000-0000-0000-0000-0000000000b2') and type = 'order'));
+select t.ok('partner: a shipped order is never pulled back by a late hold', (select public.partner_set_status('0c000000-0000-0000-0000-0000000000b2', 'on_hold') = 'already_shipped'));
+select t.raises('partner: unknown statuses are refused', $q$select public.partner_set_status('0c000000-0000-0000-0000-0000000000b1', 'lost')$q$);
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000b1');
+select t.ok('wallet: a client admin sees its own balance movements', (select count(*) = 2 from public.wallet_entries));
+select t.ok('wallet: never another client''s', (select count(*) = 0 from public.wallet_entries where org_id = '22222222-2222-2222-2222-222222222222'));
+select t.denied('wallet: a client cannot credit itself', $q$insert into public.wallet_entries (org_id, kind, amount, currency) values ('11111111-1111-1111-1111-111111111111', 'adjust', 1000, 'USD')$q$);
+select t.works('wallet: a client cannot confirm its own top-up (nothing changes)', $q$update public.wallet_entries set status = 'confirmed' where ref = 'A-TOP-2'$q$);
+select t.ok('wallet: … and it is still waiting', (select status = 'pending' from public.wallet_entries where ref = 'A-TOP-2'));
+select t.ok('wallet: a client sees where to send top-ups', (select count(*) = 1 from public.wallet_settings));
+select t.raises('partner: a client cannot move orders as the warehouse', $q$select public.partner_set_status('00000000-0000-0000-0000-000000000000'::uuid, 'shipped')$q$);
+select t.login('00000000-0000-0000-0000-0000000000b3');
+select t.ok('wallet: client support role does not see the balance', (select count(*) = 0 from public.wallet_entries));
+select t.login('00000000-0000-0000-0000-0000000000c1');
+select t.ok('wallet: client B sees only its own', (select count(*) = 1 from public.wallet_entries));
+select t.login('00000000-0000-0000-0000-0000000000a3');
+select t.ok('wallet: the warehouse does not see balances', (select count(*) = 0 from public.wallet_entries));
+select t.raises('partner: even our warehouse role cannot call the partner function', $q$select public.partner_set_status('00000000-0000-0000-0000-000000000000'::uuid, 'shipped')$q$);
+select t.login('00000000-0000-0000-0000-0000000000a1');
+select t.ok('wallet: the owner sees every balance', (select count(*) = 3 from public.wallet_entries));
+reset role;
+

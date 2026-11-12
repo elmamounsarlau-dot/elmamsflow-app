@@ -17,6 +17,11 @@ import type { AccessLink } from '@/lib/invite';
 import { Fragment } from 'react';
 import { inviteClientMember, memberLink, toggleClient, updateClient } from '../actions';
 import { viewAs } from '../../view-as';
+import { BalanceCards, EntriesTable, walletEntries } from '../../invoices/wallet';
+import { adjustWalletAction, savePartnerSettings } from '../../invoices/wallet-actions';
+import { sendClientProducts } from '../../integrations/actions';
+import { supabaseAdmin } from '@/lib/supabase/admin';
+import { bridgeSkuOf } from '@/lib/integrations/bridge';
 import { getWarehouses, shippingWarehouses } from '@/lib/warehouses';
 
 export default async function ClientPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string>> }) {
@@ -44,6 +49,12 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
   const groups = [...new Set(RATE_FIELDS.map((f) => f.group))];
   const linkFor = new Map(((links ?? []) as AccessLink[]).map((l) => [l.user_id, l]));
   const back = `/clients/${id}`;
+  const [moves, { data: prods }, { data: bridge }] = billingOn ? await Promise.all([
+    walletEntries(id, 15),
+    supabaseAdmin().from('products').select('sku, name, bridge_sku, bridge_error').eq('org_id', id).eq('kind', 'item').order('sku'),
+    supabaseAdmin().from('integrations').select('id').eq('role', 'bridge').eq('status', 'active').maybeSingle(),
+  ]) : [[], { data: null }, { data: null }];
+  const skuList = org.client_code ? (prods ?? []).map((p) => `${bridgeSkuOf(org.client_code, p.sku)}\t${p.name}`).join('\n') : '';
   return (
     <>
       <Back href="/clients">All clients</Back>
@@ -131,6 +142,48 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
                   <span className="ep-small">Invoices are drafted automatically on the 1st. Need it now?</span>
                   <Submit className="ep-btn ep-btn--ghost">Create {monthBounds(lastMonth(tz)).label} invoice</Submit>
                 </form>
+              )}
+            </section>
+          )}
+          {billingOn && (
+            <section className="ep-card ep-card--team" id="partner">
+              <div className="ep-card-head"><h2>Warehouse partner &amp; payment</h2></div>
+              <TeamOnly />
+              <form action={savePartnerSettings} className="ep-form" style={{ marginTop: '.6rem' }}>
+                <input type="hidden" name="org" value={org.id} />
+                <div className="ep-row4">
+                  <label>Client code<input name="client_code" defaultValue={org.client_code ?? ''} maxLength={6} placeholder="e.g. TOF" style={{ textTransform: 'uppercase' }} /><small>SKU prefix at the warehouse partner. Empty = not shipped through the bridge.</small></label>
+                  <label>How they pay<select name="billing_mode" defaultValue={org.billing_mode ?? 'invoice'}><option value="prepaid">Prepaid</option><option value="invoice">Monthly invoice</option></select></label>
+                  <label>Credit allowed<input name="credit_limit" type="number" min={0} step="0.01" defaultValue={Number(org.credit_limit ?? 0)} /><small>How far below zero orders still ship</small></label>
+                  <label>Warn under<input name="low_balance" type="number" min={0} step="0.01" defaultValue={Number(org.low_balance ?? 100)} /><small>Low-balance warning</small></label>
+                </div>
+                <label>When we cancel one of their store orders<select name="cancel_refund" defaultValue={org.cancel_refund ? 'yes' : 'no'}><option value="no">Cancel only — they refund their customer themselves</option><option value="yes">Cancel and refund their customer in Shopify</option></select></label>
+                <div className="ep-form-foot"><Submit>Save</Submit></div>
+              </form>
+              {org.billing_mode === 'prepaid' && (
+                <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px dashed var(--line)' }}>
+                  <BalanceCards orgId={org.id} staff />
+                  <EntriesTable rows={moves} staff back={`/clients/${org.id}#partner`} />
+                  <form action={adjustWalletAction} className="ep-inline" style={{ marginTop: '.8rem', gap: '.5rem', flexWrap: 'wrap', alignItems: 'end' }}>
+                    <input type="hidden" name="org" value={org.id} />
+                    <label className="ep-small">Correction<input name="amount" type="number" step="0.01" placeholder="+50 or −20" style={{ width: '8rem' }} required /></label>
+                    <label className="ep-small" style={{ flex: 1, minWidth: '12rem' }}>Reason<input name="note" maxLength={300} required placeholder="e.g. bank fee refunded" /></label>
+                    <Submit className="ep-btn ep-btn--ghost">Adjust balance</Submit>
+                  </form>
+                </div>
+              )}
+              {org.client_code && (
+                <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px dashed var(--line)' }}>
+                  <p className="ep-small" style={{ marginBottom: '.5rem' }}>The partner must hold this client’s stock under exactly these SKUs ({(prods ?? []).length}):</p>
+                  <pre className="ep-small ep-mono" style={{ maxHeight: '10rem', overflow: 'auto', background: 'var(--soft, #f4f6fb)', padding: '.6rem .8rem', borderRadius: '8px' }}>{skuList || 'No products yet.'}</pre>
+                  <div className="ep-inline" style={{ gap: '.5rem', flexWrap: 'wrap', marginTop: '.5rem' }}>
+                    {skuList && <CopyLink value={skuList} label="Copy SKU list for ST" />}
+                    {bridge ? (
+                      <form action={sendClientProducts}><input type="hidden" name="org_id" value={org.id} /><input type="hidden" name="back" value={`/clients/${org.id}#partner`} /><Submit className="ep-btn ep-btn--ghost">Send products to the bridge store</Submit></form>
+                    ) : <span className="ep-small ep-muted">Connect the bridge store in Stores first.</span>}
+                  </div>
+                  {(prods ?? []).some((p) => p.bridge_error) && <p className="ep-note ep-note--warn" style={{ marginTop: '.5rem' }}>Not in the bridge store: {(prods ?? []).filter((p) => p.bridge_error).map((p) => `${p.sku} (${p.bridge_error})`).slice(0, 4).join(' · ')}</p>}
+                </div>
               )}
             </section>
           )}

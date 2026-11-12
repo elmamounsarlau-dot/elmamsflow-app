@@ -9,6 +9,8 @@ import { CATEGORY, computeCharges, getRateCard, INVOICE_STATUS, invoiceTz, isOve
 import { Arrow, Badge, Empty } from '@/components/ui';
 import { Submit } from '@/components/client';
 import { createAllInvoices } from './actions';
+import { BalanceCards, EntriesTable, walletEntries } from './wallet';
+import { balanceOf } from '@/lib/wallet';
 
 export const metadata = { title: 'Invoices' };
 
@@ -54,6 +56,9 @@ export default async function Invoices({ searchParams }: { searchParams: Promise
     }
   }
 
+  const prepaid = ctx.org ? (await balanceOf(ctx.org.id)).prepaid : false;
+  const moves = prepaid && ctx.org ? await walletEntries(ctx.org.id, 8) : [];
+
   const TABS: [string, string, Inv[]][] = [
     ['all', 'All', all],
     ...(staff ? [['draft', 'Drafts', drafts] as [string, string, Inv[]]] : []),
@@ -85,6 +90,16 @@ export default async function Invoices({ searchParams }: { searchParams: Promise
           )}
         </div>
       </div>
+
+      {prepaid && ctx.org && (
+        <>
+          <BalanceCards orgId={ctx.org.id} />
+          <section className="ep-card ep-card--flush" style={{ marginBottom: '1.2rem' }}>
+            <div className="ep-card-head ep-pad"><h2>Balance movements</h2><Link className="ep-link ep-small" href="/invoices/balance">All history <Arrow /></Link></div>
+            <EntriesTable rows={moves} />
+          </section>
+        </>
+      )}
 
       <div className="ep-sum">
         <Link href={href('open')} className="ep-sum-card">

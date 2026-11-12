@@ -1,9 +1,10 @@
 import 'server-only';
 import { open } from './crypto';
-import { saveToken, tracking17, type ExtOrder, type ExtProduct, type Integration } from './core';
+import { saveToken, type ExtOrder, type ExtProduct, type Integration } from './core';
 
 export const SHOPIFY_API = '2026-07';
-export const SHOPIFY_SCOPES = ['read_orders', 'read_products', 'read_merchant_managed_fulfillment_orders', 'write_merchant_managed_fulfillment_orders'];
+// write_orders: cancel an order we cancelled · fulfillments: show the parcel's journey (in transit, delivered) in Shopify.
+export const SHOPIFY_SCOPES = ['read_orders', 'write_orders', 'read_products', 'read_fulfillments', 'write_fulfillments', 'read_merchant_managed_fulfillment_orders', 'write_merchant_managed_fulfillment_orders'];
 
 /** Two ways in: a Dev Dashboard app (Client ID + secret, token renewed every 24 h) or an older custom app's Admin API token. */
 export type ShopifySecrets = { mode: 'client'; client_id: string; client_secret: string } | { mode: 'token'; token: string; api_secret: string };
@@ -72,10 +73,10 @@ export async function shopifyConnect(shop: string, s: ShopifySecrets) {
 
 const TOPICS = ['ORDERS_CREATE', 'ORDERS_UPDATED', 'ORDERS_CANCELLED'];
 
-export async function shopifyRegisterWebhooks(i: Integration, url: string) {
+export async function shopifyRegisterWebhooks(i: Integration, url: string, topics: string[] = TOPICS) {
   const token = await shopifyToken(i);
   const errors: string[] = [];
-  for (const topic of TOPICS) {
+  for (const topic of topics) {
     // Newer API versions take `uri`; fall back to `callbackUrl` for older behaviour.
     for (const field of ['uri', 'callbackUrl']) {
       try {
@@ -146,20 +147,6 @@ export async function shopifyOrder(i: Integration, gid: string) {
   const token = await shopifyToken(i);
   const d = await gql<{ order: ShopOrder | null }>(i.store_url, token, `query($id: ID!) { order(id: $id) { ${ORDER_FIELDS} } }`, { id: gid });
   return d.order ? shopifyToExt(d.order) : null;
-}
-
-/** Mark the order fulfilled in Shopify with the tracking number; Shopify emails the customer. */
-export async function shopifyFulfil(i: Integration, gid: string, carrier: string | null, tracking: string) {
-  const token = await shopifyToken(i);
-  const d = await gql<{ order: { fulfillmentOrders: { nodes: { id: string; status: string }[] } } | null }>(i.store_url, token,
-    `query($id: ID!) { order(id: $id) { fulfillmentOrders(first: 10) { nodes { id status } } } }`, { id: gid });
-  const fos = (d.order?.fulfillmentOrders.nodes ?? []).filter((f) => ['OPEN', 'IN_PROGRESS', 'SCHEDULED'].includes(f.status));
-  if (!fos.length) return 'already';
-  const r = await gql<{ fulfillmentCreate: { userErrors: { message: string }[] } }>(i.store_url, token,
-    `mutation($f: FulfillmentInput!) { fulfillmentCreate(fulfillment: $f) { fulfillment { id } userErrors { message } } }`,
-    { f: { notifyCustomer: true, lineItemsByFulfillmentOrder: fos.map((f) => ({ fulfillmentOrderId: f.id })), trackingInfo: { company: carrier || 'Other', number: tracking, url: tracking17(tracking) } } });
-  if (r.fulfillmentCreate.userErrors.length) throw new Error(r.fulfillmentCreate.userErrors.map((e) => e.message).join('; '));
-  return 'done';
 }
 
 const GRAMS: Record<string, number> = { GRAMS: 1, KILOGRAMS: 1000, POUNDS: 453.592, OUNCES: 28.3495 };

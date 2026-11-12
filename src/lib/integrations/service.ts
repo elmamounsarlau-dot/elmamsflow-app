@@ -1,14 +1,16 @@
 import 'server-only';
 import { supabaseAdmin } from '../supabase/admin';
 import { siteUrl } from '../format';
-import { importOrder, syncShipTo, KIND_LABEL, loadIntegration, logEvent, markError, type ExtOrder, type ExtProduct, type Integration } from './core';
-import { shopifyFulfil, shopifyOpenOrders, shopifyOrder, shopifyProducts, shopifyRegisterWebhooks } from './shopify';
-import { wooCall, wooFulfil, wooOpenOrders, wooProducts, wooRegisterWebhooks, wooToExt } from './woocommerce';
+import { importOrder, syncShipTo, loadIntegration, logEvent, markError, type ExtOrder, type ExtProduct, type Integration } from './core';
+import { shopifyOpenOrders, shopifyOrder, shopifyProducts, shopifyRegisterWebhooks } from './shopify';
+import { wooCall, wooOpenOrders, wooProducts, wooRegisterWebhooks, wooToExt } from './woocommerce';
+import { BRIDGE_TOPICS } from './bridge';
+import { afterOrderChange } from './flow';
 
 export const webhookUrl = (i: Pick<Integration, 'id' | 'kind'>) => `${siteUrl()}/api/integrations/${i.kind}/${i.id}`;
 
 export async function registerWebhooks(i: Integration) {
-  const errs = i.kind === 'shopify' ? await shopifyRegisterWebhooks(i, webhookUrl(i)) : await wooRegisterWebhooks(i, webhookUrl(i));
+  const errs = i.kind === 'shopify' ? await shopifyRegisterWebhooks(i, webhookUrl(i), i.role === 'bridge' ? BRIDGE_TOPICS : undefined) : await wooRegisterWebhooks(i, webhookUrl(i));
   if (errs.length) await logEvent(i, 'error', `Automatic order updates could not be fully set up: ${errs.join(' | ')}`);
   return errs;
 }
@@ -23,15 +25,17 @@ export async function syncOrders(i: Integration, since: Date) {
     await markError(i, (e as Error).message);
     throw e;
   }
+  const touched: string[] = [];
   for (const o of list) {
     try {
-      const r = await importOrder(i, o);
+      const r = await importOrder(i, o, touched);
       counts[r === 'exists' ? 'existing' : r]++;
     } catch (e) {
       counts.failed++;
       await logEvent(i, 'error', `${o.ref}: ${(e as Error).message}`);
     }
   }
+  await afterOrderChange(touched);
   await supabaseAdmin().from('integrations').update({ last_sync_at: new Date().toISOString(), ...(counts.failed ? {} : { last_error: null, status: 'active' }) }).eq('id', i.id);
   return counts;
 }
@@ -65,33 +69,15 @@ export async function importProducts(i: Integration) {
   return { found: list.length, added: rows.length, linked };
 }
 
-/** Called when the warehouse ships an order: send the tracking number back to the store. */
-export async function pushTracking(orderId: string) {
-  const admin = supabaseAdmin();
-  const { data: o } = await admin.from('orders').select('id, number, integration_id, external_id, carrier, tracking, pushed_at, status').eq('id', orderId).maybeSingle();
-  if (!o?.integration_id || !o.external_id || o.pushed_at || !o.tracking || !['shipped', 'delivered'].includes(o.status)) return null;
-  const i = await loadIntegration(o.integration_id);
-  if (!i || i.status === 'paused' || i.settings?.push_tracking === false) return null;
-  try {
-    if (i.kind === 'shopify') await shopifyFulfil(i, o.external_id, o.carrier, o.tracking);
-    else await wooFulfil(i, o.external_id, o.carrier, o.tracking);
-    await admin.from('orders').update({ pushed_at: new Date().toISOString(), push_error: null }).eq('id', o.id);
-    await logEvent(i, 'tracking_pushed', `#${o.number} → ${KIND_LABEL[i.kind]} (${o.tracking})`);
-    return 'ok';
-  } catch (e) {
-    const msg = (e as Error).message;
-    await admin.from('orders').update({ push_error: msg.slice(0, 300) }).eq('id', o.id);
-    await logEvent(i, 'error', `#${o.number}: tracking not sent — ${msg}`);
-    return msg;
-  }
-}
-
 /** One store order changed (from a webhook): import it, or cancel ours if it was cancelled. */
 export async function handleStoreOrder(i: Integration, ref: { shopifyGid?: string; woo?: ExtOrder }) {
   if (i.status === 'paused' || i.settings?.auto_import === false) return 'paused';
   const o = ref.shopifyGid ? await shopifyOrder(i, ref.shopifyGid) : ref.woo ?? null;
   if (!o) return 'missing';
-  return importOrder(i, o);
+  const touched: string[] = [];
+  const r = await importOrder(i, o, touched);
+  await afterOrderChange(touched);
+  return r;
 }
 
 /** Re-read an order's lines from the store (older imports didn't keep the store's product id). */
@@ -116,5 +102,7 @@ export async function refreshFromStore(orderId: string) {
   if (!i) return 'not_store' as const;
   const fresh = i.kind === 'shopify' ? await shopifyOrder(i, o.external_id) : wooToExt(await wooCall(i, `/orders/${encodeURIComponent(o.external_id)}`));
   if (!fresh) return 'missing' as const;
-  return (await syncShipTo(i, o.id, fresh)) ? ('updated' as const) : ('same' as const);
+  if (!(await syncShipTo(i, o.id, fresh))) return 'same' as const;
+  await afterOrderChange([`~${o.id}`]);
+  return 'updated' as const;
 }

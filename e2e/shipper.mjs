@@ -1,6 +1,6 @@
 // The Shipper role end to end, in the real UI (LOCAL stack + fake 17TRACK only):
-// sees only shipping, cannot ship without tracking + label, uploads the label, the order goes in transit,
-// tracking starts, and the label is visible to the team and the brand, never to another brand.
+// sees only shipping, cannot ship without tracking (label optional), uploads the label, the order goes in transit,
+// and the label is visible to the team and the brand, never to another brand.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { chromium } from 'playwright-core';
@@ -71,11 +71,10 @@ assert.ok(!options.includes('On hold') && !options.includes('Cancelled'), 'no ho
 await ready();
 await p.selectOption('#ship select[name=status]', 'shipped');
 await p.fill('#ship input[name=carrier]', 'YunExpress');
-await p.fill('#ship input[name=tracking]', 'YT2299000001');
 await save();
-await p.getByText(/Add the label photo/).waitFor();
+await p.getByText(/Add the tracking number/).waitFor();
 assert.equal(sql(`select status from orders where id = '${id}'`), 'packed');
-console.log('ok  cannot mark in transit without the label');
+console.log('ok  cannot mark in transit without the tracking number (the label is optional)');
 
 await ready();
 await p.selectOption('#ship select[name=status]', 'shipped');
@@ -92,10 +91,10 @@ await p.fill('#ship input[name=tracking]', 'YT2299000001');
 await p.setInputFiles('#ship input[name=label]', { name: 'label.png', mimeType: 'image/png', buffer: PNG });
 await save();
 await p.getByText(/Order saved/).waitFor();
-const row = sql(`select status || '|' || tracking || '|' || (label_path is not null) || '|' || (tracking_registered_at is not null) from orders where id = '${id}'`);
-assert.equal(row, 'shipped|YT2299000001|true|true');
+const row = sql(`select status || '|' || tracking || '|' || (label_path is not null) from orders where id = '${id}'`);
+assert.equal(row, 'shipped|YT2299000001|true');
 assert.ok(await p.locator('#label img').count(), 'label shown on the order');
-console.log('ok  shipped with tracking + label; 17TRACK tracking started');
+console.log('ok  shipped with tracking + label');
 
 const get = async (page) => page.request.get(`${BASE}/orders/${id}/label`).then((r) => [r.status(), r.headers()['content-type']]);
 assert.deepEqual(await get(p), [200, 'image/png']);

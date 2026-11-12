@@ -19,7 +19,7 @@ const TZ = 'Asia/Shanghai';
 const DAYS = 30;
 
 type Lite = { id: string; status: string; created_at: string; shipped_at: string | null; delivered_at: string | null; country: string };
-type Moving = { id: string; number: string; city: string | null; country: string; tracking_status: string | null; tracking_last_event: string | null; tracking_last_location: string | null; tracking_last_event_at: string | null; shipped_at: string | null; tracking_eta: string | null };
+type Moving = { id: string; number: string; city: string | null; country: string; shipment_status: string | null; carrier: string | null; shipped_at: string | null };
 
 /** The brand's home: one long, calm page that tells the story of their business with us, top to bottom. */
 export async function ClientHome({ ctx, welcome }: { ctx: Ctx; welcome: boolean }) {
@@ -36,8 +36,8 @@ export async function ClientHome({ ctx, welcome }: { ctx: Ctx; welcome: boolean 
     allRows<Lite>(() => sb.from('orders').select('id, status, created_at, shipped_at, delivered_at, country').eq('org_id', org.id)
       .or(`created_at.gte.${since},shipped_at.gte.${since},delivered_at.gte.${since}`).order('created_at').order('id')),
     allRows<{ id: string; status: string }>(() => sb.from('orders').select('id, status').eq('org_id', org.id).in('status', ['new', 'on_hold', 'packed', 'shipped']).order('id')),
-    sb.from('orders').select('id, number, city, country, tracking_status, tracking_last_event, tracking_last_location, tracking_last_event_at, shipped_at, tracking_eta')
-      .eq('org_id', org.id).eq('status', 'shipped').order('tracking_last_event_at', { ascending: false, nullsFirst: false }).limit(5),
+    sb.from('orders').select('id, number, city, country, shipment_status, carrier, shipped_at')
+      .eq('org_id', org.id).eq('status', 'shipped').order('shipped_at', { ascending: false, nullsFirst: false }).limit(5),
     sb.from('inbounds').select('id, ref, status, eta, supplier, inbound_items(expected)').eq('org_id', org.id).neq('status', 'received').order('eta', { ascending: true, nullsFirst: false }).limit(4),
     getNotices(ctx),
     sb.from('organizations').select('legal_name, billing_address, invoice_email, vat_number, logo_path').eq('id', org.id).maybeSingle(),
@@ -192,9 +192,9 @@ export async function ClientHome({ ctx, welcome }: { ctx: Ctx; welcome: boolean 
                 {((moving.data ?? []) as Moving[]).map((o) => (
                   <li key={o.id}>
                     <Link href={`/orders/${o.id}#carrier`}>
-                      <span className={`ep-ch-dot ep-ch-dot--${CARRIER_STATUS[o.tracking_status ?? '']?.[1] ?? 'go'}`} aria-hidden="true" />
-                      <span><b>#{o.number} · {[o.city, countryName(o.country)].filter(Boolean).join(', ')}</b><small>{o.tracking_last_event ?? 'Handed to the carrier'}{o.tracking_last_location ? ` · ${o.tracking_last_location}` : ''}</small></span>
-                      <em>{o.tracking_last_event_at ? fmtDate(o.tracking_last_event_at) : fmtDate(o.shipped_at)}</em>
+                      <span className={`ep-ch-dot ep-ch-dot--${CARRIER_STATUS[o.shipment_status ?? '']?.[1] ?? 'go'}`} aria-hidden="true" />
+                      <span><b>#{o.number} · {[o.city, countryName(o.country)].filter(Boolean).join(', ')}</b><small>{CARRIER_STATUS[o.shipment_status ?? '']?.[0] ?? 'Handed to the carrier'}{o.carrier ? ` · ${o.carrier}` : ''}</small></span>
+                      <em>{fmtDate(o.shipped_at)}</em>
                     </Link>
                   </li>
                 ))}

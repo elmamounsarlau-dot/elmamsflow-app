@@ -131,41 +131,47 @@ test('invoice month: UTC by default, China time when chosen (EM-025)', async () 
   assert.equal(lastMonth('UTC', new Date('2026-01-15T00:00:00Z')), '2025-12');
 });
 
-test('17TRACK: push signature must match the API key (raw body form and event/data form)', async () => {
-  const { validSignature } = await import('../src/lib/track17');
-  const { createHash } = await import('node:crypto');
-  const key = 'test-17track-key-0123456789';
-  const body = '{"event":"TRACKING_UPDATED","data":{"number":"YT1234567890","tag":"x"}}';
-  const sha = (s: string) => createHash('sha256').update(s).digest('hex');
-  assert.equal(validSignature(body, sha(`${body}/${key}`), key), true);
-  assert.equal(validSignature(body, sha(`TRACKING_UPDATED/{"number":"YT1234567890","tag":"x"}/${key}`), key), true);
-  assert.equal(validSignature(body, sha(`${body}/wrong-key-0000000000`), key), false);
-  assert.equal(validSignature(body.replace('YT', 'XX'), sha(`${body}/${key}`), key), false); // body changed after signing
-  assert.equal(validSignature(body, null, key), false);
-  assert.equal(validSignature(body, 'not-hex', key), false);
-  assert.equal(validSignature(body, sha(`${body}/${key}`), null), false); // not configured → refuse
+test('carrier links: the warehouse’s link first, then the carrier’s page, never 17track', async () => {
+  const { trackingLink } = await import('../src/lib/carriers');
+  assert.equal(trackingLink('YunExpress', 'YT123'), 'https://www.yuntrack.com/parcelTracking?id=YT123');
+  assert.equal(trackingLink('4PX', 'AB 1'), 'https://track.4px.com/#/result/0/AB%201');
+  assert.equal(trackingLink('YunExpress', 'YT1', 'https://t.yuntrack.com/x'), 'https://t.yuntrack.com/x');
+  assert.equal(trackingLink('Other', 'ZZ9', 'https://t.17track.net/en#nums=ZZ9'), 'https://parcelsapp.com/en/tracking/ZZ9');
+  assert.equal(trackingLink('YunExpress', 'YT1', 'javascript:alert(1)'), 'https://www.yuntrack.com/parcelTracking?id=YT1'); // only https links are kept
+  assert.equal(trackingLink(null, null), null);
 });
 
-test('17TRACK: tracking info is normalised (status whitelist, newest event first, dates in UTC)', async () => {
-  const { normalize } = await import('../src/lib/track17');
-  const n = normalize({
-    latest_status: { status: 'Delivered', sub_status: 'Delivered_Other' },
-    latest_event: { time_utc: '2026-10-20T08:15:00Z', description: 'Delivered, in mailbox', location: 'Paris, FR' },
-    time_metrics: { estimated_delivery_date: { from: '2026-10-19T00:00:00Z', to: '2026-10-21T00:00:00Z' } },
-    tracking: { providers: [{ events: [
-      { time_utc: '2026-10-15T02:00:00Z', description: 'Departed from Guangzhou', location: 'Guangzhou, CN' },
-      { time_utc: '2026-10-20T08:15:00Z', description: 'Delivered, in mailbox', location: 'Paris, FR' },
-      { time_utc: '2026-10-18T10:00:00Z', description: '   ' },
-    ] }] },
-  });
-  assert.equal(n.status, 'Delivered');
-  assert.equal(n.last_event, 'Delivered, in mailbox');
-  assert.equal(n.last_event_at, '2026-10-20T08:15:00.000Z');
-  assert.equal(n.eta, '2026-10-21');
-  assert.equal(n.events.length, 2);                       // blank event dropped
-  assert.equal(n.events[0].description, 'Delivered, in mailbox');
-  assert.equal(normalize({ latest_status: { status: 'DROP TABLE' } }).status, null); // unknown status never stored
-  assert.equal(normalize(null).events.length, 0);
+test('bridge: what the partner did in the bridge store becomes our status', async () => {
+  const { readBridgeState } = await import('../src/lib/integrations/bridge');
+  const base = { id: 'gid://shopify/Order/1', cancelledAt: null, fulfillmentOrders: { nodes: [{ status: 'OPEN' }] }, fulfillments: [] };
+  assert.equal(readBridgeState(base).status, 'new');
+  assert.equal(readBridgeState({ ...base, fulfillmentOrders: { nodes: [{ status: 'ON_HOLD' }] } }).status, 'on_hold');
+  assert.equal(readBridgeState({ ...base, fulfillmentOrders: { nodes: [{ status: 'IN_PROGRESS' }] } }).status, 'packed');
+  assert.equal(readBridgeState({ ...base, cancelledAt: '2026-11-12T00:00:00Z' }).status, 'cancelled');
+  const shipped = readBridgeState({ ...base, fulfillmentOrders: { nodes: [{ status: 'CLOSED' }] }, fulfillments: [
+    { status: 'CANCELLED', displayStatus: null, createdAt: '2026-11-10T00:00:00Z', trackingInfo: [{ company: 'Old', number: 'OLD1', url: null }] },
+    { status: 'SUCCESS', displayStatus: 'IN_TRANSIT', createdAt: '2026-11-11T00:00:00Z', trackingInfo: [{ company: 'YunExpress', number: 'YT9', url: 'https://www.yuntrack.com/parcelTracking?id=YT9' }] },
+  ] });
+  assert.equal(shipped.status, 'shipped');
+  assert.equal('tracking' in shipped && shipped.tracking, 'YT9');            // a cancelled fulfilment is ignored
+  assert.equal('shipment' in shipped && shipped.shipment, 'IN_TRANSIT');
+  const done = readBridgeState({ ...base, fulfillments: [{ status: 'SUCCESS', displayStatus: 'DELIVERED', createdAt: '2026-11-11T00:00:00Z', trackingInfo: [{ company: 'X', number: 'N1', url: null }] }] });
+  assert.equal(done.status, 'delivered');
+  const odd = readBridgeState({ ...base, fulfillments: [{ status: 'SUCCESS', displayStatus: 'DROP TABLE', createdAt: '2026-11-11T00:00:00Z', trackingInfo: [] }] });
+  assert.equal('shipment' in odd && odd.shipment, null);                       // unknown journey values never stored
+  assert.equal(readBridgeState({ ...base, fulfillmentOrders: { nodes: [{ status: 'CANCELLED' }] } }).status, 'cancelled');
+});
+
+test('prepaid: what one order costs at the client’s prices', async () => {
+  const { orderCharge } = await import('../src/lib/wallet');
+  const rates = { org_id: 'x', currency: 'USD' as const, pick_pack_order: 1.2, pick_pack_extra_unit: 0.3, packaging_order: 0.5, shipping_base: 2, shipping_per_kg: 6.5, ddp_order: 1, receiving_carton: 0, receiving_unit: 0, storage_unit_month: 0, monthly_minimum: 0, payment_terms_days: 14 };
+  const o = { id: 'o', number: '1', org_id: 'x', service: 'ddp', weight_g: 0, order_items: [{ qty: 2, products: { weight_g: 450 } }, { qty: 1, products: { weight_g: 300 } }] };
+  const c = orderCharge(o, rates);
+  // 3 units, 1.2 kg → 2 kg billed: 1.2 + 2×0.3 + 0.5 + 2 + 2×6.5 + 1 = 18.3
+  assert.equal(c.kg, 2);
+  assert.equal(c.amount, 18.3);
+  assert.equal(orderCharge({ ...o, weight_g: 900 }, rates).kg, 1);             // the weighed parcel wins
+  assert.equal(orderCharge({ ...o, service: 'express' }, rates).amount, 17.3);
 });
 
 test('orders CSV: rows group into orders, countries resolve, bad rows are flagged', async () => {

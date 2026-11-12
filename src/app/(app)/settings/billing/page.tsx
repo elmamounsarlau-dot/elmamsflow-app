@@ -6,6 +6,8 @@ import { siteUrl } from '@/lib/format';
 import { Back } from '@/components/ui';
 import { CopyLink, Submit } from '@/components/client';
 import { saveBillingSettings } from '../../invoices/actions';
+import { saveTopupSettings } from '../../invoices/wallet-actions';
+import { walletSettings } from '@/lib/wallet';
 
 export const metadata = { title: 'Billing details' };
 
@@ -14,6 +16,7 @@ export default async function BillingSettings() {
   if (!ctx.staffRole || !ctx.can('billing.manage')) redirect('/settings');
   const { data: s } = await supabaseAdmin().from('billing_settings').select('*').eq('id', 1).maybeSingle();
   const card = stripeReady();
+  const w = await walletSettings();
   return (
     <>
       <Back href="/invoices">Invoices</Back>
@@ -60,6 +63,18 @@ export default async function BillingSettings() {
           <p className="ep-small ep-muted" style={{ marginTop: '1rem' }}>Paid invoices turn to Paid automatically. Bank transfers are recorded by your team with “Mark as paid”.</p>
         </section>
       </div>
+      <section className="ep-card" id="topup" style={{ marginTop: '1.2rem' }}>
+        <h2>Top-ups (prepaid clients)</h2>
+        <p className="ep-small ep-muted" style={{ marginBottom: '.8rem' }}>Shown on the clients’ Top up page. One payment method per block: the first line is its name, the next lines the details. Leave an empty line between methods.</p>
+        <form action={saveTopupSettings} className="ep-form">
+          <label>Ways to pay<textarea name="methods" rows={9} defaultValue={w.methods.map((m) => `${m.label}\n${m.details}`).join('\n\n')} placeholder={'Bank transfer (USD)\nAccount name …\nAccount number … · SWIFT …\n\nUSDT (TRC20)\nWallet address T…'} /></label>
+          <div className="ep-row2">
+            <label>Minimum top-up<input name="min_topup" type="number" min={0} step="0.01" defaultValue={w.min_topup} /></label>
+            <label>Note under the form (optional)<input name="note" maxLength={500} defaultValue={w.note ?? ''} placeholder="e.g. Transfers usually arrive in 1–2 working days." /></label>
+          </div>
+          <div className="ep-form-foot"><Submit>Save top-up details</Submit></div>
+        </form>
+      </section>
     </>
   );
 }
