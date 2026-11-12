@@ -180,14 +180,18 @@ export async function connectBridge(fd: FormData) {
   const back = '/integrations#bridge';
   if (!ctx?.staffRole || !['owner', 'manager'].includes(ctx.staffRole) || ctx.viewingAs) redirect(withMsg(back, 'Only the owner or a manager can connect the bridge store.', 'err'));
   const storeUrl = normalizeShop(str(fd, 'store'));
+  const clientId = str(fd, 'client_id');
+  const clientSecret = str(fd, 'client_secret');
   const token = str(fd, 'token');
   const apiSecret = str(fd, 'api_secret');
   if (!storeUrl) redirect(withMsg(back, 'Use the bridge store’s .myshopify.com address, e.g. elmamsflow-bridge.myshopify.com', 'err'));
-  if (!token || !apiSecret) redirect(withMsg(back, 'Paste the Admin API access token and the API secret key.', 'err'));
-  const secrets: ShopifySecrets = { mode: 'token', token, api_secret: apiSecret };
+  // A Dev Dashboard app (Client ID + secret) — the way Shopify offers now — or an older custom app's token.
+  const secrets: ShopifySecrets | null = clientId && clientSecret ? { mode: 'client', client_id: clientId, client_secret: clientSecret }
+    : token && apiSecret ? { mode: 'token', token, api_secret: apiSecret } : null;
+  if (!secrets) redirect(withMsg(back, 'Paste the Client ID and the Client secret of the app.', 'err'));
   let name = '';
   try {
-    name = (await shopifyConnect(storeUrl!, secrets)).name;
+    name = (await shopifyConnect(storeUrl!, secrets!)).name;
   } catch (e) {
     redirect(withMsg(back, (e as Error).message, 'err'));
   }
@@ -197,7 +201,7 @@ export async function connectBridge(fd: FormData) {
   // Only one bridge at a time: an older one is switched off.
   await admin.from('integrations').update({ status: 'paused' }).eq('role', 'bridge').neq('store_url', storeUrl!);
   const { data: row, error } = await admin.from('integrations').upsert({
-    org_id: ownerOrg!.id, kind: 'shopify', role: 'bridge', store_url: storeUrl!, name, status: 'active', secret_enc: seal(secrets), token_enc: null, token_expires_at: null,
+    org_id: ownerOrg!.id, kind: 'shopify', role: 'bridge', store_url: storeUrl!, name, status: 'active', secret_enc: seal(secrets!), token_enc: null, token_expires_at: null,
     settings: { auto_import: false, push_tracking: false }, last_error: null, created_by: ctx!.userId,
   }, { onConflict: 'org_id,kind,store_url' }).select('*').single();
   if (error || !row) redirect(withMsg(back, error?.message ?? 'Could not save the connection.', 'err'));
