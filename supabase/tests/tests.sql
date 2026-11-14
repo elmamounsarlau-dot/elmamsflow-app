@@ -747,3 +747,15 @@ select t.login('00000000-0000-0000-0000-0000000000a1');
 select t.ok('wallet: the owner sees every balance', (select count(*) = 3 from public.wallet_entries));
 reset role;
 
+-- ---------- 0021 Shopify install links: server only ----------
+insert into public.shopify_installs (org_id, shop, client_id, secret_enc) values ('11111111-1111-1111-1111-111111111111', 'atlas-new.myshopify.com', 'cid', 'v1.x.y.z');
+select t.raises('install links: only one waiting link per store', $q$insert into public.shopify_installs (org_id, shop, client_id, secret_enc) values ('11111111-1111-1111-1111-111111111111', 'atlas-new.myshopify.com', 'cid2', 'v1.x.y.z')$q$);
+select t.raises('install links: only real .myshopify.com addresses', $q$insert into public.shopify_installs (org_id, shop, client_id, secret_enc) values ('11111111-1111-1111-1111-111111111111', 'evil.com', 'cid', 'v1.x.y.z')$q$);
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000a1');
+select t.raises('install links: even the owner cannot read them from the browser (secrets)', $q$select count(*) from public.shopify_installs$q$);
+select t.login('00000000-0000-0000-0000-0000000000b1');
+select t.raises('install links: a client cannot read them', $q$select count(*) from public.shopify_installs$q$);
+select t.raises('install links: a client cannot create one', $q$insert into public.shopify_installs (org_id, shop, client_id, secret_enc) values ('11111111-1111-1111-1111-111111111111', 'x.myshopify.com', 'c', 's')$q$);
+reset role;
+delete from public.shopify_installs;
