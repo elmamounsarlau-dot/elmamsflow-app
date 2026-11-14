@@ -123,15 +123,15 @@ export async function wooProducts(i: Integration) {
   } catch { /* default kg */ }
   const g = (w: string) => Math.round((parseFloat(w) || 0) * (TO_G[unit] ?? 1000));
   const out: ExtProduct[] = [];
-  type P = { id: number; name: string; sku: string; type: string; weight: string; global_unique_id?: string };
+  type P = { id: number; name: string; sku: string; type: string; weight: string; global_unique_id?: string; images?: { src: string }[]; image?: { src: string } | null };
   for (let page = 1; page <= 10; page++) {
     const list = await wooCall<P[]>(i, '/products', { query: { per_page: '100', page: String(page), status: 'publish' } });
     for (const p of list) {
       if (p.type === 'variable') {
         const vars = await wooCall<(P & { attributes: { option: string }[] })[]>(i, `/products/${p.id}/variations`, { query: { per_page: '100' } }).catch(() => []);
-        for (const v of vars) out.push({ ref: `woo:${v.id}`, sku: v.sku || `WC-${v.id}`, name: `${p.name} · ${v.attributes.map((a) => a.option).join(' / ')}`, barcode: v.global_unique_id || null, weight_g: g(v.weight || p.weight) });
+        for (const v of vars) out.push({ ref: `woo:${v.id}`, sku: v.sku || `WC-${v.id}`, name: `${p.name} · ${v.attributes.map((a) => a.option).join(' / ')}`, barcode: v.global_unique_id || null, weight_g: g(v.weight || p.weight), image: v.image?.src || p.images?.[0]?.src || null });
       } else {
-        out.push({ ref: `woo:${p.id}`, sku: p.sku || `WC-${p.id}`, name: p.name, barcode: p.global_unique_id || null, weight_g: g(p.weight) });
+        out.push({ ref: `woo:${p.id}`, sku: p.sku || `WC-${p.id}`, name: p.name, barcode: p.global_unique_id || null, weight_g: g(p.weight), image: p.images?.[0]?.src || null });
       }
     }
     if (list.length < 100) break;

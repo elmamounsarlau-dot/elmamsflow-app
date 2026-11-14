@@ -29,7 +29,9 @@ http.createServer(async (req, res) => {
     if (role !== 'service_role') return send(res, 403, { statusCode: '403', error: 'Unauthorized', message: 'service role only' });
     const rest = decodeURIComponent(url.pathname.slice('/storage/v1/object/'.length)).replace(/^(authenticated|public)\//, '');
     if (rest.includes('..')) return send(res, 400, { message: 'bad path' });
-    const file = join(STORE, rest);
+    // Signed links (createSignedUrl): hand back a link that serves the same file.
+    if (req.method === 'POST' && rest.startsWith('sign/')) return send(res, 200, { signedURL: `/object/${rest}?token=local` });
+    const file = join(STORE, rest.replace(/^sign\//, ''));
     if (req.method === 'POST' || req.method === 'PUT') {
       const chunks = []; for await (const c of req) chunks.push(c);
       mkdirSync(dirname(file), { recursive: true });

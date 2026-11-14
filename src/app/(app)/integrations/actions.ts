@@ -232,7 +232,7 @@ export async function sendClientProducts(fd: FormData) {
   if (!ctx?.staffRole || !ctx.can('integrations.manage')) redirect(withMsg(back, 'You don’t have access to that.', 'err'));
   const r = await syncClientProducts(org).catch((e) => ({ error: (e as Error).message }));
   if ('error' in r) redirect(withMsg(back, r.error as string, 'err'));
-  redirect(withMsg(back, r.errors.length ? `${r.done} product${r.done === 1 ? '' : 's'} in the bridge store; ${r.errors.length} failed: ${r.errors[0]}` : `${r.done} product${r.done === 1 ? '' : 's'} in the bridge store. The partner must hold the stock under exactly these SKUs.`, r.errors.length ? 'warn' : 'ok'));
+  redirect(withMsg(back, r.errors.length ? `${r.done} product${r.done === 1 ? '' : 's'} in the bridge store; ${r.errors.length} failed: ${r.errors[0]}` : `${r.done} product${r.done === 1 ? '' : 's'} in the bridge store${r.photos ? ` (${r.photos} photo${r.photos === 1 ? '' : 's'} added)` : ''}. The partner must hold the stock under exactly these SKUs.`, r.errors.length ? 'warn' : 'ok'));
 }
 
 export async function disconnectBridge() {

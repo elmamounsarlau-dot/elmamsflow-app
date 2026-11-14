@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { supabaseAdmin } from '../src/lib/supabase/admin';
 import { seal } from '../src/lib/integrations/crypto';
 import { afterOrderChange } from '../src/lib/integrations/flow';
-import { applyBridgeOrder, loadBridge } from '../src/lib/integrations/bridge';
+import { applyBridgeOrder, loadBridge, syncClientProducts } from '../src/lib/integrations/bridge';
 import { decideTopup, balanceOf } from '../src/lib/wallet';
 
 if (!/^http:\/\/127\.0\.0\.1/.test(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '')) throw new Error('local stack only');
@@ -21,22 +21,27 @@ const OWNER_ORG = async () => (await db().from('organizations').select('id').eq(
 type FO = { id: string; status: string };
 type Ful = { id: string; status: string; displayStatus: string | null; createdAt: string; trackingInfo: { company: string | null; number: string | null; url: string | null }[]; events: string[] };
 type ShopOrder = { id: string; name: string; cancelledAt: string | null; cancelRefund?: boolean; fos: FO[]; fulfillments: Ful[]; input?: Record<string, unknown> };
-const shops: Record<string, { orders: Map<string, ShopOrder>; variants: Map<string, string>; calls: string[] }> = {};
-const shop = (host: string) => (shops[host] ??= { orders: new Map(), variants: new Map(), calls: [] });
+const PHOTO_HOST = 'cdn.shop-photos.example';
+const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082', 'hex');
+const storeList: { id: string; sku: string; image: string }[] = [];
+const shops: Record<string, { orders: Map<string, ShopOrder>; variants: Map<string, string>; calls: string[]; files: Map<string, string[]> }> = {};
+const shop = (host: string) => (shops[host] ??= { orders: new Map(), variants: new Map(), calls: [], files: new Map() });
 let seq = 1;
 const realFetch = globalThis.fetch;
 globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
   const u = new URL(String(url));
+  if (u.hostname === PHOTO_HOST) return new Response(new Uint8Array(PNG), { status: 200, headers: { 'content-type': 'image/png' } });
   if (!u.hostname.endsWith('.myshopify.com')) return realFetch(url as string, init);
   const s = shop(u.hostname);
   const { query, variables: v } = JSON.parse(String(init?.body ?? '{}')) as { query: string; variables: Record<string, any> };
-  const op = (query.match(/\b(productVariants|productSet|orderCreate|orderCancel|orderUpdate|fulfillmentOrderHold|fulfillmentOrderReleaseHold|fulfillmentOrderReportProgress|fulfillmentCreate|fulfillmentEventCreate|fulfillmentTrackingInfoUpdate|fulfillmentOrder\(|order\(|shop)\b/) ?? [''])[0];
+  const op = (query.match(/\b(productVariants|productVariant\(|productUpdate|productSet|orderCreate|orderCancel|orderUpdate|fulfillmentOrderHold|fulfillmentOrderReleaseHold|fulfillmentOrderReportProgress|fulfillmentCreate|fulfillmentEventCreate|fulfillmentTrackingInfoUpdate|fulfillmentOrder\(|order\(|shop)\b/) ?? [''])[0];
   s.calls.push(op);
   const ok = (data: unknown) => new Response(JSON.stringify({ data }), { status: 200, headers: { 'content-type': 'application/json' } });
   const foOwner = (id: string) => [...s.orders.values()].find((o) => o.fos.some((f) => f.id === id))!;
   switch (op) {
     case 'shop': return ok({ shop: { name: u.hostname } });
     case 'productVariants': {
+      if (!v.q) return ok({ productVariants: { nodes: storeList.map((x) => ({ id: x.id, sku: x.sku, barcode: null, title: 'Default Title', image: null, product: { title: x.sku, featuredMedia: { preview: { image: { url: x.image } } } }, inventoryItem: null })), pageInfo: { hasNextPage: false, endCursor: null } } });
       const sku = /sku:"([^"]+)"/.exec(v.q)?.[1] ?? '';
       const id = s.variants.get(sku);
       return ok({ productVariants: { nodes: id ? [{ id, sku }] : [] } });
@@ -46,7 +51,14 @@ globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       assert.equal(v.input.variants[0].inventoryItem.tracked, false, 'stock is not tracked in the bridge store');
       const id = `gid://shopify/ProductVariant/${seq++}`;
       s.variants.set(sku, id);
+      s.files.set(id, (v.input.files ?? []).map((f: any) => f.originalSource));
       return ok({ productSet: { product: { variants: { nodes: [{ id }] } }, userErrors: [] } });
+    }
+    case 'productVariant(': return ok({ productVariant: { product: { id: `P-${v.id}`, media: { nodes: (s.files.get(v.id) ?? []).map((x) => ({ id: x })) } } } });
+    case 'productUpdate': {
+      const id = String(v.p.id).replace(/^P-/, '');
+      s.files.set(id, [...(s.files.get(id) ?? []), ...v.m.map((m: any) => m.originalSource)]);
+      return ok({ productUpdate: { product: { id: v.p.id }, userErrors: [] } });
     }
     case 'orderCreate': {
       const id = `gid://shopify/Order/${seq++}`;
@@ -229,4 +241,27 @@ test('a client without a code never goes through the bridge', async () => {
   const { data: o } = await db().from('orders').insert({ org_id: '22222222-2222-2222-2222-222222222222', customer: 'X', address: '1 Road', country: 'GB', status: 'new' }).select('id').single();
   await afterOrderChange([o!.id]);
   assert.equal((await order(o!.id)).bridge_id, null);
+});
+
+test('products: photos come from the client store into Elmamsflow, then go to the bridge store (new and existing products)', async () => {
+  const { data: prods } = await db().from('products').select('id, sku, photo_path, ext_ref').eq('org_id', ATLAS).eq('kind', 'item');
+  const keep = new Map((prods ?? []).map((p) => [p.id, p.photo_path]));
+  await db().from('products').update({ photo_path: null }).eq('org_id', ATLAS);
+  for (const p of prods ?? []) storeList.push({ id: p.ext_ref ?? `gid://shopify/ProductVariant/9${p.id.slice(-4)}`, sku: p.sku, image: `https://${PHOTO_HOST}/${p.sku}.png` });
+  try {
+    const r = await syncClientProducts(ATLAS);
+    assert.ok(!('error' in r), JSON.stringify(r));
+    assert.deepEqual(r.errors, []);
+    const { data: after } = await db().from('products').select('id, photo_path, bridge_ref').eq('org_id', ATLAS).eq('kind', 'item');
+    for (const p of after ?? []) {
+      assert.match(p.photo_path ?? '', new RegExp(`^${ATLAS}/${p.id}/.+-store\\.png$`), 'photo saved in Elmamsflow');
+      const files = shop(BRIDGE_HOST).files.get(p.bridge_ref!) ?? [];
+      assert.equal(files.length, 1, `one photo in the bridge store for ${p.id}`);
+    }
+    // Run again: nothing is added twice.
+    await syncClientProducts(ATLAS);
+    for (const p of after ?? []) assert.equal((shop(BRIDGE_HOST).files.get(p.bridge_ref!) ?? []).length, 1);
+  } finally {
+    for (const [id, path] of keep) await db().from('products').update({ photo_path: path }).eq('id', id);
+  }
 });

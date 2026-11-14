@@ -1,6 +1,7 @@
 import 'server-only';
 import { supabaseAdmin } from '../supabase/admin';
 import { siteUrl } from '../format';
+import { fillPhotos } from './photos';
 import { importOrder, syncShipTo, loadIntegration, logEvent, markError, type ExtOrder, type ExtProduct, type Integration } from './core';
 import { shopifyOpenOrders, shopifyOrder, shopifyProducts, shopifyRegisterWebhooks } from './shopify';
 import { wooCall, wooOpenOrders, wooProducts, wooRegisterWebhooks, wooToExt } from './woocommerce';
@@ -65,8 +66,9 @@ export async function importProducts(i: Integration) {
     const { error } = await admin.from('products').insert(rows.slice(k, k + 200));
     if (error) throw new Error(/ext_ref/.test(error.message) ? 'Run the latest database update (0008) first.' : error.message);
   }
-  await logEvent(i, 'products_imported', `${rows.length} new product${rows.length === 1 ? '' : 's'} from ${list.length} store products${linked ? `, ${linked} linked` : ''}`);
-  return { found: list.length, added: rows.length, linked };
+  const photos = await fillPhotos(i.org_id, list).catch(() => 0);
+  await logEvent(i, 'products_imported', `${rows.length} new product${rows.length === 1 ? '' : 's'} from ${list.length} store products${linked ? `, ${linked} linked` : ''}${photos ? `, ${photos} photo${photos === 1 ? '' : 's'}` : ''}`);
+  return { found: list.length, added: rows.length, linked, photos };
 }
 
 /** One store order changed (from a webhook): import it, or cancel ours if it was cancelled. */

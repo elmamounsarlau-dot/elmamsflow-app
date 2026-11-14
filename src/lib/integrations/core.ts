@@ -40,7 +40,7 @@ export type ExtOrder = {
   cancelled: boolean;
 };
 
-export type ExtProduct = { sku: string; name: string; barcode: string | null; weight_g: number; ref: string };
+export type ExtProduct = { sku: string; name: string; barcode: string | null; weight_g: number; ref: string; image?: string | null };
 
 export const STORE_STATUS: Record<string, [string, string]> = { active: ['Connected', 'ok'], paused: ['Paused', 'mute'], error: ['Needs attention', 'err'] };
 

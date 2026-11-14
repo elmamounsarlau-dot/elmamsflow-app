@@ -156,12 +156,12 @@ export async function shopifyProducts(i: Integration) {
   const out: ExtProduct[] = [];
   let after: string | null = null;
   for (let page = 0; page < 8; page++) {
-    const d: { productVariants: { nodes: { id: string; sku: string | null; barcode: string | null; title: string; product: { title: string }; inventoryItem: { measurement: { weight: { unit: string; value: number } | null } | null } | null }[]; pageInfo: { hasNextPage: boolean; endCursor: string } } } = await gql(i.store_url, token,
-      `query($after: String) { productVariants(first: 250, after: $after) { nodes { id sku barcode title product { title } inventoryItem { measurement { weight { unit value } } } } pageInfo { hasNextPage endCursor } } }`, { after });
+    const d: { productVariants: { nodes: { id: string; sku: string | null; barcode: string | null; title: string; image: { url: string } | null; product: { title: string; featuredMedia: { preview: { image: { url: string } | null } | null } | null }; inventoryItem: { measurement: { weight: { unit: string; value: number } | null } | null } | null }[]; pageInfo: { hasNextPage: boolean; endCursor: string } } } = await gql(i.store_url, token,
+      `query($after: String) { productVariants(first: 250, after: $after) { nodes { id sku barcode title image { url } product { title featuredMedia { preview { image { url } } } } inventoryItem { measurement { weight { unit value } } } } pageInfo { hasNextPage endCursor } } }`, { after });
     for (const v of d.productVariants.nodes) {
       const w = v.inventoryItem?.measurement?.weight;
       // No SKU in the store: give it one based on Shopify's variant number; orders still match through the variant id.
-      out.push({ ref: v.id, sku: v.sku || `SH-${v.id.split('/').pop()}`, name: v.title && v.title !== 'Default Title' ? `${v.product.title} · ${v.title}` : v.product.title, barcode: v.barcode, weight_g: w ? Math.round(w.value * (GRAMS[w.unit] ?? 1)) : 0 });
+      out.push({ ref: v.id, sku: v.sku || `SH-${v.id.split('/').pop()}`, name: v.title && v.title !== 'Default Title' ? `${v.product.title} · ${v.title}` : v.product.title, barcode: v.barcode, weight_g: w ? Math.round(w.value * (GRAMS[w.unit] ?? 1)) : 0, image: v.image?.url ?? v.product.featuredMedia?.preview?.image?.url ?? null });
     }
     if (!d.productVariants.pageInfo.hasNextPage) break;
     after = d.productVariants.pageInfo.endCursor;

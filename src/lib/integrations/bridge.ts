@@ -1,6 +1,7 @@
 import 'server-only';
 import { supabaseAdmin } from '../supabase/admin';
 import { logEvent, type Integration } from './core';
+import { fillPhotosFromStores, photoLink } from './photos';
 import { gql, shopifyToken } from './shopify';
 
 /**
@@ -31,7 +32,7 @@ export const bridgeSkuOf = (code: string, sku: string) => {
   return s.startsWith(`${code.toUpperCase()}-`) ? s : `${code}-${s}`.toUpperCase();
 };
 
-type Prod = { id: string; org_id: string; sku: string; name: string; weight_g: number; customs_value: number; kind: string; bridge_ref: string | null; bridge_sku: string | null };
+type Prod = { id: string; org_id: string; sku: string; name: string; weight_g: number; customs_value: number; kind: string; bridge_ref: string | null; bridge_sku: string | null; photo_path?: string | null };
 
 async function findVariant(b: Integration, token: string, sku: string) {
   const d = await gql<{ productVariants: { nodes: { id: string; sku: string | null }[] } }>(b.store_url, token,
@@ -46,11 +47,13 @@ export async function ensureBridgeProduct(b: Integration, token: string, p: Prod
   const admin = supabaseAdmin();
   let id = await findVariant(b, token, sku);
   if (!id) {
+    const photo = await photoLink(p.photo_path);
     const d = await gql<{ productSet: { product: { variants: { nodes: { id: string }[] } } | null; userErrors: { message: string }[] } }>(b.store_url, token,
       `mutation($input: ProductSetInput!) { productSet(synchronous: true, input: $input) { product { variants(first: 1) { nodes { id } } } userErrors { field message } } }`,
       { input: {
         title: `${code} · ${p.name}`.slice(0, 250), status: 'ACTIVE', vendor: code, tags: [code, 'elmamsflow'],
         productOptions: [{ name: 'Title', values: [{ name: 'Default Title' }] }],
+        ...(photo ? { files: [{ originalSource: photo, contentType: 'IMAGE', alt: p.name.slice(0, 250) }] } : {}),
         variants: [{
           optionValues: [{ optionName: 'Title', name: 'Default Title' }],
           price: Number(p.customs_value || 0).toFixed(2),
@@ -69,6 +72,22 @@ export async function ensureBridgeProduct(b: Integration, token: string, p: Prod
   return id;
 }
 
+/** Add the product's photo in the bridge store if it has none there yet (so the partner sees what to pick). */
+async function ensureBridgePhoto(b: Integration, token: string, variantId: string, p: Prod) {
+  if (!p.photo_path) return false;
+  const d = await gql<{ productVariant: { product: { id: string; media: { nodes: { id: string }[] } } } | null }>(b.store_url, token,
+    `query($id: ID!) { productVariant(id: $id) { product { id media(first: 1) { nodes { id } } } } }`, { id: variantId });
+  const prod = d.productVariant?.product;
+  if (!prod || prod.media.nodes.length) return false;
+  const photo = await photoLink(p.photo_path);
+  if (!photo) return false;
+  const u = await gql<{ productUpdate: { userErrors: { message: string }[] } }>(b.store_url, token,
+    `mutation($p: ProductUpdateInput!, $m: [CreateMediaInput!]) { productUpdate(product: $p, media: $m) { product { id } userErrors { message } } }`,
+    { p: { id: prod.id }, m: [{ originalSource: photo, mediaContentType: 'IMAGE', alt: p.name.slice(0, 250) }] });
+  if (u.productUpdate.userErrors.length) throw new Error(`${p.sku} photo: ${u.productUpdate.userErrors.map((e) => e.message).join('; ')}`);
+  return true;
+}
+
 /** Copy all of a client's single products to the bridge store (bundles ship as their products). */
 export async function syncClientProducts(orgId: string) {
   const b = await loadBridge();
@@ -76,15 +95,21 @@ export async function syncClientProducts(orgId: string) {
   const admin = supabaseAdmin();
   const { data: org } = await admin.from('organizations').select('client_code').eq('id', orgId).maybeSingle();
   if (!org?.client_code) return { error: 'Give this client a client code first.' };
-  const { data: prods } = await admin.from('products').select('id, org_id, sku, name, weight_g, customs_value, kind, bridge_ref, bridge_sku').eq('org_id', orgId).eq('kind', 'item');
+  // Products without a photo take the one from the client's store first.
+  const gotPhotos = await fillPhotosFromStores(orgId).catch(() => 0);
+  const { data: prods } = await admin.from('products').select('id, org_id, sku, name, weight_g, customs_value, kind, bridge_ref, bridge_sku, photo_path').eq('org_id', orgId).eq('kind', 'item');
   const token = await shopifyToken(b);
-  let done = 0;
+  let done = 0, photos = 0;
   const errors: string[] = [];
   for (const p of (prods ?? []) as Prod[]) {
-    try { await ensureBridgeProduct(b, token, p, org.client_code); done++; } catch (e) { errors.push((e as Error).message); }
+    try {
+      const id = await ensureBridgeProduct(b, token, p, org.client_code);
+      done++;
+      if (await ensureBridgePhoto(b, token, id, p)) photos++;
+    } catch (e) { errors.push((e as Error).message); }
   }
-  await logEvent(b, errors.length ? 'error' : 'products_imported', `${org.client_code}: ${done} product${done === 1 ? '' : 's'} in the bridge store${errors.length ? ` · ${errors.length} failed: ${errors.slice(0, 3).join(' | ')}` : ''}`);
-  return { done, errors };
+  await logEvent(b, errors.length ? 'error' : 'products_imported', `${org.client_code}: ${done} product${done === 1 ? '' : 's'} in the bridge store${photos ? `, ${photos} photo${photos === 1 ? '' : 's'} added` : ''}${gotPhotos ? ` (${gotPhotos} taken from the client’s store)` : ''}${errors.length ? ` · ${errors.length} failed: ${errors.slice(0, 3).join(' | ')}` : ''}`);
+  return { done, errors, photos };
 }
 
 type OrderRow = {
@@ -93,7 +118,7 @@ type OrderRow = {
   bridge_id: string | null; bridge_name: string | null;
   order_items: { qty: number; products: Prod | null }[];
 };
-const ORDER_SEL = 'id, number, org_id, status, hold_kind, store_ref, customer, phone, address, city, zip, country, bridge_id, bridge_name, order_items(qty, products(id, org_id, sku, name, weight_g, customs_value, kind, bridge_ref, bridge_sku))';
+const ORDER_SEL = 'id, number, org_id, status, hold_kind, store_ref, customer, phone, address, city, zip, country, bridge_id, bridge_name, order_items(qty, products(id, org_id, sku, name, weight_g, customs_value, kind, bridge_ref, bridge_sku, photo_path))';
 
 function splitName(full: string) {
   const parts = full.trim().split(/\s+/);
