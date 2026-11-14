@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "tsc -p tests && node --conditions=react-server -r ./tests/paths.cjs --test .test-build/tests/unit.test.js",
     "test:db": "bash supabase/tests/run.sh",
-    "test:stack": "tsc -p tests && node --conditions=react-server -r ./tests/paths.cjs --test-concurrency=1 --test .test-build/tests/store-sync.test.js .test-build/tests/bridge-loop.test.js"
+    "test:stack": "tsc -p tests && node --conditions=react-server -r ./tests/paths.cjs --test-concurrency=1 --test .test-build/tests/store-sync.test.js .test-build/tests/bridge-loop.test.js .test-build/tests/shopify-install.test.js"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",

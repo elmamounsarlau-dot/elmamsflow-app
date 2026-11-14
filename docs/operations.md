@@ -121,3 +121,17 @@ is charged at the client's price list; the month's invoice takes the rest (stora
 the balance and is marked paid. When the balance (+ allowed credit) can't cover a new order, it waits ("Top up
 needed") and is not sent to the partner; a confirmed top-up releases waiting orders, oldest first. Payment methods
 and the minimum are in Settings → Billing details → *Top-ups*. Existing clients stay on monthly invoices until switched.
+
+## 8. One-link Shopify connection (migration 0021)
+
+A client connects its Shopify store by clicking one install link — no Dev Dashboard on their side.
+
+Per client store, in **your** Shopify Dev Dashboard (Stores → Connect Shopify → "Send the client one install link" shows the exact values):
+
+1. Create an app "Elmamsflow". App URL `https://app.elmamsflow.com/api/shopify/install`, embedding off, legacy install flow off.
+2. Redirect URL `https://app.elmamsflow.com/api/shopify/callback`; the client-store scopes; protected customer data (name, email, phone, address); release.
+3. IP allowlist (required for custom apps on stores outside your organization from 20 Nov 2026 for new installs, 1 Jan 2027 for existing): ASN 16509, country India (Vercel region `bom1`). Check the app's logs if Shopify starts answering 403.
+4. Distribution → Custom distribution → the client's `.myshopify.com` → Generate link.
+5. Paste Client ID, Client secret and the link in Elmamsflow, save, send the link.
+
+The client clicks Install: `/api/shopify/install` checks Shopify's signature and asks for the permissions; `/api/shopify/callback` checks the signature and the one-time state, saves the store's token (encrypted), registers the order webhooks and imports the products. The table `shopify_installs` is readable by the server only (it holds the app secrets).

@@ -244,3 +244,39 @@ export async function disconnectBridge() {
 }
 
 export const bridgeScopes = async () => BRIDGE_SCOPES;
+
+// ---------- One-link Shopify connection (custom-distribution app made by Elmamsflow) ----------
+
+const INSTALL_BACK = '/integrations/new?kind=shopify#link';
+
+export async function prepareShopifyInstall(fd: FormData) {
+  const ctx = await getCtx();
+  if (!ctx?.staffRole || !ctx.can('integrations.manage')) redirect(withMsg(INSTALL_BACK, 'You don’t have access to that.', 'err'));
+  const orgId = str(fd, 'org_id');
+  const shop = normalizeShop(str(fd, 'store'));
+  const clientId = str(fd, 'client_id');
+  const secret = str(fd, 'client_secret');
+  const link = str(fd, 'install_link');
+  if (!orgId) redirect(withMsg(INSTALL_BACK, 'Choose the client.', 'err'));
+  if (!shop) redirect(withMsg(INSTALL_BACK, 'Use the client’s .myshopify.com address, e.g. brand.myshopify.com', 'err'));
+  if (!clientId || !secret) redirect(withMsg(INSTALL_BACK, 'Paste the app’s Client ID and Client secret.', 'err'));
+  if (link && !/^https:\/\/([a-z0-9-]+\.)*(shopify\.com|myshopify\.com)\//i.test(link)) redirect(withMsg(INSTALL_BACK, 'The install link must be the one Shopify gave you (https://…shopify.com/…).', 'err'));
+  const admin = supabaseAdmin();
+  const { data: org } = await admin.from('organizations').select('id, name').eq('id', orgId).eq('kind', 'client').maybeSingle();
+  if (!org) redirect(withMsg(INSTALL_BACK, 'Choose the client.', 'err'));
+  await admin.from('shopify_installs').update({ status: 'cancelled' }).eq('shop', shop!).eq('status', 'waiting');
+  const { error } = await admin.from('shopify_installs').insert({
+    org_id: orgId, shop: shop!, client_id: clientId, secret_enc: seal(secret), install_link: link || null, created_by: ctx!.userId,
+  });
+  if (error) redirect(withMsg(INSTALL_BACK, /shopify_installs/.test(error.message) ? 'Run the latest database update (0021) first.' : error.message, 'err'));
+  await logActivity(admin, ctx!.userId, orgId, 'store_link_ready', `Shopify install link · ${shop}`);
+  redirect(withMsg(INSTALL_BACK, `Ready. Send ${org!.name} the install link — when they click Install, the store connects by itself.`));
+}
+
+export async function cancelShopifyInstall(fd: FormData) {
+  const ctx = await getCtx();
+  if (!ctx?.staffRole || !ctx.can('integrations.manage')) redirect(withMsg(INSTALL_BACK, 'You don’t have access to that.', 'err'));
+  await supabaseAdmin().from('shopify_installs').update({ status: 'cancelled' }).eq('id', str(fd, 'id')).eq('status', 'waiting');
+  redirect(withMsg(INSTALL_BACK, 'Install link cancelled.'));
+}
+
