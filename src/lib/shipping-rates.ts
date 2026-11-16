@@ -12,7 +12,7 @@ export type ShipType = keyof typeof SHIP_TYPES;
 export const isService = (s: string): s is Service => s in SERVICES;
 export const isShipType = (s: string): s is ShipType => s in SHIP_TYPES;
 
-export type RateRow = { country: string; subregion: string | null; transit: string | null; w_min: number; w_max: number; per_kg: number; per_parcel: number; min_kg: number };
+export type RateRow = { country: string; subregion: string | null; transit: string | null; w_min: number; w_max: number; per_kg: number; per_parcel: number; min_kg: number; step_kg?: number };
 export type ShipSettings = { margin_pct: number; margin_fixed: number; packaging_g: number; volume_factor: number; remind_days: number };
 export const DEFAULT_SETTINGS: ShipSettings = { margin_pct: 20, margin_fixed: 0, packaging_g: 150, volume_factor: 8000, remind_days: 7 };
 
@@ -63,42 +63,84 @@ export function bracket(s: string): [number, number] | null {
 
 export type ParsedSheet = { dated: string | null; rows: RateRow[]; unknown: string[]; skipped: number };
 
-/** Turn a sheet copied from the partner (tab-separated rows, as copy-paste gives) into rate rows. */
-export function parseSheet(text: string): ParsedSheet {
-  const lines = text.replace(/\r/g, '').split('\n').map((l) => l.split('\t').map((c) => c.trim()));
-  let dated: string | null = null;
-  let head = -1;
-  for (let i = 0; i < lines.length && head < 0; i++) {
-    const row = lines[i];
-    for (const c of row) {
-      const d = c.match(/^(20\d\d)[.\-/年](\d{1,2})[.\-/月](\d{1,2})日?$/);
-      if (d && !dated) dated = `${d[1]}-${d[2].padStart(2, '0')}-${d[3].padStart(2, '0')}`;
-    }
-    const joined = row.join('|').toLowerCase();
-    if (/country/.test(joined) && /weight/.test(joined)) head = i;
+/** Tab-separated text as spreadsheets copy it: a cell with a line break or a tab comes in "quotes". */
+export function splitTsv(text: string): string[][] {
+  const out: string[][] = [];
+  let row: string[] = [], cell = '', q = false;
+  const t = text.replace(/\r\n?/g, '\n');
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (q) {
+      if (ch === '"') { if (t[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch;
+    } else if (ch === '"' && cell === '') q = true;
+    else if (ch === '\t') { row.push(cell.trim()); cell = ''; }
+    else if (ch === '\n') { row.push(cell.trim()); out.push(row); row = []; cell = ''; }
+    else cell += ch;
   }
-  if (head < 0) return { dated, rows: [], unknown: [], skipped: 0 };
-  const h = lines[head].map((c) => c.toLowerCase());
-  const col = (re: RegExp) => h.findIndex((c) => re.test(c));
-  const cCountry = col(/country/), cTransit = col(/timeframe|transit|time/), cSub = col(/subregion|zone/);
-  const cWeight = h.findIndex((c) => /weight/.test(c) && !/increment|minimum|min\b|product/.test(c));
-  const cMin = col(/minimum/), cKg = col(/shipping fee|freight|per ?kg|\/kg/), cParcel = col(/processing|registration|handling|per package|\/package|parcel/);
-  if (cCountry < 0 || cWeight < 0 || cKg < 0 || cParcel < 0) return { dated, rows: [], unknown: [], skipped: 0 };
+  row.push(cell.trim()); out.push(row);
+  return out;
+}
+
+const isHeader = (r: string[]) => { const j = r.join('|').toLowerCase(); return /country/.test(j) && /weight/.test(j); };
+
+/**
+ * Turn a sheet copied from the partner into rate rows. A tab can hold more than one table (each with its own header).
+ * Tables after the first (Japan in the partner's sheets) are priced per step: "fee" = the first step (e.g. 0.5 kg) and
+ * the next column = each extra step. They are stored so the same formula works: per kg = extra ÷ step, per parcel =
+ * first − extra, weight rounded up to the step.
+ */
+export function parseSheet(text: string): ParsedSheet {
+  const lines = splitTsv(text);
+  let dated: string | null = null;
+  for (const row of lines.slice(0, 5)) for (const c of row) {
+    const d = c.match(/^(20\d\d)[.\-/年](\d{1,2})[.\-/月](\d{1,2})日?$/);
+    if (d && !dated) dated = `${d[1]}-${d[2].padStart(2, '0')}-${d[3].padStart(2, '0')}`;
+  }
   const rows: RateRow[] = [];
   const unknown = new Set<string>();
-  let skipped = 0, lastCountry = '', lastTransit = '';
-  for (const r of lines.slice(head + 1)) {
+  let skipped = 0, tables = 0;
+  let cols: { country: number; transit: number; sub: number; weight: number; step: number; min: number; kg: number; parcel: number; stepPriced: boolean } | null = null;
+  let lastCountry = '', lastTransit = '';
+  for (const r of lines) {
     if (r.every((c) => !c)) continue;
-    const name = r[cCountry] || lastCountry;
-    const transit = (cTransit >= 0 && r[cTransit]) || (r[cCountry] ? '' : lastTransit);
+    if (isHeader(r)) {
+      const h = r.map((c) => c.toLowerCase());
+      const col = (re: RegExp) => h.findIndex((c) => re.test(c));
+      const kg = col(/shipping fee|freight|per ?kg|\/kg/);
+      const parcel = col(/processing|registration|handling|per package|\/package|parcel|increase/);
+      tables++;
+      cols = {
+        country: col(/country/), transit: col(/timeframe|transit|time/), sub: col(/subregion|zone/),
+        weight: h.findIndex((c) => /weight/.test(c) && !/increment|minimum|min\b|product/.test(c)),
+        step: col(/increment/), min: col(/minimum/), kg, parcel,
+        stepPriced: tables > 1 || /0\.5 ?kg|increase/.test(h.join('|')),
+      };
+      if (cols.country < 0 || cols.weight < 0 || cols.kg < 0 || cols.parcel < 0) cols = null;
+      lastCountry = ''; lastTransit = '';
+      continue;
+    }
+    if (!cols) continue;
+    const name = r[cols.country] || lastCountry;
+    const transit = ((cols.transit >= 0 && r[cols.transit]) || (r[cols.country] ? '' : lastTransit)).split('\n')[0].trim();
     lastCountry = name; lastTransit = transit;
-    const b = bracket(r[cWeight] ?? '');
-    const perKg = num(r[cKg]), perParcel = num(r[cParcel]);
-    if (!name || !b || !Number.isFinite(perKg) || !Number.isFinite(perParcel)) { skipped++; continue; }
+    const b = bracket(r[cols.weight] ?? '');
+    const a = num(r[cols.kg]), c = num(r[cols.parcel]);
+    if (!name || !b || !Number.isFinite(a) || !Number.isFinite(c)) { skipped++; continue; }
     const cc = countryCode(name);
     if (!cc) { unknown.add(name); skipped++; continue; }
-    const minKg = cMin >= 0 ? num(r[cMin]) : NaN;
-    rows.push({ country: cc, subregion: (cSub >= 0 && r[cSub]) || null, transit: transit || null, w_min: b[0], w_max: b[1], per_kg: perKg, per_parcel: perParcel, min_kg: Number.isFinite(minKg) ? minKg : 0 });
+    const stepIn = cols.step >= 0 ? num(r[cols.step]) : NaN;
+    const minIn = cols.min >= 0 ? num(r[cols.min]) : NaN;
+    let step = Number.isFinite(stepIn) && stepIn > 0 ? stepIn : 0;
+    let minKg = Number.isFinite(minIn) ? minIn : 0;
+    let perKg = a, perParcel = c;
+    if (cols.stepPriced) {
+      step = step || 0.5;
+      perKg = c / step;                 // each extra step
+      perParcel = Math.max(0, a - c);   // first step − one extra step
+      minKg = Math.max(minKg, step);
+    }
+    rows.push({ country: cc, subregion: (cols.sub >= 0 && r[cols.sub]) || null, transit: transit || null, w_min: b[0], w_max: b[1],
+      per_kg: Math.round(perKg * 1e4) / 1e4, per_parcel: Math.round(perParcel * 1e4) / 1e4, min_kg: minKg, step_kg: step });
   }
   return { dated, rows, unknown: [...unknown], skipped };
 }
@@ -127,8 +169,10 @@ export function partnerCost(rows: RateRow[], country: string, p: Parcel, s: Pick
   const w = chargeableKg(p, s, minKg);
   const fits = main.filter((r) => w.kg > Number(r.w_min) && w.kg <= Number(r.w_max));
   if (!fits.length) return null;
-  const cost = Math.max(...fits.map((r) => w.kg * Number(r.per_kg) + Number(r.per_parcel)));
-  return { cost, ...w, transit: fits[0].transit };
+  // Weight is rounded up to the row's step (0.01 / 0.1 / 0.5 / 1 kg) before pricing.
+  const stepped = (r: RateRow) => { const st = Number(r.step_kg) || 0; return st > 0 ? Math.ceil(w.kg / st - 1e-9) * st : w.kg; };
+  const best = fits.reduce((x, r) => { const k = stepped(r); const c = k * Number(r.per_kg) + Number(r.per_parcel); return c > x.c ? { c, k } : x; }, { c: -1, k: w.kg });
+  return { cost: best.c, ...w, kg: Math.round(best.k * 1000) / 1000, transit: fits[0].transit };
 }
 
 export const withMargin = (cost: number, m: Margin) => Math.round((cost * (1 + m.pct / 100) + m.fixed) * 100) / 100;
