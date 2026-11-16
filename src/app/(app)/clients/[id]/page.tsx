@@ -24,6 +24,7 @@ import { sendClientProducts } from '../../integrations/actions';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { bridgeSkuOf } from '@/lib/integrations/bridge';
 import { getWarehouses, shippingWarehouses } from '@/lib/warehouses';
+import { saveClientShippingMargin } from '../../settings/shipping/actions';
 
 export default async function ClientPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string>> }) {
   const { id } = await params;
@@ -170,6 +171,16 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
                 </fieldset>
                 <div className="ep-form-foot"><Submit>Save</Submit></div>
               </form>
+              <div className="ep-subblock">
+                <div className="ep-card-head"><h3>Shipping margin</h3><Link className="ep-link ep-small" href={`/rates?for=${org.id}`}>Try their rates <Arrow /></Link></div>
+                <form action={saveClientShippingMargin} className="ep-form ep-row4" style={{ alignItems: 'end' }}>
+                  <input type="hidden" name="org" value={org.id} />
+                  <label>Margin (%)<input name="shipping_margin_pct" type="number" min={0} max={500} step="0.1" defaultValue={org.shipping_margin_pct ?? ''} placeholder="default" /></label>
+                  <label>Plus per parcel ($)<input name="shipping_margin_fixed" type="number" min={0} max={1000} step="0.01" defaultValue={org.shipping_margin_fixed ?? ''} placeholder="default" /></label>
+                  <span className="ep-small ep-muted" style={{ alignSelf: 'center' }}>Empty = the default in <Link href="/settings/shipping">Shipping prices</Link>.</span>
+                  <Submit className="ep-btn ep-btn--ghost">Save margin</Submit>
+                </form>
+              </div>
               {org.billing_mode === 'prepaid' && (
                 <div className="ep-subblock">
                   <div className="ep-card-head"><h3>Balance</h3><Link className="ep-link ep-small" href="/invoices/topups">All top-ups <Arrow /></Link></div>

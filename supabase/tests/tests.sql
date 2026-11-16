@@ -759,3 +759,27 @@ select t.raises('install links: a client cannot read them', $q$select count(*) f
 select t.raises('install links: a client cannot create one', $q$insert into public.shopify_installs (org_id, shop, client_id, secret_enc) values ('11111111-1111-1111-1111-111111111111', 'x.myshopify.com', 'c', 's')$q$);
 reset role;
 delete from public.shopify_installs;
+
+-- ---------- 0022 Shipping rates: partner prices are server only ----------
+select t.ok('shipping: default margin row exists', (select count(*) = 1 from public.shipping_settings));
+select t.ok('shipping: replace saves a sheet and its rows', public.shipping_sheet_replace('economic', 'general', 'test', '2026-11-09', null,
+  '[{"country":"US","w_min":0,"w_max":0.3,"per_kg":19.63,"per_parcel":4.45,"min_kg":0.03},{"country":"GB","w_min":0,"w_max":0.3,"per_kg":8.59,"per_parcel":3.99}]'::jsonb) is not null);
+select t.ok('shipping: counts are stored', (select rows_count = 2 and countries = 2 from public.shipping_sheets where active and service = 'economic' and product_type = 'general'));
+select public.shipping_sheet_replace('economic', 'general', 'v2', '2026-11-16', null, '[{"country":"US","w_min":0,"w_max":0.3,"per_kg":20,"per_parcel":4}]'::jsonb);
+select t.ok('shipping: a new sheet replaces the old one (old kept, switched off)',
+  (select count(*) = 1 from public.shipping_sheets where active and service = 'economic' and product_type = 'general')
+  and (select count(*) = 2 from public.shipping_sheets where service = 'economic' and product_type = 'general'));
+select t.raises('shipping: an empty paste is refused', $q$select public.shipping_sheet_replace('economic', 'general', '', null, null, '[]'::jsonb)$q$);
+select t.raises('shipping: a bracket must go up', $q$select public.shipping_sheet_replace('expedited', 'general', '', null, null, '[{"country":"US","w_min":1,"w_max":0.5,"per_kg":1,"per_parcel":1}]'::jsonb)$q$);
+select t.raises('shipping: products only take known shipping types', $q$update public.products set ship_type = 'weapons' where org_id = '11111111-1111-1111-1111-111111111111'$q$);
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000a1');
+select t.raises('shipping: even the owner cannot read partner prices from the browser', $q$select count(*) from public.shipping_rates$q$);
+select t.raises('shipping: nor the sheets', $q$select count(*) from public.shipping_sheets$q$);
+select t.raises('shipping: nor change the margin', $q$update public.shipping_settings set margin_pct = 0$q$);
+select t.login('00000000-0000-0000-0000-0000000000b1');
+select t.raises('shipping: a client cannot read partner prices', $q$select count(*) from public.shipping_rates$q$);
+select t.raises('shipping: a client cannot read the margin', $q$select margin_pct from public.shipping_settings$q$);
+select t.raises('shipping: a client cannot replace a sheet', $q$select public.shipping_sheet_replace('economic', 'general', '', null, null, '[{"country":"US","w_min":0,"w_max":1,"per_kg":0,"per_parcel":0}]'::jsonb)$q$);
+reset role;
+delete from public.shipping_sheets;

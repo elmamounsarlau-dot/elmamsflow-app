@@ -190,3 +190,15 @@ insert into public.b2b_payments (order_id, amount, currency, paid_on, method, no
 insert into public.b2b_events (order_id, text, stage, at) values
   ('b2b00000-0000-0000-0000-0000000000a1', 'Order created at “Quote”', 'Quote', now() - interval '30 days'),
   ('b2b00000-0000-0000-0000-0000000000a1', 'In production → Shipped', 'Shipped', now() - interval '8 days');
+
+-- Shipping rates (local/CI only): a small partner sheet so the calculator has prices.
+select public.shipping_sheet_replace('economic', 'general', 'Local test · standard general', '2026-11-09', null, '[
+  {"country":"US","transit":"6-12 work days","w_min":0,"w_max":0.1,"per_kg":20.86,"per_parcel":5.06,"min_kg":0.03},
+  {"country":"US","transit":"6-12 work days","w_min":0.1,"w_max":0.2,"per_kg":19.94,"per_parcel":4.75,"min_kg":0.03},
+  {"country":"US","transit":"6-12 work days","w_min":0.2,"w_max":0.3,"per_kg":19.63,"per_parcel":4.45,"min_kg":0.03},
+  {"country":"US","transit":"6-12 work days","w_min":0.3,"w_max":2,"per_kg":19.40,"per_parcel":4.45,"min_kg":0.03},
+  {"country":"GB","transit":"6-10 work days","w_min":0,"w_max":0.3,"per_kg":8.59,"per_parcel":3.99},
+  {"country":"GB","transit":"6-10 work days","w_min":0.3,"w_max":2,"per_kg":8.90,"per_parcel":3.99}]'::jsonb);
+select public.shipping_sheet_replace('expedited', 'general', 'Local test · priority general', '2026-11-09', null, '[
+  {"country":"US","transit":"5-7 work days","w_min":0,"w_max":2,"per_kg":24.10,"per_parcel":5.20},
+  {"country":"GB","transit":"3-5 work days","w_min":0,"w_max":2,"per_kg":10.20,"per_parcel":4.10}]'::jsonb);
