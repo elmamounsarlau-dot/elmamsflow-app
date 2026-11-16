@@ -31,7 +31,7 @@ export async function sheetsFor(type: ShipType, country?: string) {
   const admin = supabaseAdmin();
   const sheets = (await activeSheets()).filter((s) => s.product_type === type);
   return Promise.all(sheets.map(async (sh) => {
-    let q = admin.from('shipping_rates').select('country, subregion, transit, w_min, w_max, per_kg, per_parcel, min_kg').eq('sheet_id', sh.id).limit(5000);
+    let q = admin.from('shipping_rates').select('country, subregion, transit, w_min, w_max, per_kg, per_parcel, min_kg, step_kg').eq('sheet_id', sh.id).limit(5000);
     if (country) q = q.eq('country', country);
     const { data } = await q;
     return { service: sh.service, dated: sh.dated, rows: (data ?? []) as RateRow[] };

@@ -45,6 +45,7 @@ export default async function Rates({ searchParams }: { searchParams: Promise<Re
   const margin = await marginFor(orgId, s);
   const sheets = asked ? await sheetsFor(type, country) : [];
   const lines = asked ? quoteAll(sheets, country, { weight_g, length_mm, width_mm, height_mm, qty }, s, margin) : [];
+  const zoned = sheets.some((x) => x.rows.some((r) => r.subregion));
   const dated = sheets.map((x) => x.dated).filter(Boolean).sort().at(-1) ?? null;
   const all = countryList(country || null);
   const list: [string, string][] = offered.length ? [...all.filter(([k]) => offered.includes(k)), ...(country && !offered.includes(country) ? [[country, countryName(country)] as [string, string]] : [])] : all;
@@ -94,6 +95,7 @@ export default async function Rates({ searchParams }: { searchParams: Promise<Re
             <h2>{flag(country)} {countryName(country)} · {SHIP_TYPES[type]}</h2>
             <span className="ep-muted ep-small">{qty > 1 ? `${qty} units · ` : ''}prices in USD{dated ? ` · rates of ${fmtDate(dated)}` : ''}</span>
           </div>
+          {zoned && lines.length > 0 && <div className="ep-pad" style={{ paddingTop: 0, paddingBottom: 0 }}><p className="ep-note">The price depends on the area in {countryName(country)} — this is the highest one, so your parcel won’t cost more.</p></div>}
           {lines.length === 0 ? (
             <div className="ep-pad"><p className="ep-note ep-note--warn">We don’t have a price for {SHIP_TYPES[type].toLowerCase()} to {countryName(country)} at this weight yet. <Link href="/support">Ask us</Link> and we’ll quote it.</p></div>
           ) : (

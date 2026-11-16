@@ -252,7 +252,7 @@ test('shipping sheet: date, countries, brackets and merged rows are read from a 
   assert.equal(p.dated, '2026-11-09');
   assert.deepEqual(p.unknown, ['Mars']);
   assert.equal(p.rows.length, 7);
-  assert.deepEqual(p.rows[0], { country: 'US', subregion: null, transit: '6-12 work days', w_min: 0, w_max: 0.1, per_kg: 20.86, per_parcel: 5.06, min_kg: 0.03 });
+  assert.deepEqual(p.rows[0], { country: 'US', subregion: null, transit: '6-12 work days', w_min: 0, w_max: 0.1, per_kg: 20.86, per_parcel: 5.06, min_kg: 0.03, step_kg: 0 });
   assert.equal(p.rows[3].country, 'US', 'a row with an empty country belongs to the one above');
   assert.equal(p.rows[3].transit, '6-12 work days');
   assert.equal(p.rows[4].country, 'GB');
@@ -297,4 +297,34 @@ test('shipping price: weight + packaging, volumetric when bigger, bracket, margi
   // Minimum billing weight applies to tiny parcels
   assert.equal(chargeableKg({ weight_g: 5 }, { packaging_g: 0, volume_factor: 8000 }, 0.03).kg, 0.03);
   assert.equal(withMargin(10, { pct: 0, fixed: 0 }), 10);
+});
+
+test('shipping sheet: quoted multi-line cells, weight steps and a second table priced per 0.5 kg (Japan)', () => {
+  const text = [
+    '\t\t2026.11.9',
+    '国家/地区\tCountry/Region\tReference Timeframe\tSubregion\tWeight(KG)\tWeight Increment\tMinimum Billing Weight\tShipping Fee(USD/KG)\tProcessing fee (USD/Package)',
+    '尼日利亚\tNigeria\t"8-12 work days\nLagos 6-8"\t\t0＜W≤0.5\t0.5\t\t10\t2',
+    '澳大利亚\tAustralia\t7-12 work days\tZone 1\t0＜W≤1\t\t\t8\t5',
+    '澳大利亚\tAustralia\t7-12 work days\tZone 4\t0＜W≤1\t\t\t9\t20',
+    '国家/地区\tCountry/Region\tReference time limit\tSubregion\tWeight(KG)\tWeight Increment\tMinimum Billing Weight\tShipping Fee(USD/0.5KG)\tincrease price',
+    '日本\tJapan\t6-7 work days\t\t0＜W≤2\t0.5\t\t5.21\t2.30',
+  ].join('\n');
+  const p = parseSheet(text);
+  assert.deepEqual(p.unknown, []);
+  assert.equal(p.rows.length, 4);
+  assert.equal(p.rows[0].transit, '8-12 work days', 'only the first line of a multi-line cell');
+  assert.equal(p.rows[0].step_kg, 0.5);
+  const jp = p.rows[3];
+  assert.equal(jp.country, 'JP');
+  assert.equal(jp.step_kg, 0.5);
+  const s = { margin_pct: 0, margin_fixed: 0, packaging_g: 150, volume_factor: 8000, remind_days: 7 };
+  const q = (cc: string, g: number) => quoteAll([{ service: 'economic', rows: p.rows }], cc, { weight_g: g }, s, { pct: 0, fixed: 0 })[0];
+  // Japan: 0.3 kg → one 0.5 kg step = 5.21; 0.7 kg → two steps = 5.21 + 2.30
+  assert.equal(q('JP', 150).price, 5.21);
+  assert.equal(q('JP', 550).price, 7.51);
+  assert.equal(q('JP', 550).kg, 1);
+  // Nigeria: 0.3 kg rounded up to the 0.5 kg step: 0.5 × 10 + 2
+  assert.equal(q('NG', 150).price, 7);
+  // Australia by zone: without the postcode we take the dearest zone (never under-charge)
+  assert.equal(q('AU', 150).price, 22.7);
 });
