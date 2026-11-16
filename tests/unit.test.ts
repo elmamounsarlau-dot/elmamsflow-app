@@ -230,3 +230,71 @@ test('B2B: amounts in French and English words, document numbers', async () => {
   assert.equal(docNumber('order', 31, '2026-09-30'), 'B2B-0031');
   assert.equal(numMa(1234567.5), '1 234 567.50');
 });
+
+// ---------- Shipping rates (partner sheet → client price) ----------
+import { bracket, chargeableKg, countryCode, parseSheet, quoteAll, transitLabel, withMargin } from '../src/lib/shipping-rates';
+
+const SHEET = [
+  '\t\t\t2026.11.9\t\t\t\t\t\tCalculation Column',
+  '国家/地区\tCountry/Region\tReference Timeframe\tSubregion\tWeight(KG)\tWeight Increment\tMinimum Billing Weight\tShipping Fee(USD/KG)\tProcessing fee (USD/Package)\tProduct Weight(KG)\tTotal Shipping Cost(USD)',
+  '美国\tUnited States\t6-12 work days\t\t0<W≤0.1\t\t0.03\t20.86\t5.06\t\t5.06',
+  '美国\tUnited States\t6-12 work days\t\t0.1<W≤0.2\t\t0.03\t19.94\t4.75\t\t4.75',
+  '美国\tUnited States\t6-12 work days\t\t0.2<W≤0.3\t\t0.03\t19.63\t4.45\t\t4.45',
+  '\t\t\t\t0.3<W≤0.45\t\t0.03\t19.48\t4.45\t\t4.45',
+  '英国\tUnited Kingdom\t6-10 work days\t\t0<W≤0.3\t\t\t8.59\t3.99\t\t3.99',
+  '英国\tUnited Kingdom\t6-10 work days\t\t0.3<W≤0.5\t\t\t8.90\t3.99\t\t3.99',
+  '德国\tGermany\t6-10 work days\t\t0<W≤0.1\t\t\t9.97\t11.21\t\t11.21',
+  '火星\tMars\t1 day\t\t0<W≤1\t\t\t1\t1\t\t1',
+].join('\n');
+
+test('shipping sheet: date, countries, brackets and merged rows are read from a copy-paste', () => {
+  const p = parseSheet(SHEET);
+  assert.equal(p.dated, '2026-11-09');
+  assert.deepEqual(p.unknown, ['Mars']);
+  assert.equal(p.rows.length, 7);
+  assert.deepEqual(p.rows[0], { country: 'US', subregion: null, transit: '6-12 work days', w_min: 0, w_max: 0.1, per_kg: 20.86, per_parcel: 5.06, min_kg: 0.03 });
+  assert.equal(p.rows[3].country, 'US', 'a row with an empty country belongs to the one above');
+  assert.equal(p.rows[3].transit, '6-12 work days');
+  assert.equal(p.rows[4].country, 'GB');
+  assert.equal(p.rows[6].country, 'DE');
+  assert.equal(parseSheet('hello\tworld').rows.length, 0);
+});
+
+test('shipping sheet: country names and weight brackets', () => {
+  assert.equal(countryCode('United States'), 'US');
+  assert.equal(countryCode('UK'), 'GB');
+  assert.equal(countryCode('Czech Republic'), 'CZ');
+  assert.equal(countryCode('Turkey'), 'TR');
+  assert.equal(countryCode('France'), 'FR');
+  assert.equal(countryCode('Atlantis'), null);
+  assert.deepEqual(bracket('0.1<W≤0.2'), [0.1, 0.2]);
+  assert.deepEqual(bracket('2 < W ≤ 30'), [2, 30]);
+  assert.deepEqual(bracket('W≤0.5'), [0, 0.5]);
+  assert.equal(bracket('n/a'), null);
+  assert.equal(transitLabel('6-12 work days'), '6–12 business days');
+});
+
+test('shipping price: weight + packaging, volumetric when bigger, bracket, margin', () => {
+  const s = { margin_pct: 20, margin_fixed: 0, packaging_g: 150, volume_factor: 8000, remind_days: 7 };
+  const rows = parseSheet(SHEET).rows;
+  // 150 g + 150 g packaging = 0.3 kg → US bracket 0.2–0.3: 0.3 × 19.63 + 4.45 = 10.339 → +20% = 12.41
+  const us = quoteAll([{ service: 'economic', rows }], 'US', { weight_g: 150 }, s, { pct: 20, fixed: 0 });
+  assert.equal(us.length, 1);
+  assert.equal(us[0].kg, 0.3);
+  assert.equal(us[0].cost, 10.34);
+  assert.equal(us[0].price, 12.41);
+  assert.equal(us[0].transit, '6-12 work days');
+  // UK, fixed margin added on top: 0.3 × 8.59 + 3.99 = 6.567 → ×1.2 + 1.5 = 9.38
+  assert.equal(quoteAll([{ service: 'economic', rows }], 'GB', { weight_g: 150 }, s, { pct: 20, fixed: 1.5 })[0].price, 9.38);
+  // A big light box is billed on its size: 20 × 20 × 8 cm ÷ 8000 = 0.4 kg (more than 0.3 kg actual)
+  const big = chargeableKg({ weight_g: 150, length_mm: 200, width_mm: 200, height_mm: 80 }, s);
+  assert.equal(big.kg, 0.4);
+  assert.equal(big.actual, 0.3);
+  // 3 units in one parcel: 450 g + 150 g = 0.6 kg → too heavy for the UK rows above (max 0.5) → no price
+  assert.equal(quoteAll([{ service: 'economic', rows }], 'GB', { weight_g: 150, qty: 3 }, s, { pct: 0, fixed: 0 }).length, 0);
+  // A country that isn't in the sheet → no price (never a made-up one)
+  assert.equal(quoteAll([{ service: 'economic', rows }], 'JP', { weight_g: 150 }, s, { pct: 0, fixed: 0 }).length, 0);
+  // Minimum billing weight applies to tiny parcels
+  assert.equal(chargeableKg({ weight_g: 5 }, { packaging_g: 0, volume_factor: 8000 }, 0.03).kg, 0.03);
+  assert.equal(withMargin(10, { pct: 0, fixed: 0 }), 10);
+});

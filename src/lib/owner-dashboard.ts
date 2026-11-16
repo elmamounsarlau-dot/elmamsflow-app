@@ -166,10 +166,14 @@ export async function ownerDashboard(ctx: Ctx) {
   const work = ctx.can('orders.warehouse') || ctx.can('orders.hold');
   const pending = (links.data ?? []) as unknown[];
   const adm = supabaseAdmin();
-  const [topups, stuck] = await Promise.all([
+  const [topups, stuck, shipSheets, shipSet] = await Promise.all([
     money ? adm.from('wallet_entries').select('id', { count: 'exact', head: true }).eq('kind', 'topup').eq('status', 'pending') : Promise.resolve({ count: 0 }),
     work ? adm.from('orders').select('id', { count: 'exact', head: true }).or(`bridge_error.not.is.null,and(bridge_sent_at.lt.${new Date(Date.now() - 48 * 3600e3).toISOString()},status.in.(new,packed))`) : Promise.resolve({ count: 0 }),
+    money ? adm.from('shipping_sheets').select('created_at').eq('active', true) : Promise.resolve({ data: [] as { created_at: string }[] }),
+    money ? adm.from('shipping_settings').select('remind_days').maybeSingle() : Promise.resolve({ data: null }),
   ]);
+  const remindMs = Number(shipSet.data?.remind_days ?? 7) * 864e5;
+  const staleShip = ((shipSheets.data ?? []) as { created_at: string }[]).filter((x) => Date.now() - new Date(x.created_at).getTime() >= remindMs).length;
   const actions = ([
     work && { key: 'pack', n: pipe.toPack, tone: 'blue', label: `Orders to pack${speed.oldestH !== null ? ` · oldest ${speed.oldestH} h` : ''}`, href: '/orders?c=all&s=new' },
     work && { key: 'late', n: late24, tone: 'err', label: 'Waiting over 24 h', href: '/orders?c=all&s=new&older=24' },
@@ -182,6 +186,7 @@ export async function ownerDashboard(ctx: Ctx) {
     money && { key: 'drafts', n: ms!.drafts.n, tone: 'warn', label: 'Invoice drafts to review & issue', href: '/invoices?t=draft' },
     money && { key: 'overdue', n: ms!.overdue.n, tone: 'err', label: 'Invoices overdue to chase', href: '/invoices?t=overdue' },
     money && { key: 'topups', n: topups.count ?? 0, tone: 'blue', label: 'Top-ups to confirm (check your account)', href: '/invoices/topups' },
+    money && { key: 'shiprates', n: staleShip, tone: 'warn', label: 'Shipping price sheets to update (check the partner’s sheet date)', href: '/settings/shipping' },
     work && { key: 'partner', n: stuck.count ?? 0, tone: 'err', label: 'At the warehouse partner over 48 h, or not sent', href: '/integrations#bridge' },
     (owner || ctx.staffRole === 'manager') && { key: 'links', n: pending.length, tone: 'blue', label: 'People who haven’t signed in yet', href: '#pending' },
   ] as (Action | false)[]).filter((x): x is Action => !!x);

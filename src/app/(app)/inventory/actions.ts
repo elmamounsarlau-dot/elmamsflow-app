@@ -8,6 +8,7 @@ import { str, withMsg } from '@/lib/format';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { IMAGES, removeFile, saveFile } from '@/lib/files';
 import { itemsFromForm } from '@/lib/data';
+import { isShipType } from '@/lib/shipping-rates';
 
 export async function addProduct(fd: FormData) {
   const ctx = await getCtx();
@@ -61,6 +62,9 @@ export async function releaseStock(fd: FormData) {
   redirect(withMsg(back(fd), error ? error.message : writeOff ? 'Written off and removed from stock.' : 'Released back to available stock.', error ? 'err' : 'ok'));
 }
 
+/** cm typed by a person → whole mm (empty or nonsense = unknown). */
+const mmOf = (v: string) => { const n = Math.round(Number(v.replace(',', '.')) * 10); return Number.isFinite(n) && n >= 1 && n <= 3000 ? n : null; };
+
 /** Edit a product's details (not its SKU or stock). Clients with "Add and edit products" can do this for their own products. */
 export async function updateProduct(fd: FormData) {
   const ctx = await getCtx();
@@ -76,6 +80,10 @@ export async function updateProduct(fd: FormData) {
     name, barcode: str(fd, 'barcode') || null, weight_g: Math.max(0, parseInt(str(fd, 'weight_g'), 10) || 0),
     hs_code: hs || null, customs_value: Math.max(0, parseFloat(str(fd, 'customs_value')) || 0),
     low_stock: Math.max(0, parseInt(str(fd, 'low_stock'), 10) || 0),
+    ...(fd.has('ship_type') ? {
+      ship_type: isShipType(str(fd, 'ship_type')) ? str(fd, 'ship_type') : 'general',
+      length_mm: mmOf(str(fd, 'length_cm')), width_mm: mmOf(str(fd, 'width_cm')), height_mm: mmOf(str(fd, 'height_cm')),
+    } : {}),
   }).eq('id', id).select('org_id, sku').maybeSingle();
   if (error || !data) redirect(withMsg(`${to}#edit`, error?.message ?? 'You can’t edit this product.', 'err'));
   await logActivity(sb, ctx.userId, data.org_id, 'product_updated', `${data.sku} · ${name}`);

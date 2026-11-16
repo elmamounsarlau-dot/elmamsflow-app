@@ -12,6 +12,7 @@ import { ImagePick } from '@/components/media';
 import { adjustStock, decideQuarantine, quarantineStock, reconcileStock, releaseStock, requestQuarantine, saveBundle, saveProductPhoto, updateProduct } from '../actions';
 import Link from 'next/link';
 import { getWarehouses, shippingWarehouses, type WarehouseStock } from '@/lib/warehouses';
+import { SHIP_TYPES, type ShipType } from '@/lib/shipping-rates';
 
 const QD: Record<string, string> = { restock: 'Restock', dispose: 'Dispose', return: 'Return to supplier' };
 const TYPES: Record<string, string> = { inbound: 'Received', order: 'Shipped', adjust: 'Correction', count: 'Warehouse count', quarantine: 'To quarantine', release: 'Out of quarantine', transfer_out: 'Transfer out', transfer_in: 'Transfer in' };
@@ -27,13 +28,16 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
   const { data } = await q.maybeSingle();
   if (!data) notFound();
   const p = data as ProductRow;
-  const [{ data: moves }, sales, { data: org }, whs, { data: perWh }] = await Promise.all([
+  const [{ data: moves }, sales, { data: org }, whs, { data: perWh }, { data: shipInfo }] = await Promise.all([
     sb.from('stock_moves').select('*').eq('product_id', id).order('created_at', { ascending: false }).limit(100),
     salesByProduct(ctx, 30),
     ctx.backOffice ? sb.from('organizations').select('name').eq('id', p.org_id).maybeSingle() : Promise.resolve({ data: null }),
     getWarehouses(),
     sb.from('warehouse_stock').select('*').eq('product_id', id),
+    sb.from('products').select('ship_type, length_mm, width_mm, height_mm').eq('id', id).maybeSingle(),
   ]);
+  const ship = (shipInfo ?? { ship_type: 'general', length_mm: null, width_mm: null, height_mm: null }) as { ship_type: ShipType; length_mm: number | null; width_mm: number | null; height_mm: number | null };
+  const cm = (mm: number | null) => (mm ? +(mm / 10).toFixed(1) : '');
   const kit = p.kind === 'bundle';
   const [{ data: parts }, { data: qreqs }, siblings] = await Promise.all([
     kit ? sb.from('bundle_items').select('component_id, qty').eq('bundle_id', id) : Promise.resolve({ data: [] as { component_id: string; qty: number }[] }),
@@ -286,6 +290,12 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
                   <label>Customs value (USD)<input type="number" step="0.01" min={0} name="customs_value" defaultValue={Number(p.customs_value) || ''} className={!Number(p.customs_value) ? 'is-missing' : ''} /></label>
                   <label>Weight (g)<input type="number" min={0} name="weight_g" defaultValue={p.weight_g || ''} /></label>
                   <label>Low-stock alert at<input type="number" min={0} name="low_stock" defaultValue={p.low_stock} /></label>
+                </div>
+                <div className="ep-row4">
+                  <label>Shipping type<select name="ship_type" defaultValue={ship.ship_type}>{(Object.keys(SHIP_TYPES) as ShipType[]).map((t) => <option key={t} value={t}>{SHIP_TYPES[t]}</option>)}</select></label>
+                  <label>Packed length (cm)<input type="number" step="0.1" min={0} name="length_cm" defaultValue={cm(ship.length_mm)} placeholder="optional" /></label>
+                  <label>Packed width (cm)<input type="number" step="0.1" min={0} name="width_cm" defaultValue={cm(ship.width_mm)} placeholder="optional" /></label>
+                  <label>Packed height (cm)<input type="number" step="0.1" min={0} name="height_cm" defaultValue={cm(ship.height_mm)} placeholder="optional" /></label>
                 </div>
               </>
             )}
