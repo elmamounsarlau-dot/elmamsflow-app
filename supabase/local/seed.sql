@@ -202,3 +202,6 @@ select public.shipping_sheet_replace('economic', 'general', 'Local test · stand
 select public.shipping_sheet_replace('expedited', 'general', 'Local test · priority general', '2026-11-09', null, '[
   {"country":"US","transit":"5-7 work days","w_min":0,"w_max":2,"per_kg":24.10,"per_parcel":5.20},
   {"country":"GB","transit":"3-5 work days","w_min":0,"w_max":2,"per_kg":10.20,"per_parcel":4.10}]'::jsonb);
+select public.shipping_line_sheet_replace((select id from public.shipping_lines where key = 'express'), 'general', 'Local test · last-mile general', '2026-11-16', null, '[
+  {"country":"US","transit":"5-8 work days","carrier":"USPS","w_min":0,"w_max":2,"per_kg":20.86,"per_parcel":6.13},
+  {"country":"GB","transit":"3-5 work days","carrier":"Evri","w_min":0,"w_max":2,"per_kg":10.28,"per_parcel":3.99}]'::jsonb);

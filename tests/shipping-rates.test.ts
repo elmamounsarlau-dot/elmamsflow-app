@@ -47,3 +47,21 @@ test('a newer sheet replaces the prices right away', async () => {
   assert.equal(sheets[0].dated, '2026-11-16');
   assert.equal(Number(sheets[0].rows[0].per_kg), 19.16);
 });
+
+test('lines: every line offered shows with its carrier; a hidden line disappears for clients but not for the team', async () => {
+  const { data: lines } = await db().from('shipping_lines').select('id, key').in('key', ['standard', 'express']);
+  const id = (k: string) => lines!.find((l) => l.key === k)!.id;
+  const express = ['Country/Region\tReference Timeframe\tLast-mile service provider\tWeight(KG)\tShipping Fee(USD/KG)\tProcessing fee (USD/Package)', 'United Kingdom\t3-5 work days\tEvri\t0<W≤0.3\t10.28\t3.99'].join('\n');
+  const { error } = await db().rpc('shipping_line_sheet_replace', { p_line: id('express'), p_type: 'general', p_source: 'tab 13', p_dated: '2026-11-16', p_user: null, p_rows: parseSheet(express).rows });
+  assert.ifError(error);
+  const s = await shipSettings();
+  const q = quoteAll(await sheetsFor('general', 'GB'), 'GB', { weight_g: 150 }, s, { pct: 0, fixed: 0 });
+  assert.deepEqual(q.map((l) => [l.label, l.carrier]), [['Standard', null], ['Express', 'Evri']]);
+  await db().from('shipping_lines').update({ active: false }).eq('id', id('express'));
+  try {
+    assert.deepEqual((await sheetsFor('general', 'GB')).map((x) => x.line.name), ['Standard']);
+    assert.equal((await sheetsFor('general', 'GB', { includeOff: true })).length, 2);
+  } finally {
+    await db().from('shipping_lines').update({ active: true }).eq('id', id('express'));
+  }
+});

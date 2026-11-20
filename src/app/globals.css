@@ -2314,3 +2314,4 @@ a.ds-pill { min-width: 28px; min-height: 28px; justify-content: center; }
 .ep-unit { display: flex; gap: .4rem; }
 .ep-unit input { flex: 1 1 auto; min-width: 0; }
 .ep-unit select { flex: 0 0 5.2rem; padding-left: .6rem; padding-right: 1.6rem; }
+@media (max-width: 760px) { .ep-row4 > label:has(.ep-unit) { grid-column: 1 / -1; } }

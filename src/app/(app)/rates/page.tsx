@@ -43,7 +43,8 @@ export default async function Rates({ searchParams }: { searchParams: Promise<Re
 
   const [s, offered] = await Promise.all([shipSettings(), shippedCountries()]);
   const margin = await marginFor(orgId, s);
-  const sheets = asked ? await sheetsFor(type, country) : [];
+  const sheets = asked ? await sheetsFor(type, country, { includeOff: staffView }) : [];
+  const offLines = new Set(sheets.filter((x) => !x.line.active).map((x) => x.line.id));
   const lines = asked ? quoteAll(sheets, country, { weight_g, length_mm, width_mm, height_mm, qty }, s, margin) : [];
   const zoned = sheets.some((x) => x.rows.some((r) => r.subregion));
   const dated = sheets.map((x) => x.dated).filter(Boolean).sort().at(-1) ?? null;
@@ -101,11 +102,12 @@ export default async function Rates({ searchParams }: { searchParams: Promise<Re
           ) : (
             <div className="ep-tablewrap">
               <table className="ep-table">
-                <thead><tr><th>Shipping option</th><th>Transit time</th><th className="ep-right">Billed weight</th><th className="ep-right">Price</th>{qty > 1 && <th className="ep-right">Per unit</th>}{staffView && <th className="ep-right">Our cost · team only</th>}</tr></thead>
+                <thead><tr><th>Shipping option</th><th>Delivered by</th><th>Transit time</th><th className="ep-right">Billed weight</th><th className="ep-right">Price</th>{qty > 1 && <th className="ep-right">Per unit</th>}{staffView && <th className="ep-right">Our cost · team only</th>}</tr></thead>
                 <tbody>
                   {lines.map((l) => (
-                    <tr key={l.service}>
-                      <td><b>{l.label}</b><small>Door to door</small></td>
+                    <tr key={l.line}>
+                      <td><b>{l.label}</b><small>{offLines.has(l.line) ? 'Hidden from clients' : 'Door to door'}</small></td>
+                      <td>{l.carrier ?? <span className="ep-muted">Partner network</span>}</td>
                       <td>{transitLabel(l.transit)}</td>
                       <td className="ep-right"><b>{l.kg.toFixed(3)} kg</b><small>{l.volumetric > l.actual ? `size-based (packed ${l.actual.toFixed(3)} kg)` : `incl. packaging`}</small></td>
                       <td className="ep-right"><b style={{ fontSize: '1.05rem' }}>{money(l.price)}</b></td>
