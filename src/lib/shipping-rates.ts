@@ -5,14 +5,13 @@
  * Nothing here is shown to clients except the final price, transit time and chargeable weight.
  */
 
-export const SERVICES = { economic: 'Economic', expedited: 'Expedited' } as const;
-export type Service = keyof typeof SERVICES;
+/** A partner line offered to clients under the name the team gives it (Standard, Priority, Express…). */
+export type Line = { id: string; key: string; name: string; note: string | null; sort: number; active: boolean };
 export const SHIP_TYPES = { general: 'General goods', battery: 'With batteries', clothing: 'Clothing', cosmetics: 'Cosmetics' } as const;
 export type ShipType = keyof typeof SHIP_TYPES;
-export const isService = (s: string): s is Service => s in SERVICES;
 export const isShipType = (s: string): s is ShipType => s in SHIP_TYPES;
 
-export type RateRow = { country: string; subregion: string | null; transit: string | null; w_min: number; w_max: number; per_kg: number; per_parcel: number; min_kg: number; step_kg?: number };
+export type RateRow = { country: string; subregion: string | null; transit: string | null; carrier?: string | null; w_min: number; w_max: number; per_kg: number; per_parcel: number; min_kg: number; step_kg?: number };
 export type ShipSettings = { margin_pct: number; margin_fixed: number; packaging_g: number; volume_factor: number; remind_days: number };
 export const DEFAULT_SETTINGS: ShipSettings = { margin_pct: 20, margin_fixed: 0, packaging_g: 150, volume_factor: 8000, remind_days: 7 };
 
@@ -99,7 +98,7 @@ export function parseSheet(text: string): ParsedSheet {
   const rows: RateRow[] = [];
   const unknown = new Set<string>();
   let skipped = 0, tables = 0;
-  let cols: { country: number; transit: number; sub: number; weight: number; step: number; min: number; kg: number; parcel: number; stepPriced: boolean } | null = null;
+  let cols: { country: number; transit: number; sub: number; carrier: number; weight: number; step: number; min: number; kg: number; parcel: number; stepPriced: boolean } | null = null;
   let lastCountry = '', lastTransit = '';
   for (const r of lines) {
     if (r.every((c) => !c)) continue;
@@ -110,7 +109,7 @@ export function parseSheet(text: string): ParsedSheet {
       const parcel = col(/processing|registration|handling|per package|\/package|parcel|increase/);
       tables++;
       cols = {
-        country: col(/country/), transit: col(/timeframe|transit|time/), sub: col(/subregion|zone/),
+        country: col(/country/), transit: col(/timeframe|transit|time/), sub: col(/subregion|zone/), carrier: col(/provider|carrier|last.?mile/),
         weight: h.findIndex((c) => /weight/.test(c) && !/increment|minimum|min\b|product/.test(c)),
         step: col(/increment/), min: col(/minimum/), kg, parcel,
         stepPriced: tables > 1 || /0\.5 ?kg|increase/.test(h.join('|')),
@@ -139,7 +138,7 @@ export function parseSheet(text: string): ParsedSheet {
       perParcel = Math.max(0, a - c);   // first step − one extra step
       minKg = Math.max(minKg, step);
     }
-    rows.push({ country: cc, subregion: (cols.sub >= 0 && r[cols.sub]) || null, transit: transit || null, w_min: b[0], w_max: b[1],
+    rows.push({ country: cc, subregion: (cols.sub >= 0 && r[cols.sub]) || null, transit: transit || null, carrier: (cols.carrier >= 0 && r[cols.carrier]) || null, w_min: b[0], w_max: b[1],
       per_kg: Math.round(perKg * 1e4) / 1e4, per_parcel: Math.round(perParcel * 1e4) / 1e4, min_kg: minKg, step_kg: step });
   }
   return { dated, rows, unknown: [...unknown], skipped };
@@ -172,19 +171,19 @@ export function partnerCost(rows: RateRow[], country: string, p: Parcel, s: Pick
   // Weight is rounded up to the row's step (0.01 / 0.1 / 0.5 / 1 kg) before pricing.
   const stepped = (r: RateRow) => { const st = Number(r.step_kg) || 0; return st > 0 ? Math.ceil(w.kg / st - 1e-9) * st : w.kg; };
   const best = fits.reduce((x, r) => { const k = stepped(r); const c = k * Number(r.per_kg) + Number(r.per_parcel); return c > x.c ? { c, k } : x; }, { c: -1, k: w.kg });
-  return { cost: best.c, ...w, kg: Math.round(best.k * 1000) / 1000, transit: fits[0].transit };
+  return { cost: best.c, ...w, kg: Math.round(best.k * 1000) / 1000, transit: fits[0].transit, carrier: fits[0].carrier ?? null };
 }
 
 export const withMargin = (cost: number, m: Margin) => Math.round((cost * (1 + m.pct / 100) + m.fixed) * 100) / 100;
 
-export type QuoteLine = { service: Service; label: string; transit: string | null; kg: number; actual: number; volumetric: number; price: number; cost: number };
+export type QuoteLine = { line: string; label: string; carrier: string | null; transit: string | null; kg: number; actual: number; volumetric: number; price: number; cost: number };
 
-/** Every option we can offer for this parcel, cheapest first. */
-export function quoteAll(sheets: { service: Service; rows: RateRow[] }[], country: string, p: Parcel, s: ShipSettings, m: Margin): QuoteLine[] {
+/** Every line we can offer for this parcel, cheapest first. */
+export function quoteAll(sheets: { line: { id: string; name: string }; rows: RateRow[] }[], country: string, p: Parcel, s: ShipSettings, m: Margin): QuoteLine[] {
   const out: QuoteLine[] = [];
   for (const sh of sheets) {
     const c = partnerCost(sh.rows, country, p, s);
-    if (c) out.push({ service: sh.service, label: SERVICES[sh.service], transit: c.transit, kg: c.kg, actual: c.actual, volumetric: c.volumetric, price: withMargin(c.cost, m), cost: Math.round(c.cost * 100) / 100 });
+    if (c) out.push({ line: sh.line.id, label: sh.line.name, carrier: c.carrier, transit: c.transit, kg: c.kg, actual: c.actual, volumetric: c.volumetric, price: withMargin(c.cost, m), cost: Math.round(c.cost * 100) / 100 });
   }
   return out.sort((a, b) => a.price - b.price);
 }

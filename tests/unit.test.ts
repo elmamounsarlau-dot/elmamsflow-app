@@ -234,6 +234,7 @@ test('B2B: amounts in French and English words, document numbers', async () => {
 // ---------- Shipping rates (partner sheet → client price) ----------
 import { bracket, chargeableKg, countryCode, parseSheet, quoteAll, transitLabel, withMargin } from '../src/lib/shipping-rates';
 
+const L = { id: 'l1', name: 'Standard' };
 const SHEET = [
   '\t\t\t2026.11.9\t\t\t\t\t\tCalculation Column',
   '国家/地区\tCountry/Region\tReference Timeframe\tSubregion\tWeight(KG)\tWeight Increment\tMinimum Billing Weight\tShipping Fee(USD/KG)\tProcessing fee (USD/Package)\tProduct Weight(KG)\tTotal Shipping Cost(USD)',
@@ -252,7 +253,7 @@ test('shipping sheet: date, countries, brackets and merged rows are read from a 
   assert.equal(p.dated, '2026-11-09');
   assert.deepEqual(p.unknown, ['Mars']);
   assert.equal(p.rows.length, 7);
-  assert.deepEqual(p.rows[0], { country: 'US', subregion: null, transit: '6-12 work days', w_min: 0, w_max: 0.1, per_kg: 20.86, per_parcel: 5.06, min_kg: 0.03, step_kg: 0 });
+  assert.deepEqual(p.rows[0], { country: 'US', subregion: null, transit: '6-12 work days', carrier: null, w_min: 0, w_max: 0.1, per_kg: 20.86, per_parcel: 5.06, min_kg: 0.03, step_kg: 0 });
   assert.equal(p.rows[3].country, 'US', 'a row with an empty country belongs to the one above');
   assert.equal(p.rows[3].transit, '6-12 work days');
   assert.equal(p.rows[4].country, 'GB');
@@ -278,22 +279,22 @@ test('shipping price: weight + packaging, volumetric when bigger, bracket, margi
   const s = { margin_pct: 20, margin_fixed: 0, packaging_g: 150, volume_factor: 8000, remind_days: 7 };
   const rows = parseSheet(SHEET).rows;
   // 150 g + 150 g packaging = 0.3 kg → US bracket 0.2–0.3: 0.3 × 19.63 + 4.45 = 10.339 → +20% = 12.41
-  const us = quoteAll([{ service: 'economic', rows }], 'US', { weight_g: 150 }, s, { pct: 20, fixed: 0 });
+  const us = quoteAll([{ line: L, rows }], 'US', { weight_g: 150 }, s, { pct: 20, fixed: 0 });
   assert.equal(us.length, 1);
   assert.equal(us[0].kg, 0.3);
   assert.equal(us[0].cost, 10.34);
   assert.equal(us[0].price, 12.41);
   assert.equal(us[0].transit, '6-12 work days');
   // UK, fixed margin added on top: 0.3 × 8.59 + 3.99 = 6.567 → ×1.2 + 1.5 = 9.38
-  assert.equal(quoteAll([{ service: 'economic', rows }], 'GB', { weight_g: 150 }, s, { pct: 20, fixed: 1.5 })[0].price, 9.38);
+  assert.equal(quoteAll([{ line: L, rows }], 'GB', { weight_g: 150 }, s, { pct: 20, fixed: 1.5 })[0].price, 9.38);
   // A big light box is billed on its size: 20 × 20 × 8 cm ÷ 8000 = 0.4 kg (more than 0.3 kg actual)
   const big = chargeableKg({ weight_g: 150, length_mm: 200, width_mm: 200, height_mm: 80 }, s);
   assert.equal(big.kg, 0.4);
   assert.equal(big.actual, 0.3);
   // 3 units in one parcel: 450 g + 150 g = 0.6 kg → too heavy for the UK rows above (max 0.5) → no price
-  assert.equal(quoteAll([{ service: 'economic', rows }], 'GB', { weight_g: 150, qty: 3 }, s, { pct: 0, fixed: 0 }).length, 0);
+  assert.equal(quoteAll([{ line: L, rows }], 'GB', { weight_g: 150, qty: 3 }, s, { pct: 0, fixed: 0 }).length, 0);
   // A country that isn't in the sheet → no price (never a made-up one)
-  assert.equal(quoteAll([{ service: 'economic', rows }], 'JP', { weight_g: 150 }, s, { pct: 0, fixed: 0 }).length, 0);
+  assert.equal(quoteAll([{ line: L, rows }], 'JP', { weight_g: 150 }, s, { pct: 0, fixed: 0 }).length, 0);
   // Minimum billing weight applies to tiny parcels
   assert.equal(chargeableKg({ weight_g: 5 }, { packaging_g: 0, volume_factor: 8000 }, 0.03).kg, 0.03);
   assert.equal(withMargin(10, { pct: 0, fixed: 0 }), 10);
@@ -318,7 +319,7 @@ test('shipping sheet: quoted multi-line cells, weight steps and a second table p
   assert.equal(jp.country, 'JP');
   assert.equal(jp.step_kg, 0.5);
   const s = { margin_pct: 0, margin_fixed: 0, packaging_g: 150, volume_factor: 8000, remind_days: 7 };
-  const q = (cc: string, g: number) => quoteAll([{ service: 'economic', rows: p.rows }], cc, { weight_g: g }, s, { pct: 0, fixed: 0 })[0];
+  const q = (cc: string, g: number) => quoteAll([{ line: L, rows: p.rows }], cc, { weight_g: g }, s, { pct: 0, fixed: 0 })[0];
   // Japan: 0.3 kg → one 0.5 kg step = 5.21; 0.7 kg → two steps = 5.21 + 2.30
   assert.equal(q('JP', 150).price, 5.21);
   assert.equal(q('JP', 550).price, 7.51);
@@ -327,4 +328,26 @@ test('shipping sheet: quoted multi-line cells, weight steps and a second table p
   assert.equal(q('NG', 150).price, 7);
   // Australia by zone: without the postcode we take the dearest zone (never under-charge)
   assert.equal(q('AU', 150).price, 22.7);
+});
+
+test('shipping sheet: the last-mile carrier column (Evri, DHL, USPS…) is read and shown with the price', () => {
+  const text = [
+    '\t\t\t2026.11.16',
+    '国家/地区\tCountry/Region\tReference Timeframe\tLast-mile service provider\tWeight(KG)\tWeight Increment\tMinimum Billing Weight\tShipping Fee(USD/KG)\tProcessing fee (USD/Package)',
+    '英国\tUnited Kingdom\t3-5 work days\tEvri\t0＜W≤0.3\t\t\t10.28\t3.99',
+    '德国\tGermany\t4-6 work days\tDHL\t0＜W≤0.2\t\t\t12.73\t11.83',
+    '国家/地区\tCountry/Region\tReference time limit\tLast-mile service provider\tWeight(KG)\tWeight Increment\tMinimum Billing Weight\tShipping Fee(USD/0.5KG)\tincrease price',
+    '日本\tJapan\t6-7 work days\tSagawa\t0＜W≤2\t0.5\t0.5\t5.52\t2.30',
+  ].join('\n');
+  const p = parseSheet(text);
+  assert.deepEqual(p.rows.map((r) => [r.country, r.carrier, r.transit]), [['GB', 'Evri', '3-5 work days'], ['DE', 'DHL', '4-6 work days'], ['JP', 'Sagawa', '6-7 work days']]);
+  const s = { margin_pct: 0, margin_fixed: 0, packaging_g: 150, volume_factor: 8000, remind_days: 7 };
+  const express = { id: 'x', name: 'Express' }, standard = { id: 's', name: 'Standard' };
+  const std = parseSheet(SHEET).rows;
+  const q = quoteAll([{ line: express, rows: p.rows }, { line: standard, rows: std }], 'GB', { weight_g: 150 }, s, { pct: 0, fixed: 0 });
+  // Both lines ship to the UK: cheapest first, each with its carrier
+  assert.deepEqual(q.map((l) => [l.label, l.carrier, l.price]), [['Standard', null, 6.57], ['Express', 'Evri', 7.07]]);
+  assert.equal(q[1].transit, '3-5 work days');
+  // Japan on the express line: one 0.5 kg step
+  assert.equal(quoteAll([{ line: express, rows: p.rows }], 'JP', { weight_g: 150 }, s, { pct: 0, fixed: 0 })[0].price, 5.52);
 });

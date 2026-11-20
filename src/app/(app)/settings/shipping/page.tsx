@@ -4,9 +4,9 @@ import { requireCtx } from '@/lib/session';
 import { fmtDate } from '@/lib/format';
 import { Back, Empty } from '@/components/ui';
 import { Submit } from '@/components/client';
-import { activeSheets, shipSettings } from '@/lib/shipping-db';
-import { SERVICES, SHIP_TYPES, type Service, type ShipType } from '@/lib/shipping-rates';
-import { saveShippingDefaults, saveShippingSheet } from './actions';
+import { activeSheets, shipSettings, shippingLines } from '@/lib/shipping-db';
+import { SHIP_TYPES, type ShipType } from '@/lib/shipping-rates';
+import { saveShippingDefaults, saveShippingLine, saveShippingSheet } from './actions';
 
 export const metadata = { title: 'Shipping prices' };
 
@@ -15,8 +15,9 @@ const ageDays = (d: string | null) => (d ? Math.floor((Date.now() - new Date(d).
 export default async function ShippingPrices() {
   const ctx = await requireCtx();
   if (!ctx.staffRole || ctx.viewingAs || !ctx.can('billing.manage')) redirect('/settings');
-  const [s, sheets] = await Promise.all([shipSettings(), activeSheets()]);
-  const find = (sv: Service, t: ShipType) => sheets.find((x) => x.service === sv && x.product_type === t);
+  const [s, sheets, lines] = await Promise.all([shipSettings(), activeSheets(), shippingLines()]);
+  const find = (line: string, t: ShipType) => sheets.find((x) => x.line_id === line && x.product_type === t);
+  const types = Object.keys(SHIP_TYPES) as ShipType[];
 
   return (
     <>
@@ -29,25 +30,40 @@ export default async function ShippingPrices() {
         </div>
       </div>
 
-      <section className="ep-card ep-card--flush" style={{ marginBottom: '1.2rem' }}>
-        <div className="ep-card-head ep-pad"><h2>Price sheets in use</h2><span className="ep-muted ep-small">Update when the date on the partner’s sheet changes</span></div>
+      <section className="ep-card ep-card--flush" id="lines" style={{ marginBottom: '1.2rem' }}>
+        <div className="ep-card-head ep-pad"><h2>Shipping lines</h2><span className="ep-muted ep-small">Each line is one option clients can choose · one sheet per product type</span></div>
         <div className="ep-tablewrap">
           <table className="ep-table">
-            <thead><tr><th>Product type</th>{(Object.keys(SERVICES) as Service[]).map((sv) => <th key={sv}>{SERVICES[sv]}</th>)}</tr></thead>
+            <thead><tr><th>Line (as clients see it)</th>{types.map((t) => <th key={t}>{SHIP_TYPES[t]}</th>)}</tr></thead>
             <tbody>
-              {(Object.keys(SHIP_TYPES) as ShipType[]).map((t) => (
-                <tr key={t}>
-                  <td><b>{SHIP_TYPES[t]}</b></td>
-                  {(Object.keys(SERVICES) as Service[]).map((sv) => {
-                    const x = find(sv, t);
-                    if (!x) return <td key={sv}><span className="ep-st ep-st--mute">Not offered</span></td>;
+              {lines.map((l) => (
+                <tr key={l.id}>
+                  <td>
+                    <b>{l.name}</b>{!l.active && <span className="ep-st ep-st--mute" style={{ marginLeft: '.4rem' }}>Hidden</span>}
+                    {l.note && <small className="ep-muted">{l.note}</small>}
+                    <details className="ep-edit">
+                      <summary><span>Edit</span></summary>
+                      <form action={saveShippingLine} className="ep-form" style={{ marginTop: '.5rem' }}>
+                        <input type="hidden" name="id" value={l.id} />
+                        <label>Name clients see<input name="name" defaultValue={l.name} maxLength={60} required /></label>
+                        <label>Team note<input name="note" defaultValue={l.note ?? ''} maxLength={160} placeholder="Which partner line / tabs" /></label>
+                        <div className="ep-row2">
+                          <label>Order in the list<input name="sort" type="number" min={0} max={999} defaultValue={l.sort} /></label>
+                          <label className="ep-check" style={{ alignSelf: 'end' }}><input type="checkbox" name="active" defaultChecked={l.active} /> Offered to clients</label>
+                        </div>
+                        <Submit className="ep-btn ep-btn--sm">Save line</Submit>
+                      </form>
+                    </details>
+                  </td>
+                  {types.map((t) => {
+                    const x = find(l.id, t);
+                    if (!x) return <td key={t}><span className="ep-muted ep-small">—</span></td>;
                     const age = ageDays(x.created_at);
                     const old = age != null && age >= s.remind_days;
                     return (
-                      <td key={sv}>
+                      <td key={t}>
                         <span className={`ep-st ep-st--${old ? 'warn' : 'ok'}`}>{old ? `${age} days old` : 'Up to date'}</span>
-                        <small>{x.countries} countries · sheet dated {x.dated ? fmtDate(x.dated) : '—'} · pasted {fmtDate(x.created_at)}</small>
-                        {x.source && <small className="ep-muted">{x.source}</small>}
+                        <small>{x.countries} countries · dated {x.dated ? fmtDate(x.dated) : '—'}</small>
                       </td>
                     );
                   })}
@@ -56,22 +72,34 @@ export default async function ShippingPrices() {
             </tbody>
           </table>
         </div>
+        <details className="ep-edit ep-pad">
+          <summary><span>Add a line</span></summary>
+          <form action={saveShippingLine} className="ep-form" style={{ marginTop: '.6rem', maxWidth: '34rem' }}>
+            <div className="ep-row2">
+              <label>Name clients see<input name="name" maxLength={60} required placeholder="e.g. Express UK" /></label>
+              <label>Team note<input name="note" maxLength={160} placeholder="Which partner line / tabs" /></label>
+            </div>
+            <input type="hidden" name="sort" value="100" />
+            <input type="hidden" name="active" value="on" />
+            <Submit className="ep-btn ep-btn--sm">Add line</Submit>
+          </form>
+        </details>
       </section>
 
       <div className="ep-split">
         <section className="ep-card" id="paste">
           <h2>Paste a new sheet</h2>
           <ol className="ep-steps-list ep-small" style={{ marginBottom: '.8rem' }}>
-            <li>Open the partner’s sheet on the right tab (e.g. <i>standard shipping … general goods</i>).</li>
+            <li>Open the partner’s sheet on a tab (e.g. <i>13 · last-mile service provider for general goods</i>).</li>
             <li>Click any cell, press <b>Cmd + A</b> then <b>Cmd + C</b>.</li>
-            <li>Choose what it is below, paste, save. It replaces the previous prices for that option straight away.</li>
+            <li>Choose its line and product type below (the team note on each line says which tabs), paste, save. It replaces that line’s previous prices straight away.</li>
           </ol>
           <form action={saveShippingSheet} className="ep-form">
             <div className="ep-row2">
-              <label>Shown to clients as<select name="service" required defaultValue="economic">{(Object.keys(SERVICES) as Service[]).map((sv) => <option key={sv} value={sv}>{SERVICES[sv]}</option>)}</select></label>
+              <label>Line<select name="line" required defaultValue={lines[0]?.id}>{lines.map((l) => <option key={l.id} value={l.id}>{l.name}{l.note ? ` — ${l.note}` : ''}</option>)}</select></label>
               <label>Product type<select name="product_type" required defaultValue="general">{(Object.keys(SHIP_TYPES) as ShipType[]).map((t) => <option key={t} value={t}>{SHIP_TYPES[t]}</option>)}</select></label>
             </div>
-            <label>Note for the team<input name="source" placeholder="e.g. ST · YunExpress standard, general goods" maxLength={120} /></label>
+            <label>Note for the team<input name="source" placeholder="e.g. tab 13, last-mile general goods" maxLength={120} /></label>
             <label>Paste the sheet here<textarea name="sheet" rows={8} required placeholder="Country/Region	Reference Timeframe	Weight(KG)	…" style={{ fontFamily: 'var(--mono, ui-monospace, monospace)', fontSize: '.8rem' }} /></label>
             <label>Date of the sheet<input name="dated" type="date" /><small>Optional — read from the top of the sheet when it’s there (e.g. 2026.11.9).</small></label>
             <div className="ep-form-foot"><Submit>Save prices</Submit></div>

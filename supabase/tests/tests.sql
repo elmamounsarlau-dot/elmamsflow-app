@@ -764,11 +764,11 @@ delete from public.shopify_installs;
 select t.ok('shipping: default margin row exists', (select count(*) = 1 from public.shipping_settings));
 select t.ok('shipping: replace saves a sheet and its rows', public.shipping_sheet_replace('economic', 'general', 'test', '2026-11-09', null,
   '[{"country":"US","w_min":0,"w_max":0.3,"per_kg":19.63,"per_parcel":4.45,"min_kg":0.03},{"country":"GB","w_min":0,"w_max":0.3,"per_kg":8.59,"per_parcel":3.99}]'::jsonb) is not null);
-select t.ok('shipping: counts are stored', (select rows_count = 2 and countries = 2 from public.shipping_sheets where active and service = 'economic' and product_type = 'general'));
+select t.ok('shipping: counts are stored', (select rows_count = 2 and countries = 2 from public.shipping_sheets where active and line_id = (select id from public.shipping_lines where key = 'standard') and product_type = 'general'));
 select public.shipping_sheet_replace('economic', 'general', 'v2', '2026-11-16', null, '[{"country":"US","w_min":0,"w_max":0.3,"per_kg":20,"per_parcel":4}]'::jsonb);
 select t.ok('shipping: a new sheet replaces the old one (old kept, switched off)',
-  (select count(*) = 1 from public.shipping_sheets where active and service = 'economic' and product_type = 'general')
-  and (select count(*) = 2 from public.shipping_sheets where service = 'economic' and product_type = 'general'));
+  (select count(*) = 1 from public.shipping_sheets where active and line_id = (select id from public.shipping_lines where key = 'standard') and product_type = 'general')
+  and (select count(*) = 2 from public.shipping_sheets where line_id = (select id from public.shipping_lines where key = 'standard') and product_type = 'general'));
 select t.raises('shipping: an empty paste is refused', $q$select public.shipping_sheet_replace('economic', 'general', '', null, null, '[]'::jsonb)$q$);
 select t.raises('shipping: a bracket must go up', $q$select public.shipping_sheet_replace('expedited', 'general', '', null, null, '[{"country":"US","w_min":1,"w_max":0.5,"per_kg":1,"per_parcel":1}]'::jsonb)$q$);
 select t.raises('shipping: products only take known shipping types', $q$update public.products set ship_type = 'weapons' where org_id = '11111111-1111-1111-1111-111111111111'$q$);
@@ -781,5 +781,24 @@ select t.login('00000000-0000-0000-0000-0000000000b1');
 select t.raises('shipping: a client cannot read partner prices', $q$select count(*) from public.shipping_rates$q$);
 select t.raises('shipping: a client cannot read the margin', $q$select margin_pct from public.shipping_settings$q$);
 select t.raises('shipping: a client cannot replace a sheet', $q$select public.shipping_sheet_replace('economic', 'general', '', null, null, '[{"country":"US","w_min":0,"w_max":1,"per_kg":0,"per_parcel":0}]'::jsonb)$q$);
+reset role;
+delete from public.shipping_sheets;
+
+-- ---------- 0024 Shipping lines ----------
+select t.ok('lines: the six partner lines exist', (select count(*) = 6 from public.shipping_lines));
+select t.ok('lines: a sheet is saved on a line with its carrier', public.shipping_line_sheet_replace((select id from public.shipping_lines where key = 'express'), 'general', 'tab 13', '2026-11-16', null,
+  '[{"country":"GB","carrier":"Evri","w_min":0,"w_max":0.3,"per_kg":10.28,"per_parcel":3.99}]'::jsonb) is not null);
+select t.ok('lines: the carrier is stored', (select carrier = 'Evri' from public.shipping_rates r join public.shipping_sheets s on s.id = r.sheet_id
+  join public.shipping_lines l on l.id = s.line_id where l.key = 'express' and s.active));
+select public.shipping_sheet_replace('expedited', 'general', 'old call', null, null, '[{"country":"US","w_min":0,"w_max":1,"per_kg":20,"per_parcel":5}]'::jsonb);
+select t.ok('lines: the old call still works and lands on Priority', (select count(*) = 1 from public.shipping_sheets s join public.shipping_lines l on l.id = s.line_id where l.key = 'priority' and s.active));
+select t.raises('lines: one active sheet per line and product type', $q$insert into public.shipping_sheets (line_id, product_type) select line_id, product_type from public.shipping_sheets where active limit 1$q$);
+select t.raises('lines: an unknown line is refused', $q$select public.shipping_line_sheet_replace(gen_random_uuid(), 'general', '', null, null, '[{"country":"US","w_min":0,"w_max":1,"per_kg":1,"per_parcel":1}]'::jsonb)$q$);
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000a1');
+select t.raises('lines: not readable from the browser, even by the owner', $q$select count(*) from public.shipping_lines$q$);
+select t.login('00000000-0000-0000-0000-0000000000b1');
+select t.raises('lines: a client cannot rename a line', $q$update public.shipping_lines set name = 'x'$q$);
+select t.raises('lines: a client cannot save a sheet', $q$select public.shipping_line_sheet_replace((select id from public.shipping_lines limit 1), 'general', '', null, null, '[]'::jsonb)$q$);
 reset role;
 delete from public.shipping_sheets;

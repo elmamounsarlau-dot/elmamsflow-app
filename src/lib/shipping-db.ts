@@ -1,6 +1,6 @@
 import 'server-only';
 import { supabaseAdmin } from './supabase/admin';
-import { DEFAULT_SETTINGS, type Margin, type RateRow, type Service, type ShipSettings, type ShipType } from './shipping-rates';
+import { DEFAULT_SETTINGS, type Line, type Margin, type RateRow, type ShipSettings, type ShipType } from './shipping-rates';
 
 /** Server only: partner prices and margins never go to the browser. */
 
@@ -19,28 +19,37 @@ export async function marginFor(orgId: string | null, s: ShipSettings): Promise<
   };
 }
 
-export type SheetInfo = { id: string; service: Service; product_type: ShipType; source: string | null; dated: string | null; rows_count: number; countries: number; created_at: string };
+export async function shippingLines(): Promise<Line[]> {
+  const { data } = await supabaseAdmin().from('shipping_lines').select('id, key, name, note, sort, active').order('sort').order('name');
+  return (data ?? []) as Line[];
+}
+
+export type SheetInfo = { id: string; line_id: string; product_type: ShipType; source: string | null; dated: string | null; rows_count: number; countries: number; created_at: string };
 
 export async function activeSheets(): Promise<SheetInfo[]> {
-  const { data } = await supabaseAdmin().from('shipping_sheets').select('id, service, product_type, source, dated, rows_count, countries, created_at').eq('active', true);
+  const { data } = await supabaseAdmin().from('shipping_sheets').select('id, line_id, product_type, source, dated, rows_count, countries, created_at').eq('active', true);
   return (data ?? []) as SheetInfo[];
 }
 
-/** The rows of the active sheets for one product type (one entry per service offered). */
-export async function sheetsFor(type: ShipType, country?: string) {
+/** The rows of every line offered to clients for one product type (staff can include lines switched off). */
+export async function sheetsFor(type: ShipType, country?: string, opts: { includeOff?: boolean } = {}) {
   const admin = supabaseAdmin();
-  const sheets = (await activeSheets()).filter((s) => s.product_type === type);
+  const [lines, all] = await Promise.all([shippingLines(), activeSheets()]);
+  const byId = new Map(lines.filter((l) => l.active || opts.includeOff).map((l) => [l.id, l]));
+  const sheets = all.filter((s) => s.product_type === type && byId.has(s.line_id));
   return Promise.all(sheets.map(async (sh) => {
-    let q = admin.from('shipping_rates').select('country, subregion, transit, w_min, w_max, per_kg, per_parcel, min_kg, step_kg').eq('sheet_id', sh.id).limit(5000);
+    let q = admin.from('shipping_rates').select('country, subregion, transit, carrier, w_min, w_max, per_kg, per_parcel, min_kg, step_kg').eq('sheet_id', sh.id).limit(5000);
     if (country) q = q.eq('country', country);
     const { data } = await q;
-    return { service: sh.service, dated: sh.dated, rows: (data ?? []) as RateRow[] };
+    return { line: byId.get(sh.line_id)!, dated: sh.dated, rows: (data ?? []) as RateRow[] };
   }));
 }
 
-/** Countries any active sheet ships to (for the calculator's list). */
+/** Countries any line offered to clients ships to (for the calculator's list). */
 export async function shippedCountries() {
-  const ids = (await activeSheets()).map((s) => s.id);
+  const [lines, all] = await Promise.all([shippingLines(), activeSheets()]);
+  const on = new Set(lines.filter((l) => l.active).map((l) => l.id));
+  const ids = all.filter((s) => on.has(s.line_id)).map((s) => s.id);
   if (!ids.length) return [] as string[];
   const { data } = await supabaseAdmin().from('shipping_rates').select('country').in('sheet_id', ids).limit(20000);
   return [...new Set((data ?? []).map((r) => r.country as string))];
