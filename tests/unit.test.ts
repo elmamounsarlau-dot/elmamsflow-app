@@ -351,3 +351,43 @@ test('shipping sheet: the last-mile carrier column (Evri, DHL, USPS…) is read 
   // Japan on the express line: one 0.5 kg step
   assert.equal(quoteAll([{ line: express, rows: p.rows }], 'JP', { weight_g: 150 }, s, { pct: 0, fixed: 0 })[0].price, 5.52);
 });
+
+// ---------- Shipping prices from one .xlsx (all tabs at once) ----------
+import ExcelJS from 'exceljs';
+import { readRateWorkbook } from '../src/lib/shipping-xlsx';
+import { tabTarget } from '../src/lib/shipping-rates';
+
+test('shipping workbook: each tab goes to its line and product type by name', () => {
+  assert.deepEqual(tabTarget('1-standard general'), { line: 'standard', type: 'general' });
+  assert.deepEqual(tabTarget('2- Standard Battery'), { line: 'standard', type: 'battery' });
+  assert.deepEqual(tabTarget('4-Standard Cosmetics'), { line: 'standard', type: 'cosmetics' });
+  assert.deepEqual(tabTarget('6-Priority Battery'), { line: 'priority', type: 'battery' });
+  assert.deepEqual(tabTarget('7-Large General'), { line: 'large', type: 'general' });
+  assert.deepEqual(tabTarget('10- US Remote Battery'), { line: 'us-remote', type: 'battery' });
+  assert.deepEqual(tabTarget('11- Courier General'), { line: 'courier', type: 'general' });
+  assert.deepEqual(tabTarget('13- Express General'), { line: 'express', type: 'general' });
+  assert.equal(tabTarget('Sheet1'), null);
+});
+
+test('shipping workbook: an .xlsx with real dates, number cells and a Japan table is read like a paste', async () => {
+  const wb = new ExcelJS.Workbook();
+  const a = wb.addWorksheet('1-standard general');
+  a.addRow([new Date(Date.UTC(2026, 10, 23)), null, null, null, null, null, null, null, null, 'Calculation Column']);
+  a.addRow(['国家/地区', 'Country/Region', 'Reference Timeframe', 'Subregion', 'Weight(KG)', 'Weight Increment', 'Minimum Billing Weight', 'Shipping Fee(USD/KG)', 'Processing fee (USD/Package)']);
+  a.addRow(['美国', 'United States', '6-12 work days', null, '0＜W≤0.1', null, 0.03, 22.7, 5.06]);
+  a.addRow(['英国', 'United Kingdom', '6-10 work days', null, '0＜W≤0.3', null, null, 10.28, 3.99]);
+  const e = wb.addWorksheet('13- Express General');
+  e.addRow([new Date(Date.UTC(2026, 10, 23))]);
+  e.addRow(['国家/地区', 'Country/Region', 'Reference Timeframe', 'Last-mile service provider', 'Weight(KG)', 'Weight Increment', 'Minimum Billing Weight', 'Shipping Fee(USD/KG)', 'Processing fee (USD/Package)']);
+  e.addRow(['英国', 'United Kingdom', '3-5 work days', 'Evri', '0＜W≤0.3', null, null, 11.35, 3.99]);
+  e.addRow(['国家/地区', 'Country/Region', 'Reference time limit', 'Last-mile service provider', 'Weight(KG)', 'Weight Increment', 'Minimum Billing Weight', 'Shipping Fee(USD/0.5KG)', 'increase price']);
+  e.addRow(['日本', 'Japan', '6-7 work days', 'Sagawa', '0＜W≤2', 0.5, 0.5, 5.52, 2.3]);
+  wb.addWorksheet('Notes').addRow(['just a note']);
+  const tabs = await readRateWorkbook(await wb.xlsx.writeBuffer() as ArrayBuffer);
+  assert.deepEqual(tabs.map((t) => [t.name, t.line, t.type, t.parsed.rows.length]), [
+    ['1-standard general', 'standard', 'general', 2], ['13- Express General', 'express', 'general', 2], ['Notes', null, null, 0]]);
+  assert.equal(tabs[0].parsed.dated, '2026-11-23');
+  assert.deepEqual(tabs[0].parsed.rows[0], { country: 'US', subregion: null, transit: '6-12 work days', carrier: null, w_min: 0, w_max: 0.1, per_kg: 22.7, per_parcel: 5.06, min_kg: 0.03, step_kg: 0 });
+  assert.equal(tabs[1].parsed.rows[0].carrier, 'Evri');
+  assert.equal(tabs[1].parsed.rows[1].step_kg, 0.5);
+});

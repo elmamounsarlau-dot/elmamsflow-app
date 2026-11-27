@@ -84,7 +84,7 @@ export default async function Rates({ searchParams }: { searchParams: Promise<Re
             <label>Declared value (USD)<input name="value" type="number" step="0.01" min={0} defaultValue={sp.value ?? (prod ? String(prod.customs_value) : '')} placeholder="optional" /></label>
           </div>
           <div className="ep-form-foot" style={{ justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-            <span className="ep-small ep-muted" style={{ flex: '1 1 16rem' }}>Weight of the product without packaging — we add our packaging. Size of the packed parcel, if you know it.</span>
+            <span className="ep-small ep-muted" style={{ flex: '1 1 16rem' }}>Packed weight: the product with its packaging, as it ships. Size of the packed parcel, if you know it.</span>
             <span style={{ display: 'flex', gap: '.5rem' }}><Link className="ep-btn ep-btn--ghost" href="/rates">Reset</Link><button className="ep-btn">Estimate cost</button></span>
           </div>
         </form>

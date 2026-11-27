@@ -32,9 +32,9 @@ test('a pasted sheet is saved and quoted with the default margin, then a client�
   assert.equal(sheets.length, 1);
   assert.equal(sheets[0].dated, '2026-11-09');
   const q = quoteAll(sheets, 'GB', { weight_g: 150 }, s, await marginFor(ATLAS, s));
-  assert.equal(q[0].price, 7.88); // (0.3 × 8.59 + 3.99) × 1.2
+  assert.equal(q[0].price, 6.33); // (0.15 × 8.59 + 3.99) × 1.2 — packed weight as typed, nothing added
   await db().from('organizations').update({ shipping_margin_pct: 10, shipping_margin_fixed: 1 }).eq('id', ATLAS);
-  assert.equal(quoteAll(sheets, 'GB', { weight_g: 150 }, s, await marginFor(ATLAS, s))[0].price, 8.22); // 6.567 × 1.1 + 1
+  assert.equal(quoteAll(sheets, 'GB', { weight_g: 150 }, s, await marginFor(ATLAS, s))[0].price, 6.81); // 5.2785 × 1.1 + 1
   assert.deepEqual((await shippedCountries()).sort(), ['GB', 'US']);
   assert.equal((await sheetsFor('cosmetics', 'GB')).length, 0, 'a product type without a sheet has no price');
 });
