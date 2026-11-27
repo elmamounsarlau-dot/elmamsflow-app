@@ -7,6 +7,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { logActivity } from '@/lib/log';
 import { str, withMsg } from '@/lib/format';
 import { isShipType, parseSheet, SHIP_TYPES } from '@/lib/shipping-rates';
+import { readRateWorkbook } from '@/lib/shipping-xlsx';
 
 const BACK = '/settings/shipping';
 
@@ -84,4 +85,36 @@ export async function saveClientShippingMargin(fd: FormData) {
   if (error) redirect(withMsg(back, error.message, 'err'));
   await logActivity(supabaseAdmin(), ctx.userId, org, 'shipping_prices', pct == null && fixed == null ? 'Shipping margin: default' : `Shipping margin: ${pct ?? 'default'} % + $${fixed ?? 'default'}`);
   redirect(withMsg(back, 'Shipping margin saved.'));
+}
+
+/** Upload the whole price workbook (.xlsx): every tab goes to the line + product type its name says. */
+export async function uploadShippingWorkbook(fd: FormData) {
+  const ctx = await staff();
+  const f = fd.get('file');
+  if (!(f instanceof File) || !f.size) redirect(withMsg(`${BACK}#upload`, 'Choose the .xlsx file.', 'err'));
+  const file = f as File;
+  if (file.size > 8 * 1024 * 1024) redirect(withMsg(`${BACK}#upload`, 'That file is larger than 8 MB.', 'err'));
+  if (!/\.xlsx$/i.test(file.name)) redirect(withMsg(`${BACK}#upload`, 'Use the Excel file (.xlsx) — one file holds every tab.', 'err'));
+  let tabs: Awaited<ReturnType<typeof readRateWorkbook>> = [];
+  try { tabs = await readRateWorkbook(await file.arrayBuffer()); } catch { redirect(withMsg(`${BACK}#upload`, 'That file could not be read as an Excel workbook.', 'err')); }
+  const admin = supabaseAdmin();
+  const { data: lines } = await admin.from('shipping_lines').select('id, key, name');
+  const byKey = new Map((lines ?? []).map((l) => [l.key as string, l as { id: string; key: string; name: string }]));
+  const saved: string[] = [], skipped: string[] = [], unknown = new Set<string>();
+  for (const t of tabs) {
+    const line = t.line ? byKey.get(t.line) : undefined;
+    if (!line || !t.type) { if (t.parsed.rows.length) skipped.push(`“${t.name}” (name not recognised)`); continue; }
+    if (!t.parsed.rows.length) { skipped.push(`“${t.name}” (no prices found)`); continue; }
+    t.parsed.unknown.forEach((u) => unknown.add(u));
+    const { error } = await admin.rpc('shipping_line_sheet_replace', {
+      p_line: line.id, p_type: t.type, p_source: `File · ${t.name}`.slice(0, 120), p_dated: t.parsed.dated, p_user: ctx.userId, p_rows: t.parsed.rows,
+    });
+    if (error) { skipped.push(`“${t.name}” (${error.message})`); continue; }
+    saved.push(`${line.name} · ${SHIP_TYPES[t.type]} (${new Set(t.parsed.rows.map((r) => r.country)).size})`);
+  }
+  await logActivity(admin, ctx.userId, null, 'shipping_prices', `File ${file.name}: ${saved.length} sheets saved${skipped.length ? `, ${skipped.length} skipped` : ''}`);
+  revalidatePath('/rates');
+  if (!saved.length) redirect(withMsg(`${BACK}#upload`, `Nothing saved. ${skipped.join('; ') || 'No tabs with prices.'} Tab names must say the line (Standard, Priority, Express, Large, Remote, Courier) and the type (General, Battery, Clothing, Cosmetics).`, 'err'));
+  const warn = [skipped.length ? `Skipped: ${skipped.join('; ')}.` : '', unknown.size ? `Countries not recognised: ${[...unknown].slice(0, 8).join(', ')}.` : ''].filter(Boolean).join(' ');
+  redirect(withMsg(`${BACK}#check`, `${saved.length} sheets saved: ${saved.join(', ')}. ${warn}`.trim(), warn ? 'warn' : 'ok'));
 }

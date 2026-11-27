@@ -13,7 +13,7 @@ export const isShipType = (s: string): s is ShipType => s in SHIP_TYPES;
 
 export type RateRow = { country: string; subregion: string | null; transit: string | null; carrier?: string | null; w_min: number; w_max: number; per_kg: number; per_parcel: number; min_kg: number; step_kg?: number };
 export type ShipSettings = { margin_pct: number; margin_fixed: number; packaging_g: number; volume_factor: number; remind_days: number };
-export const DEFAULT_SETTINGS: ShipSettings = { margin_pct: 20, margin_fixed: 0, packaging_g: 150, volume_factor: 8000, remind_days: 7 };
+export const DEFAULT_SETTINGS: ShipSettings = { margin_pct: 20, margin_fixed: 0, packaging_g: 0, volume_factor: 8000, remind_days: 7 };
 
 // ---------- Reading a pasted sheet ----------
 
@@ -88,8 +88,10 @@ const isHeader = (r: string[]) => { const j = r.join('|').toLowerCase(); return 
  * the next column = each extra step. They are stored so the same formula works: per kg = extra ÷ step, per parcel =
  * first − extra, weight rounded up to the step.
  */
-export function parseSheet(text: string): ParsedSheet {
-  const lines = splitTsv(text);
+export function parseSheet(text: string): ParsedSheet { return parseRows(splitTsv(text)); }
+
+/** Same as parseSheet, for rows already split into cells (an uploaded .xlsx tab). */
+export function parseRows(lines: string[][]): ParsedSheet {
   let dated: string | null = null;
   for (const row of lines.slice(0, 5)) for (const c of row) {
     const d = c.match(/^(20\d\d)[.\-/年](\d{1,2})[.\-/月](\d{1,2})日?$/);
@@ -190,3 +192,14 @@ export function quoteAll(sheets: { line: { id: string; name: string }; rows: Rat
 
 /** "6-12 work days" → "6–12 business days" (clients see one wording, whatever the sheet says). */
 export const transitLabel = (t: string | null) => !t ? '—' : t.replace(/(\d+)\s*[-~–]\s*(\d+)/, '$1–$2').replace(/work(ing)? ?days?|days?/i, 'business days');
+
+// ---------- Which line and product type a tab is, from its name ----------
+
+/** "1-standard general", "13- Express General", "10- US Remote Battery" → line key + product type. */
+export function tabTarget(name: string): { line: string; type: ShipType } | null {
+  const n = name.toLowerCase();
+  const line = /express|last.?mile/.test(n) ? 'express' : /remote/.test(n) ? 'us-remote' : /courier/.test(n) ? 'courier'
+    : /large/.test(n) ? 'large' : /priority/.test(n) ? 'priority' : /standard/.test(n) ? 'standard' : null;
+  const type: ShipType | null = /batter/.test(n) ? 'battery' : /cloth/.test(n) ? 'clothing' : /cosmetic/.test(n) ? 'cosmetics' : /general/.test(n) ? 'general' : null;
+  return line && type ? { line, type } : null;
+}

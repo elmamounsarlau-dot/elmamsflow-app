@@ -4,20 +4,31 @@ import { requireCtx } from '@/lib/session';
 import { fmtDate } from '@/lib/format';
 import { Back, Empty } from '@/components/ui';
 import { Submit } from '@/components/client';
-import { activeSheets, shipSettings, shippingLines } from '@/lib/shipping-db';
-import { SHIP_TYPES, type ShipType } from '@/lib/shipping-rates';
-import { saveShippingDefaults, saveShippingLine, saveShippingSheet } from './actions';
+import { activeSheets, sheetsFor, shipSettings, shippingLines } from '@/lib/shipping-db';
+import { quoteAll, SHIP_TYPES, transitLabel, type ShipType } from '@/lib/shipping-rates';
+import { countryName } from '@/lib/format';
+import { flag } from '@/lib/orders-query';
+import { saveShippingDefaults, saveShippingLine, saveShippingSheet, uploadShippingWorkbook } from './actions';
+
+const CHECK = ['GB', 'US', 'DE', 'FR', 'NL', 'ES', 'IT', 'AU', 'CA', 'JP'];
 
 export const metadata = { title: 'Shipping prices' };
 
 const ageDays = (d: string | null) => (d ? Math.floor((Date.now() - new Date(d).getTime()) / 864e5) : null);
 
-export default async function ShippingPrices() {
+export default async function ShippingPrices({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
+  const sp = await searchParams;
   const ctx = await requireCtx();
   if (!ctx.staffRole || ctx.viewingAs || !ctx.can('billing.manage')) redirect('/settings');
   const [s, sheets, lines] = await Promise.all([shipSettings(), activeSheets(), shippingLines()]);
   const find = (line: string, t: ShipType) => sheets.find((x) => x.line_id === line && x.product_type === t);
   const types = Object.keys(SHIP_TYPES) as ShipType[];
+  // Price check: what each line costs us for a test parcel, to compare with the partner's own page.
+  const cw = Math.min(30000, Math.max(1, Math.round(Number(sp.cw) || 140)));
+  const ct: ShipType = types.includes(sp.ct as ShipType) ? (sp.ct as ShipType) : 'general';
+  const checkSheets = await sheetsFor(ct, undefined, { includeOff: true });
+  const checkLines = [...new Map(checkSheets.map((x) => [x.line.id, x.line])).values()].sort((a, b) => a.sort - b.sort);
+  const zero = { pct: 0, fixed: 0 };
 
   return (
     <>
@@ -29,6 +40,15 @@ export default async function ShippingPrices() {
           <p>The partner’s price sheets and your margin. Clients never see this page — they only see the final price in <Link href="/rates">Shipping rates</Link>.</p>
         </div>
       </div>
+
+      <section className="ep-card" id="upload" style={{ marginBottom: '1.2rem' }}>
+        <div className="ep-card-head"><h2>Upload the price file</h2><span className="ep-st ep-st--ok">All lines at once</span></div>
+        <p className="ep-small" style={{ marginBottom: '.8rem' }}>Download your copy of the partner’s sheet as <b>Excel (.xlsx)</b> and upload it here. Every tab is saved to its line from its name — e.g. <i>5-Priority General</i> → Priority · General goods, <i>13- Express General</i> → Express · General goods. The previous prices of those lines are replaced straight away.</p>
+        <form action={uploadShippingWorkbook} className="ep-form ep-row3" style={{ alignItems: 'end' }}>
+          <label style={{ gridColumn: 'span 2' }}>Price file (.xlsx)<input name="file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required /></label>
+          <Submit>Upload and save prices</Submit>
+        </form>
+      </section>
 
       <section className="ep-card ep-card--flush" id="lines" style={{ marginBottom: '1.2rem' }}>
         <div className="ep-card-head ep-pad"><h2>Shipping lines</h2><span className="ep-muted ep-small">Each line is one option clients can choose · one sheet per product type</span></div>
@@ -86,6 +106,41 @@ export default async function ShippingPrices() {
         </details>
       </section>
 
+      <section className="ep-card ep-card--flush" id="check" style={{ marginBottom: '1.2rem' }}>
+        <div className="ep-card-head ep-pad">
+          <h2>Price check</h2>
+          <form method="get" className="ep-form" style={{ display: 'flex', gap: '.5rem', alignItems: 'end', flexWrap: 'wrap' }}>
+            <label style={{ margin: 0 }}>Packed weight (g)<input name="cw" type="number" min={1} max={30000} defaultValue={cw} style={{ width: '7rem' }} /></label>
+            <label style={{ margin: 0 }}>Type<select name="ct" defaultValue={ct}>{types.map((t) => <option key={t} value={t}>{SHIP_TYPES[t]}</option>)}</select></label>
+            <button className="ep-btn ep-btn--sm ep-btn--ghost">Check</button>
+          </form>
+        </div>
+        <p className="ep-small ep-muted ep-pad" style={{ paddingTop: 0 }}>Our cost per line for one parcel of this weight — compare with the partner’s own page. Client price (with the default margin) underneath.</p>
+        {checkLines.length === 0 ? <div className="ep-pad"><Empty title="No prices yet" text="Upload the price file above." /></div> : (
+          <div className="ep-tablewrap">
+            <table className="ep-table">
+              <thead><tr><th>Country</th>{checkLines.map((l) => <th key={l.id} className="ep-right">{l.name}{!l.active && <small>hidden</small>}</th>)}</tr></thead>
+              <tbody>
+                {CHECK.map((cc) => {
+                  const q = quoteAll(checkSheets, cc, { weight_g: cw }, s, zero);
+                  return (
+                    <tr key={cc}>
+                      <td>{flag(cc)} {countryName(cc)}</td>
+                      {checkLines.map((l) => {
+                        const x = q.find((y) => y.line === l.id);
+                        if (!x) return <td key={l.id} className="ep-right"><span className="ep-muted">—</span></td>;
+                        const client = Math.round((x.cost * (1 + s.margin_pct / 100) + s.margin_fixed) * 100) / 100;
+                        return <td key={l.id} className="ep-right"><b>${x.cost.toFixed(2)}</b><small>{x.carrier ? `${x.carrier} · ` : ''}{transitLabel(x.transit)}</small><small>client ${client.toFixed(2)}</small></td>;
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       <div className="ep-split">
         <section className="ep-card" id="paste">
           <h2>Paste a new sheet</h2>
@@ -115,7 +170,7 @@ export default async function ShippingPrices() {
               <label>Plus per parcel ($)<input name="margin_fixed" type="number" step="0.01" min={0} max={1000} defaultValue={s.margin_fixed} required /></label>
             </div>
             <div className="ep-row2">
-              <label>Packaging weight (g)<input name="packaging_g" type="number" min={0} max={5000} defaultValue={s.packaging_g} required /><small>Added to the product’s weight.</small></label>
+              <label>Packaging weight (g)<input name="packaging_g" type="number" min={0} max={5000} defaultValue={s.packaging_g} required /><small>Added to the weight typed. Keep 0 when weights are packed weights.</small></label>
               <label>Volume factor<input name="volume_factor" type="number" min={1000} max={20000} defaultValue={s.volume_factor} required /><small>L × W × H (cm) ÷ this.</small></label>
             </div>
             <label>Remind me after (days)<input name="remind_days" type="number" min={1} max={90} defaultValue={s.remind_days} required /></label>
