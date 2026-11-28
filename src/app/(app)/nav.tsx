@@ -28,14 +28,15 @@ const ICONS: Record<string, string> = {
   settings: 'M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM10 2v2.5M10 15.5V18M2 10h2.5M15.5 10H18M4.3 4.3l1.8 1.8M13.9 13.9l1.8 1.8M4.3 15.7l1.8-1.8M13.9 6.1l1.8-1.8',
 };
 
-export type NavItem = { href: string; label: string; icon: string };
+/** `also`: other paths that light this item up (client Settings covers /team and /integrations too). */
+export type NavItem = { href: string; label: string; icon: string; also?: string[] };
 
 export function NavLinks({ items }: { items: NavItem[] }) {
   const path = usePathname();
   return (
     <nav>
       {items.map((it) => {
-        const on = it.href === '/' ? path === '/' : it.href === '/settings' ? path === '/settings' || path.startsWith('/settings/billing') : path.startsWith(it.href);
+        const on = it.also ? it.also.some((p) => path.startsWith(p)) : it.href === '/' ? path === '/' : it.href === '/settings' ? path === '/settings' || path.startsWith('/settings/billing') : path.startsWith(it.href);
         return (
           <Link key={it.href} href={it.href} className={on ? 'is-on' : ''}>
             <svg viewBox="0 0 20 20" aria-hidden="true">

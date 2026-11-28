@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { SettingsTabs } from '@/components/settings-tabs';
 import { redirect } from 'next/navigation';
 import { editsCompany, requireCtx } from '@/lib/session';
 import { supabaseServer } from '@/lib/supabase/server';
@@ -25,8 +26,9 @@ export default async function Company() {
   return (
     <div className="ep-co">
       <PageHead crumb="Settings" title="Company profile" sub="How your brand appears on every invoice and across your workspace." >
-        <Link className="ep-btn ep-btn--ghost" href="/settings">Personal settings</Link>
+        {ctx.backOffice && <Link className="ep-btn ep-btn--ghost" href="/settings">Personal settings</Link>}
       </PageHead>
+      <SettingsTabs ctx={ctx} on="company" />
 
       <div className="ep-co-grid">
         <aside className="ep-co-preview" aria-label="Preview on your invoices">

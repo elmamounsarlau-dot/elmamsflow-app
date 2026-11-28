@@ -2315,3 +2315,25 @@ a.ds-pill { min-width: 28px; min-height: 28px; justify-content: center; }
 .ep-unit input { flex: 1 1 auto; min-width: 0; }
 .ep-unit select { flex: 0 0 5.2rem; padding-left: .6rem; padding-right: 1.6rem; }
 @media (max-width: 760px) { .ep-row4 > label:has(.ep-unit) { grid-column: 1 / -1; } }
+
+/* Side menu scrolls inside itself when it's taller than the screen (phones, short laptop screens);
+   while the phone menu is open, the page behind it stays still. */
+.ep-side { overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+@media (max-width: 900px) {
+  .ep-side { height: 100vh; height: 100dvh; padding-bottom: calc(22px + env(safe-area-inset-bottom)); }
+  body.ep-nav-open { overflow: hidden; }
+}
+
+/* Client Settings tabs: Just you · Your company */
+.ep-settabs { display: flex; flex-wrap: wrap; gap: .6rem 1.6rem; margin: 0 0 1.4rem; padding-bottom: .2rem; border-bottom: 1px solid var(--line); }
+.ep-settabs > div { display: grid; gap: .3rem; }
+.ep-settabs > div + div { padding-left: 1.6rem; border-left: 1px solid var(--line); }
+.ep-settabs small { font: 700 .66rem var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.ep-settabs span { display: flex; flex-wrap: wrap; gap: .2rem; }
+.ep-settabs a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 .75rem; border-bottom: 2px solid transparent; color: var(--muted); font-size: .9rem; font-weight: 600; }
+.ep-settabs a:hover { color: var(--navy); }
+.ep-settabs a.is-on { color: var(--navy); border-bottom-color: var(--orange); }
+@media (max-width: 640px) {
+  .ep-settabs > div + div { padding-left: 0; border-left: 0; }
+  .ep-settabs a { min-height: 44px; }
+}
