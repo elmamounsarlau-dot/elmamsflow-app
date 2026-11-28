@@ -1,6 +1,7 @@
 import 'server-only';
 import { supabaseAdmin } from './supabase/admin';
 import { getRateCard, type RateCard } from './billing';
+import { priceShipped, SHIP_SEL, shipQuoter, type ShipOrder, type ShipQuote } from './order-shipping';
 
 /**
  * Prepaid balance. A prepaid client tops up first; every shipped order is paid from the balance at the client's
@@ -41,36 +42,42 @@ export async function balanceOf(orgId: string) {
   };
 }
 
-type OrderForCharge = { id: string; number: string; org_id: string; service: string; weight_g: number | null; order_items: { qty: number; products: { weight_g: number } | null }[] };
+type OrderForCharge = ShipOrder & { id: string; number: string; org_id: string; service: string };
 
-/** What one order costs the client at its price list (fulfilment, packaging, shipping by full kg, DDP handling). */
-export function orderCharge(o: OrderForCharge, rates: RateCard) {
+/** What one order costs the client at its price list (fulfilment, packaging, shipping on its line to the gram, DDP
+ *  handling). `ship` is the order's shipping price from shipQuoter (null = no price: shipping not included). */
+export function orderCharge(o: OrderForCharge, rates: RateCard, ship: ShipQuote | null) {
   const units = o.order_items.reduce((a, i) => a + i.qty, 0);
-  const grams = o.weight_g || o.order_items.reduce((a, i) => a + i.qty * (i.products?.weight_g ?? 0), 0);
-  const kg = grams > 0 ? Math.ceil(grams / 1000) : 0;
   const parts = [
     { label: 'Pick & pack', amount: rates.pick_pack_order },
     { label: `Extra items (${Math.max(0, units - 1)})`, amount: Math.max(0, units - 1) * rates.pick_pack_extra_unit },
     { label: 'Packaging', amount: rates.packaging_order },
-    { label: 'Shipping', amount: rates.shipping_base },
-    { label: `Shipping weight (${kg} kg)`, amount: kg * rates.shipping_per_kg },
+    { label: ship ? `Shipping · ${ship.line} (${ship.kg} kg)` : 'Shipping', amount: ship?.price ?? 0 },
     { label: 'DDP customs handling', amount: o.service === 'ddp' ? rates.ddp_order : 0 },
   ].map((p) => ({ ...p, amount: r2(p.amount) })).filter((p) => p.amount > 0);
-  return { amount: r2(parts.reduce((a, p) => a + p.amount, 0)), parts, kg, units };
+  return { amount: r2(parts.reduce((a, p) => a + p.amount, 0)), parts, kg: ship?.kg ?? 0, units };
 }
 
-const ORDER_SEL = 'id, number, org_id, service, weight_g, status, order_items(qty, products(weight_g))';
+const ORDER_SEL = `id, number, org_id, service, status, ${SHIP_SEL}`;
+
+/** A charge calculator for one client: prices each order's shipping the same way as the invoice. */
+async function charger(orgId: string, rates: RateCard) {
+  const { quote } = await shipQuoter(orgId, rates.currency);
+  return async (o: OrderForCharge) => orderCharge(o, rates, await quote(o, rates));
+}
 
 /** A prepaid client's order has shipped: take it from the balance (once). */
 export async function chargeShipped(orderId: string) {
   const admin = supabaseAdmin();
+  // Lock the shipping price on the order first (every client, prepaid or not), so the invoice uses the same one.
+  await priceShipped(orderId, getRateCard).catch(() => null);
   const { data: o } = await admin.from('orders').select(ORDER_SEL).eq('id', orderId).maybeSingle();
   if (!o || !['shipped', 'delivered'].includes(o.status)) return null;
   const org = await orgPay(o.org_id);
   if (org?.billing_mode !== 'prepaid') return null;
   const rates = await getRateCard(o.org_id);
   if (!rates) return null;
-  const c = orderCharge(o as unknown as OrderForCharge, rates);
+  const c = await (await charger(o.org_id, rates))(o as unknown as OrderForCharge);
   if (c.amount <= 0) return null;
   const { error } = await admin.from('wallet_entries').insert({
     org_id: o.org_id, kind: 'charge', amount: -c.amount, currency: rates.currency, order_id: o.id,
@@ -84,11 +91,13 @@ export async function chargeShipped(orderId: string) {
 async function headroom(orgId: string, exceptOrder?: string) {
   const admin = supabaseAdmin();
   const rates = await getRateCard(orgId);
-  if (!rates) return { left: Infinity, rates: null };
+  if (!rates) return { left: Infinity, rates: null, charge: null };
   const { balance, creditLimit } = await balanceOf(orgId);
   const { data: waiting } = await admin.from('orders').select(ORDER_SEL).eq('org_id', orgId).in('status', ['new', 'packed']);
-  const reserved = (waiting ?? []).filter((w) => w.id !== exceptOrder).reduce((a, w) => a + orderCharge(w as unknown as OrderForCharge, rates).amount, 0);
-  return { left: r2(balance + creditLimit - reserved), rates };
+  const charge = await charger(orgId, rates);
+  const costs = await Promise.all((waiting ?? []).filter((w) => w.id !== exceptOrder).map((w) => charge(w as unknown as OrderForCharge)));
+  const reserved = costs.reduce((a, c) => a + c.amount, 0);
+  return { left: r2(balance + creditLimit - reserved), rates, charge };
 }
 
 export const BALANCE_HOLD = 'Balance: top up your balance so this order can ship';
@@ -100,9 +109,9 @@ export async function holdIfNoBalance(orderId: string) {
   if (!o || o.status !== 'new') return false;
   const org = await orgPay(o.org_id);
   if (org?.billing_mode !== 'prepaid') return false;
-  const { left, rates } = await headroom(o.org_id, o.id);
-  if (!rates) return false;
-  const need = orderCharge(o as unknown as OrderForCharge, rates).amount;
+  const { left, rates, charge } = await headroom(o.org_id, o.id);
+  if (!rates || !charge) return false;
+  const need = (await charge(o as unknown as OrderForCharge)).amount;
   if (left - need >= 0) return false;
   await admin.from('orders').update({ status: 'on_hold', hold_reason: BALANCE_HOLD }).eq('id', o.id).eq('status', 'new');
   await admin.from('activity_log').insert({ org_id: o.org_id, action: 'order_held', detail: `#${o.number} · waiting for a top-up (balance too low)` });
@@ -115,12 +124,12 @@ export async function releaseBalanceHolds(orgId: string) {
   const { data: held } = await admin.from('orders').select(ORDER_SEL).eq('org_id', orgId).eq('status', 'on_hold').eq('hold_kind', 'balance').order('created_at');
   if (!held?.length) return [] as string[];
   const room = await headroom(orgId);
-  const rates = room.rates;
+  const charge = room.charge;
   let left = room.left;
-  if (!rates) return [];
+  if (!room.rates || !charge) return [];
   const out: string[] = [];
   for (const o of held) {
-    const need = orderCharge(o as unknown as OrderForCharge, rates).amount;
+    const need = (await charge(o as unknown as OrderForCharge)).amount;
     if (left - need < 0) break;
     const { data: done } = await admin.from('orders').update({ status: 'new', hold_reason: null }).eq('id', o.id).eq('status', 'on_hold').select('id').maybeSingle();
     if (done) { out.push(o.id); left = r2(left - need); }

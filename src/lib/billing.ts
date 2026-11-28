@@ -1,6 +1,7 @@
 import 'server-only';
 import { supabaseAdmin } from './supabase/admin';
 import { convert, financeSettings } from './fx';
+import { FLAT_LABEL, SHIP_SEL, shipQuoter, type ShipOrder } from './order-shipping';
 
 export type Currency = 'USD' | 'EUR' | 'GBP';
 export const CURRENCIES: Currency[] = ['USD', 'EUR', 'GBP'];
@@ -26,8 +27,8 @@ export const RATE_FIELDS: { key: keyof RateCard; label: string; unit: string; gr
   { key: 'pick_pack_order', label: 'Pick & pack', unit: 'per order', group: 'Fulfillment', step: '0.01' },
   { key: 'pick_pack_extra_unit', label: 'Extra item', unit: 'per extra item in an order', group: 'Fulfillment', step: '0.01' },
   { key: 'packaging_order', label: 'Packaging', unit: 'per order (box or mailer)', group: 'Fulfillment', step: '0.01' },
-  { key: 'shipping_base', label: 'Shipping', unit: 'per parcel', group: 'Shipping', step: '0.01' },
-  { key: 'shipping_per_kg', label: 'Shipping weight', unit: 'per kg', group: 'Shipping', step: '0.01' },
+  { key: 'shipping_base', label: 'Fallback shipping', unit: 'per parcel, only where no shipping line has a price', group: 'Shipping', step: '0.01' },
+  { key: 'shipping_per_kg', label: 'Fallback shipping weight', unit: 'per full kg, same case', group: 'Shipping', step: '0.01' },
   { key: 'ddp_order', label: 'DDP customs handling', unit: 'per order', group: 'Shipping', step: '0.01' },
   { key: 'receiving_carton', label: 'Receiving', unit: 'per carton', group: 'Receiving & storage', step: '0.01' },
   { key: 'receiving_unit', label: 'Counting in', unit: 'per unit', group: 'Receiving & storage', step: '0.001' },
@@ -68,8 +69,8 @@ export const DUTIES_LINE = 'Duties & taxes paid for you';
 
 const ON_HAND = new Set(['inbound', 'order', 'adjust', 'count']);
 
-/** Billable weight: each parcel is charged by its weight rounded UP to the next full kilogram
- *  (a 300 g parcel is 1 kg, 1.2 kg is 2 kg). Parcels with no weight at all are counted separately. */
+/** Weight rounded UP to the next full kilogram per parcel (a 300 g parcel is 1 kg, 1.2 kg is 2 kg) — only for the
+ *  flat-rate fallback and the "kg actual" figure; shipping lines bill to the gram. No-weight parcels counted apart. */
 export function billableKg(parcelGrams: number[]) {
   let kg = 0;
   let unknown = 0;
@@ -100,12 +101,12 @@ export async function computeCharges(orgId: string, rates: RateCard, start: Date
     return out;
   };
   const [orders, inbounds, moves] = await Promise.all([
-    all(() => admin.from('orders').select('id, weight_g, service, order_items(qty, products(weight_g))').eq('org_id', orgId).gte('shipped_at', s).lt('shipped_at', e).order('shipped_at')),
+    all(() => admin.from('orders').select(`id, service, ${SHIP_SEL}`).eq('org_id', orgId).gte('shipped_at', s).lt('shipped_at', e).order('shipped_at')),
     all(() => admin.from('inbounds').select('id, cartons, inbound_items(received)').eq('org_id', orgId).eq('status', 'received').gte('received_at', s).lt('received_at', e).order('received_at')),
     all(() => admin.from('stock_moves').select('qty, type, created_at').eq('org_id', orgId).lt('created_at', e).order('created_at').order('id')),
   ]);
 
-  type O = { weight_g: number; service: string; order_items: { qty: number; products: { weight_g: number } | null }[] };
+  type O = ShipOrder & { service: string };
   const os = orders as O[];
   const nOrders = os.length;
   const units = os.reduce((a, o) => a + o.order_items.reduce((b, i) => b + i.qty, 0), 0);
@@ -113,7 +114,11 @@ export async function computeCharges(orgId: string, rates: RateCard, start: Date
   // Parcel weight: what the warehouse weighed, otherwise the products' weights.
   const parcels = os.map((o) => o.weight_g || o.order_items.reduce((b, i) => b + i.qty * (i.products?.weight_g ?? 0), 0));
   const w = billableKg(parcels);
-  const kg = w.kg;
+  // Shipping: each parcel at its line's price, to the gram (locked when it shipped), like the Shipping rates page.
+  const { quote } = await shipQuoter(orgId, rates.currency);
+  const quotes = await Promise.all(os.map((o) => quote(o, rates)));
+  const kg = r3(quotes.reduce((a, q) => a + (q?.kg ?? 0), 0));
+  const noShipPrice = quotes.filter((q) => !q).length;
   const ddp = os.filter((o) => o.service === 'ddp').length;
 
   type I = { cartons: number; inbound_items: { received: number }[] };
@@ -143,8 +148,17 @@ export async function computeCharges(orgId: string, rates: RateCard, start: Date
   add('fulfillment', `Pick & pack · ${nOrders} order${nOrders === 1 ? '' : 's'}`, nOrders, rates.pick_pack_order);
   add('fulfillment', `Extra items picked · ${extra} unit${extra === 1 ? '' : 's'}`, extra, rates.pick_pack_extra_unit);
   add('packaging', `Packaging · ${nOrders} parcel${nOrders === 1 ? '' : 's'}`, nOrders, rates.packaging_order);
-  add('shipping', `Shipping · ${nOrders} parcel${nOrders === 1 ? '' : 's'}`, nOrders, rates.shipping_base);
-  add('shipping', `Shipping weight · ${kg.toLocaleString('en')} kg billed (each parcel rounded up to the full kg; ${w.actualKg.toLocaleString('en')} kg actual)${w.unknown ? ` · ${w.unknown} parcel${w.unknown === 1 ? '' : 's'} without a weight not included` : ''}`, kg, rates.shipping_per_kg);
+  const byLine = new Map<string, { n: number; kg: number; amount: number }>();
+  for (const q of quotes) {
+    if (!q) continue;
+    const g = byLine.get(q.line) ?? { n: 0, kg: 0, amount: 0 };
+    byLine.set(q.line, { n: g.n + 1, kg: g.kg + q.kg, amount: g.amount + q.price });
+  }
+  const unpriced = noShipPrice ? ` · ${noShipPrice} parcel${noShipPrice === 1 ? '' : 's'} without a weight or a shipping price not included` : '';
+  [...byLine.entries()].sort((a, b) => b[1].amount - a[1].amount).forEach(([line, g], i) => {
+    const how = line === FLAT_LABEL ? 'per parcel + per full kg' : 'billed to the gram';
+    add('shipping', `Shipping · ${line} · ${g.n} parcel${g.n === 1 ? '' : 's'}, ${r3(g.kg).toLocaleString('en')} kg ${how}${i === 0 ? unpriced : ''}`, 1, r2(g.amount));
+  });
   add('customs', `DDP customs handling · ${ddp} order${ddp === 1 ? '' : 's'}`, ddp, rates.ddp_order);
   // Duties and taxes we paid at import for these DDP orders, billed back at cost (Finance settings can turn this off).
   const fin = await financeSettings();
@@ -170,7 +184,7 @@ export async function computeCharges(orgId: string, rates: RateCard, start: Date
   const subtotal = r2(lines.filter((l) => !l.description.startsWith(DUTIES_LINE)).reduce((a, l) => a + l.amount, 0));
   if (rates.monthly_minimum > subtotal && days >= 28) add('other', 'Monthly minimum top-up', 1, r2(rates.monthly_minimum - subtotal));
   const total = r2(lines.reduce((a, l) => a + l.amount, 0));
-  return { lines, total, stats: { orders: nOrders, units, kg, kgActual: w.actualKg, noWeight: w.unknown, ddp, cartons, unitsIn, avgStored: Math.round(unitDays / days) } };
+  return { lines, total, stats: { orders: nOrders, units, kg, kgActual: w.actualKg, noWeight: w.unknown, noShipPrice, ddp, cartons, unitsIn, avgStored: Math.round(unitDays / days) } };
 }
 
 export type InvoiceTz = 'UTC' | 'Asia/Shanghai';
