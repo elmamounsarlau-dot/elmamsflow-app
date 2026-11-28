@@ -10,6 +10,7 @@ import { ThemeSwitch } from '@/components/theme';
 import { themeMode } from '@/lib/theme';
 import { getNotices } from '@/lib/notifications';
 import { Bell } from '@/components/notices';
+import { clientSettingsTabs } from '@/components/settings-tabs';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireCtx();
@@ -30,16 +31,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     if (ctx.can('team.manage')) items.push({ href: '/team', label: 'Team', icon: 'team' });
     if (isOwner(ctx)) items.push({ href: '/activity', label: 'Activity', icon: 'activity' });
   } else {
-    items.push({ href: '/', label: 'Home', icon: 'home' }, { href: '/notifications', label: 'Notifications', icon: 'bell' }, { href: '/orders', label: 'Orders', icon: 'orders' }, { href: '/inventory', label: 'Inventory', icon: 'inventory' }, { href: '/inbounds', label: 'Stock inbounds', icon: 'inbounds' }, { href: '/tracking', label: 'Tracking', icon: 'tracking' });
-    items.push({ href: '/reports', label: 'Monthly report', icon: 'reports' });
-    if (ctx.can('invoices.view')) items.push({ href: '/invoices', label: 'Invoices', icon: 'invoices' }, { href: '/pricing', label: 'Pricing', icon: 'pricing' });
-    items.push({ href: '/rates', label: 'Shipping rates', icon: 'rates' });
-    if (ctx.can('integrations.manage')) items.push({ href: '/integrations', label: 'Stores', icon: 'stores' });
+    // Client portal: 11 items at most. Notifications = the bell at the top; Company profile, Team and Stores are
+    // tabs inside Settings.
+    items.push({ href: '/', label: 'Home', icon: 'home' }, { href: '/inventory', label: 'Inventory', icon: 'inventory' }, { href: '/orders', label: 'Orders', icon: 'orders' }, { href: '/inbounds', label: 'Stock inbounds', icon: 'inbounds' });
+    if (ctx.can('invoices.view')) items.push({ href: '/invoices', label: 'Invoices', icon: 'invoices' });
+    items.push({ href: '/tracking', label: 'Tracking', icon: 'tracking' }, { href: '/reports', label: 'Monthly report', icon: 'reports' }, { href: '/rates', label: 'Shipping rates', icon: 'rates' });
+    if (ctx.can('invoices.view')) items.push({ href: '/pricing', label: 'Pricing', icon: 'pricing' });
     items.push({ href: '/support', label: 'Support', icon: 'support' });
-    if ((ctx.clientRole && ctx.can('team.manage')) || ctx.viewingAs) items.push({ href: '/team', label: 'Team', icon: 'team' });
+    const { mine, company } = clientSettingsTabs(ctx);
+    const first = mine[0] ?? company[0];
+    if (first) items.push({ href: first.href, label: 'Settings', icon: 'settings', also: ['/settings', '/team', '/integrations'] });
   }
-  if (ctx.org) items.push({ href: '/settings/company', label: 'Company profile', icon: 'company' });
-  if (!ctx.viewingAs) items.push({ href: '/settings', label: 'Settings', icon: 'settings' });
+  if (ctx.backOffice) {
+    if (ctx.org) items.push({ href: '/settings/company', label: 'Company profile', icon: 'company' });
+    if (!ctx.viewingAs) items.push({ href: '/settings', label: 'Settings', icon: 'settings' });
+  }
 
   const role = ctx.staffRole ? `Elmamsflow · ${ctx.roleName}` : ctx.roleName;
   const notices = ctx.org ? await getNotices(ctx).catch(() => []) : [];

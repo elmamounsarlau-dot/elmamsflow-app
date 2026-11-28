@@ -1,4 +1,5 @@
 import { requireCtx } from '@/lib/session';
+import { SettingsTabs } from '@/components/settings-tabs';
 import { supabaseServer } from '@/lib/supabase/server';
 import { PasswordField, Submit } from '@/components/client';
 import { changePassword, saveProfile } from './actions';
@@ -15,6 +16,7 @@ export default async function Settings() {
   return (
     <>
       <PageHead crumb="Settings" title="Settings" sub="Your profile, password and how Elmamsflow looks for you." />
+      <SettingsTabs ctx={ctx} on="profile" />
       <div className="ep-split">
         <section className="ep-card ep-card--grow ep-card--narrow">
           <h2>Your profile</h2>

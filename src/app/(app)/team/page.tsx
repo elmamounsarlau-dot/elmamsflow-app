@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { SettingsTabs } from '@/components/settings-tabs';
 import { readFlashLink } from '@/lib/link-flash';
 import { requireCtx } from '@/lib/session';
 import { supabaseAdmin } from '@/lib/supabase/admin';
@@ -32,6 +33,7 @@ export default async function Team({ searchParams }: { searchParams: Promise<Rec
   return (
     <>
       <PageHead crumb="Team" title={s.staff ? 'Your team' : `${s.orgName} team`} sub="Invite people, choose their role, and decide what each role can do." />
+      <SettingsTabs ctx={ctx} on="team" />
       {flash && (
         <div className="ep-linkbox">
           <div><p className="ep-eyebrow"><i />Private link for {flash.email}</p><p>Copy it and send it privately (WhatsApp, WeChat). It works once and is also kept on your Home page until they set their password.</p></div>

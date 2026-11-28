@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { SettingsTabs } from '@/components/settings-tabs';
 import { redirect } from 'next/navigation';
 import { requireCtx } from '@/lib/session';
 import { supabaseAdmin } from '@/lib/supabase/admin';
@@ -39,6 +40,7 @@ export default async function Stores() {
           <p>{ctx.backOffice ? 'Every client store sending orders to the warehouse.' : 'Connect your store once: paid orders arrive here by themselves, and your customers get their tracking number when the parcel leaves.'}</p>
         </div>
       </div>
+      <SettingsTabs ctx={ctx} on="stores" />
 
       {canConnect && (
         <div className="ep-connect-grid">
