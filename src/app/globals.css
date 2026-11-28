@@ -1470,6 +1470,7 @@ a.ep-okpi:hover { border-color: var(--line-hover); }
 .ep-pr-group dl div { display: flex; justify-content: space-between; align-items: baseline; gap: .8rem; padding: .55rem 0; border-top: 1px solid var(--line-soft); }
 .ep-pr-group dt { font-size: .86rem; color: var(--navy); font-weight: 600; }
 .ep-pr-group dt small { font-weight: 400; }
+.ep-pr-link { display: inline-flex; align-items: center; min-height: 24px; }
 .ep-pr-group dd { margin: 0; font: 500 1rem var(--display); color: var(--navy); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ep-pr-free { font: 600 .74rem var(--body); color: var(--ok); }
 .ep-pr-note { max-width: 80ch; margin-top: 1rem; }

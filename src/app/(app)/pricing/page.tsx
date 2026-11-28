@@ -78,7 +78,7 @@ export default async function Pricing() {
                 <h2>{g}</h2>
                 <p>{GROUP_ABOUT[g]}</p>
                 <dl>
-                  {g === 'Shipping' && <div><dt>Shipping<small>priced per parcel by country and option</small></dt><dd><Link href="/rates">See shipping rates</Link></dd></div>}
+                  {g === 'Shipping' && <div><dt>Shipping<small>priced per parcel by country and option</small></dt><dd><Link className="ep-pr-link" href="/rates">See shipping rates</Link></dd></div>}
                   {shown.filter((f) => f.group === g).map((f) => (
                     <div key={f.key}><dt>{f.label}<small>{f.unit}</small></dt><dd>{Number(rates[f.key]) ? money(Number(rates[f.key]), cur) : <span className="ep-pr-free">Included</span>}</dd></div>
                   ))}
