@@ -802,3 +802,23 @@ select t.raises('lines: a client cannot rename a line', $q$update public.shippin
 select t.raises('lines: a client cannot save a sheet', $q$select public.shipping_line_sheet_replace((select id from public.shipping_lines limit 1), 'general', '', null, null, '[]'::jsonb)$q$);
 reset role;
 delete from public.shipping_sheets;
+
+-- ---------- 0026 Shipping price stored on the order ----------
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000b1');
+insert into public.orders (id, org_id, customer, address, country, status, ship_price, ship_kg, ship_priced_at)
+  values ('0a000000-0000-0000-0000-000000000026', '11111111-1111-1111-1111-111111111111', 'Cheap', '1 Street', 'FR', 'new', 0.01, 0.001, now());
+select t.denied('ship price: a client cannot change the shipping price of its order',
+  $q$update public.orders set ship_price = 0 where id = '0a000000-0000-0000-0000-000000000001'$q$);
+reset role;
+select t.ok('ship price: a price typed by a client on a new order is not kept',
+  (select ship_price is null and ship_kg is null and ship_priced_at is null from public.orders where id = '0a000000-0000-0000-0000-000000000026'));
+update public.orders set ship_price = 5.40, ship_kg = 0.45, ship_priced_at = now() where id = '0a000000-0000-0000-0000-000000000026';
+select t.ok('ship price: the server can store it', (select ship_price = 5.40 and ship_kg = 0.450 from public.orders where id = '0a000000-0000-0000-0000-000000000026'));
+set role authenticated;
+select t.login('00000000-0000-0000-0000-0000000000a1');
+do $$ begin update public.orders set ship_price = 1 where id = '0a000000-0000-0000-0000-000000000026'; exception when others then null; end $$;
+reset role;
+select t.ok('ship price: staff in the browser cannot overwrite it either', (select ship_price = 5.40 from public.orders where id = '0a000000-0000-0000-0000-000000000026'));
+delete from public.order_items where order_id = '0a000000-0000-0000-0000-000000000026';
+delete from public.orders where id = '0a000000-0000-0000-0000-000000000026';

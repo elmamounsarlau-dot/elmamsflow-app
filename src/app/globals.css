@@ -1470,6 +1470,7 @@ a.ep-okpi:hover { border-color: var(--line-hover); }
 .ep-pr-group dl div { display: flex; justify-content: space-between; align-items: baseline; gap: .8rem; padding: .55rem 0; border-top: 1px solid var(--line-soft); }
 .ep-pr-group dt { font-size: .86rem; color: var(--navy); font-weight: 600; }
 .ep-pr-group dt small { font-weight: 400; }
+.ep-pr-link { display: inline-flex; align-items: center; min-height: 24px; }
 .ep-pr-group dd { margin: 0; font: 500 1rem var(--display); color: var(--navy); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ep-pr-free { font: 600 .74rem var(--body); color: var(--ok); }
 .ep-pr-note { max-width: 80ch; margin-top: 1rem; }
@@ -2315,3 +2316,12 @@ a.ds-pill { min-width: 28px; min-height: 28px; justify-content: center; }
 .ep-unit input { flex: 1 1 auto; min-width: 0; }
 .ep-unit select { flex: 0 0 5.2rem; padding-left: .6rem; padding-right: 1.6rem; }
 @media (max-width: 760px) { .ep-row4 > label:has(.ep-unit) { grid-column: 1 / -1; } }
+
+/* Pricing calculator: country and product type, other shipping options */
+.ep-est-pick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
+.ep-est-pick label > span { font-size: .86rem; }
+.ep-est-ship { margin: 0; font-size: .82rem; opacity: .8; }
+.ep-est-lines { list-style: none; margin: 0; padding: .5rem 0 0; display: grid; gap: .25rem; font-size: .8rem; border-top: 1px solid color-mix(in srgb, var(--on-inverse) 20%, transparent); }
+.ep-est-lines li { display: flex; justify-content: space-between; gap: .6rem; opacity: .8; font-variant-numeric: tabular-nums; }
+.ep-est-lines small { display: block; opacity: .75; font-size: .72rem; }
+@media (max-width: 480px) { .ep-est-pick { grid-template-columns: minmax(0, 1fr); } }
