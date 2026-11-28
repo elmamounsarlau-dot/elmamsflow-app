@@ -5,12 +5,15 @@ import { CATEGORY, computeCharges, getRateCard, invoiceTz, money, monthBounds, R
 import { PageHead } from '@/components/ui';
 import { CountUp } from '@/components/orders-overview';
 import { Estimator } from '@/components/estimator';
+import { shippedCountries } from '@/lib/shipping-db';
+import { SHIP_TYPES } from '@/lib/shipping-rates';
+import { countryName } from '@/lib/format';
 
 export const metadata = { title: 'Pricing' };
 
 const GROUP_ABOUT: Record<string, string> = {
   Fulfillment: 'Picking every item and packing the parcel.',
-  Shipping: 'Door to door, duties and taxes paid (DDP). Your customer never pays at delivery.',
+  Shipping: 'Door to door, duties and taxes paid (DDP). Your customer never pays at delivery. Each parcel is priced by country and shipping option, to the gram.',
   'Receiving & storage': 'Counting your stock in and keeping it safe on our shelves.',
   Terms: 'How billing works.',
 };
@@ -33,6 +36,10 @@ export default async function Pricing() {
   const perOrder = run && run.stats.orders ? run.lines.filter((l) => ['fulfillment', 'packaging', 'shipping', 'customs'].includes(l.category)).reduce((a, l) => a + l.amount, 0) / run.stats.orders : null;
   const groups = [...new Set(RATE_FIELDS.map((f) => f.group))];
   const max = Math.max(1, ...byCat.map(([, n]) => n));
+  // Shipping is priced per line (Shipping rates page); the rate card's flat shipping is a team-only fallback.
+  const shown = RATE_FIELDS.filter((f) => f.key !== 'shipping_base' && f.key !== 'shipping_per_kg');
+  const countries = rates ? (await shippedCountries()).map((k) => [k, countryName(k)] as [string, string]).sort((a, b) => a[1].localeCompare(b[1])) : [];
+  const types = Object.entries(SHIP_TYPES) as [string, string][];
 
   return (
     <div className="ep-pricing">
@@ -71,7 +78,8 @@ export default async function Pricing() {
                 <h2>{g}</h2>
                 <p>{GROUP_ABOUT[g]}</p>
                 <dl>
-                  {RATE_FIELDS.filter((f) => f.group === g).map((f) => (
+                  {g === 'Shipping' && <div><dt>Shipping<small>priced per parcel by country and option</small></dt><dd><Link className="ep-pr-link" href="/rates">See shipping rates</Link></dd></div>}
+                  {shown.filter((f) => f.group === g).map((f) => (
                     <div key={f.key}><dt>{f.label}<small>{f.unit}</small></dt><dd>{Number(rates[f.key]) ? money(Number(rates[f.key]), cur) : <span className="ep-pr-free">Included</span>}</dd></div>
                   ))}
                   {g === 'Terms' && <div><dt>Payment terms<small>after the invoice date</small></dt><dd>{rates.payment_terms_days} days</dd></div>}
@@ -80,9 +88,9 @@ export default async function Pricing() {
             ))}
           </div>
 
-          <Estimator rates={rates} />
+          <Estimator rates={rates} countries={countries} types={types} />
 
-          <p className="ep-small ep-muted ep-pr-note">Shipping weight: each parcel is rounded up to the next full kilogram (a 300 g parcel counts as 1 kg). Storage is counted every day on the units on our shelves, and charged as a 30-day month. Questions about a charge? <Link href="/support/new?cat=billing">Ask us</Link>.</p>
+          <p className="ep-small ep-muted ep-pr-note">Shipping is billed to the gram: the packed weight, or the parcel size if bigger. The price depends on the country and the shipping option. Storage is counted every day on the units on our shelves, and charged as a 30-day month. Questions about a charge? <Link href="/support/new?cat=billing">Ask us</Link>.</p>
         </>
       )}
     </div>

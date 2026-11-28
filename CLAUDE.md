@@ -58,18 +58,34 @@ Read this first in every session. It replaces the long chat history this project
 - Formula: billed kg = max(weight typed, L×W×H/8000, minimum) rounded to the row's step;
   cost = kg × per-kg + per-parcel; Japan tables are per 0.5 kg step; zoned countries use the highest zone.
   Client price = cost × (1 + margin %) + margin per parcel (client margin can override).
+- **Billing uses the same prices** (migration 0026, `src/lib/order-shipping.ts`): each order is billed its line's
+  client price, to the gram (the order's `ship_line_id`, else the cheapest line to that country). The price is
+  locked on the order when it ships (`ship_price`, `ship_kg`, client currency) and used by invoices and prepaid
+  charges. The rate card's flat "per parcel + per full kg" is only a fallback where no line has a price. The
+  client Pricing page calculator asks the server for prices (`pricing/actions.ts`); costs never reach the browser.
 - Prices come from **one .xlsx upload** (Shipping prices → Upload the price file). Tab names decide the line/type:
   `1-Standard General`, `2-Standard Battery`, … `13-Express General`, `14-Express Battery`. Excel limits tab names
   to 31 characters. Code: `src/lib/shipping-rates.ts`, `shipping-xlsx.ts`, `shipping-db.ts`.
-- **Known gap:** the YunExpress sheet is higher than ST's own **STF-** lines (e.g. Germany 140 g: sheet $12.52,
-  ST page STF-Standard $6.11). Yasser asked Red (ST) for the STF price list; when it arrives, upload it in the
-  same format. If ST has none, the fallback idea is per-product prices read from ST product pages.
+- **Known gap:** the YunExpress sheet is about twice ST's own **STF-** prices shown on ST product pages
+  ("Available shipping methods"). Examples: Germany 140 g: sheet $12.52, STF-Standard $6.11. Lola sunglasses
+  130 g → France: ST page STF-Standard $5.05 / STF-Priority $6.32 / STF-Last mile Colisprive $6.52 /
+  STF-Economy $7.92; sheet gives $11.96 / $13.07 / $13.26.
+- Red (ST) answered (Nov 2026): **there is no STF price list**, only the YunExpress chart; "Last mile" costs the
+  same as Standard. **Red confirmed (28 Nov 2026): ST bills the price shown on its website** (product page), not
+  the chart; ST may also match cheaper lines automatically and show them.
+- **Limit:** ST only shows shipping prices for products already added as SKUs in ST, so new products cannot be
+  priced there. Yasser's direction (28 Nov 2026): offer only **UK, Australia, USA + a few European countries** for
+  now; add any other country only when a client asks for it.
+- NextSmartShip's rate calculator (fulfillship.nextsmartship.com → Rate Calculator → Shipping Rate) quotes any
+  weight/size per country with no SKU needed (e.g. AU 500 g, 17×7×4 cm: Economic $8.11, Expedited $8.91).
 
-## Open items (as of 27 Nov 2026)
+## Open items (as of 28 Nov 2026)
 
-1. PR **#21** (xlsx upload, price check, no packaging added) — needs migration `0025_shipping_packed_weight.sql`
-   run by Yasser, then merge.
-2. ST's STF price list → upload; compare in the Price check table.
+1. (Done) Red confirmed ST bills the product-page price.
+2. **On hold (Yasser, 28 Nov 2026): keep the chart prices and everything as is.** When a client brings his own
+   prices, Yasser compares them with ST and may give a discount. Old idea, not to build unless he asks: per-product ST prices (read from the "Available shipping methods" window
+   per product × main country in Yasser's Chrome, stored, refreshed regularly); the chart stays only as a marked
+   estimate for products not in ST. Plan explained to Yasser; **not built, waiting for his "go"**.
 3. Charge real orders at their line's price; map each store's checkout shipping option to a line; list orders
    whose line differs from the product's ST default so staff select it in ST.
 4. Products: fill shipping type and packed size (L×W×H).

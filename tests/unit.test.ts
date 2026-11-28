@@ -83,7 +83,7 @@ test('roles: locked roles have everything, others only what is ticked; client ro
   assert.equal(roleCan(admin, 'billing.manage', false), false);
 });
 
-test('shipping weight: every parcel is billed rounded UP to the full kg', async () => {
+test('flat-rate fallback weight: every parcel rounded UP to the full kg', async () => {
   const { billableKg } = await import('../src/lib/billing');
   assert.deepEqual(billableKg([300]), { kg: 1, unknown: 0, actualKg: 0.3 });
   assert.deepEqual(billableKg([1000]), { kg: 1, unknown: 0, actualKg: 1 });
@@ -162,16 +162,33 @@ test('bridge: what the partner did in the bridge store becomes our status', asyn
   assert.equal(readBridgeState({ ...base, fulfillmentOrders: { nodes: [{ status: 'CANCELLED' }] } }).status, 'cancelled');
 });
 
-test('prepaid: what one order costs at the client’s prices', async () => {
+test('prepaid: what one order costs at the client’s prices (shipping = the order’s line price)', async () => {
   const { orderCharge } = await import('../src/lib/wallet');
   const rates = { org_id: 'x', currency: 'USD' as const, pick_pack_order: 1.2, pick_pack_extra_unit: 0.3, packaging_order: 0.5, shipping_base: 2, shipping_per_kg: 6.5, ddp_order: 1, receiving_carton: 0, receiving_unit: 0, storage_unit_month: 0, monthly_minimum: 0, payment_terms_days: 14 };
-  const o = { id: 'o', number: '1', org_id: 'x', service: 'ddp', weight_g: 0, order_items: [{ qty: 2, products: { weight_g: 450 } }, { qty: 1, products: { weight_g: 300 } }] };
-  const c = orderCharge(o, rates);
-  // 3 units, 1.2 kg → 2 kg billed: 1.2 + 2×0.3 + 0.5 + 2 + 2×6.5 + 1 = 18.3
-  assert.equal(c.kg, 2);
-  assert.equal(c.amount, 18.3);
-  assert.equal(orderCharge({ ...o, weight_g: 900 }, rates).kg, 1);             // the weighed parcel wins
-  assert.equal(orderCharge({ ...o, service: 'express' }, rates).amount, 17.3);
+  const o = { id: 'o', number: '1', org_id: 'x', service: 'ddp', country: 'FR', weight_g: 0, order_items: [{ qty: 2, products: { weight_g: 450 } }, { qty: 1, products: { weight_g: 300 } }] };
+  const ship = { price: 9.87, kg: 1.2, line_id: 'l', line: 'Standard', flat: false };
+  const c = orderCharge(o, rates, ship);
+  // 3 units: 1.2 + 2×0.3 + 0.5 + 9.87 (line price, to the gram) + 1 = 13.17 — the flat rate card shipping is not used
+  assert.equal(c.kg, 1.2);
+  assert.equal(c.amount, 13.17);
+  assert.equal(orderCharge({ ...o, service: 'express' }, rates, ship).amount, 12.17);
+  assert.equal(orderCharge(o, rates, null).amount, 3.3);                       // no shipping price → shipping not included
+});
+
+test('order shipping: product type, parcel and flat fallback', async () => {
+  const { flatShipping, orderParcel, orderShipType } = await import('../src/lib/shipping-rates');
+  const it = (ship_type: string, weight_g = 100, qty = 1) => ({ qty, products: { weight_g, ship_type } });
+  assert.equal(orderShipType([it('general'), it('battery')]), 'battery');
+  assert.equal(orderShipType([it('cosmetics'), it('clothing')]), 'cosmetics');
+  assert.equal(orderShipType([it('clothing'), it('clothing')]), 'clothing');
+  assert.equal(orderShipType([it('clothing'), it('general')]), 'general');
+  assert.equal(orderShipType([it('nonsense')]), 'general');
+  assert.deepEqual(orderParcel({ weight_g: 0, order_items: [it('general', 450, 2), it('general', 300)] }), { weight_g: 1200 });
+  assert.deepEqual(orderParcel({ weight_g: 950, order_items: [it('general', 450, 2)] }), { weight_g: 950 });   // the weighed parcel wins
+  const sized = { qty: 2, products: { weight_g: 130, length_mm: 170, width_mm: 70, height_mm: 40 } };
+  assert.deepEqual(orderParcel({ weight_g: 0, order_items: [sized] }), { weight_g: 130, qty: 2, length_mm: 170, width_mm: 70, height_mm: 40 });
+  assert.deepEqual(flatShipping(300, 2, 6.5), { kg: 1, price: 8.5 });           // fallback only: per parcel + per full kg
+  assert.deepEqual(flatShipping(0, 2, 6.5), { kg: 0, price: 2 });
 });
 
 test('orders CSV: rows group into orders, countries resolve, bad rows are flagged', async () => {

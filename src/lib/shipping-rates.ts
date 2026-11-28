@@ -203,3 +203,33 @@ export function tabTarget(name: string): { line: string; type: ShipType } | null
   const type: ShipType | null = /batter/.test(n) ? 'battery' : /cloth/.test(n) ? 'clothing' : /cosmetic/.test(n) ? 'cosmetics' : /general/.test(n) ? 'general' : null;
   return line && type ? { line, type } : null;
 }
+
+// ---------- One order's parcel, for billing ----------
+
+export type BillItem = { qty: number; products: { weight_g: number; ship_type?: string | null; length_mm?: number | null; width_mm?: number | null; height_mm?: number | null } | null };
+
+/** The sheet an order is priced on: any battery item → battery; any cosmetics → cosmetics; only clothing → clothing. */
+export function orderShipType(items: BillItem[]): ShipType {
+  const types = items.map((i) => (isShipType(i.products?.ship_type ?? '') ? i.products!.ship_type as ShipType : 'general'));
+  if (types.includes('battery')) return 'battery';
+  if (types.includes('cosmetics')) return 'cosmetics';
+  if (types.length && types.every((t) => t === 'clothing')) return 'clothing';
+  return 'general';
+}
+
+/** The parcel to price: the weight the warehouse found (else the products' weights); the size only for one product line. */
+export function orderParcel(o: { weight_g: number | null; order_items: BillItem[] }): Parcel {
+  const grams = o.weight_g || o.order_items.reduce((a, i) => a + i.qty * (i.products?.weight_g ?? 0), 0);
+  const one = o.order_items.length === 1 ? o.order_items[0] : null;
+  const p = one?.products;
+  if (!o.weight_g && one && p?.length_mm && p.width_mm && p.height_mm) {
+    return { weight_g: p.weight_g, qty: one.qty, length_mm: p.length_mm, width_mm: p.width_mm, height_mm: p.height_mm };
+  }
+  return { weight_g: grams };
+}
+
+/** Old flat rate (rate card: per parcel + per full kg), only for parcels no shipping line prices. */
+export function flatShipping(grams: number, base: number, perKg: number) {
+  const kg = grams > 0 ? Math.ceil(grams / 1000) : 0;
+  return { kg, price: Math.round((base + kg * perKg) * 100) / 100 };
+}
