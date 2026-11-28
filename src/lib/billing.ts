@@ -81,8 +81,9 @@ export function billableKg(parcelGrams: number[]) {
   return { kg, unknown, actualKg: Math.round(parcelGrams.reduce((a, g) => a + Math.max(0, g || 0), 0)) / 1000 };
 }
 
-/** Everything a client is charged for between `start` (included) and `end` (excluded), from what really happened. */
-export async function computeCharges(orgId: string, rates: RateCard, start: Date, end: Date) {
+/** Everything a client is charged for between `start` (included) and `end` (excluded), from what really happened.
+ *  `strict` for real invoices: see shipQuoter. */
+export async function computeCharges(orgId: string, rates: RateCard, start: Date, end: Date, opts: { strict?: boolean } = {}) {
   const admin = supabaseAdmin();
   const s = start.toISOString();
   const e = end.toISOString();
@@ -115,7 +116,8 @@ export async function computeCharges(orgId: string, rates: RateCard, start: Date
   const parcels = os.map((o) => o.weight_g || o.order_items.reduce((b, i) => b + i.qty * (i.products?.weight_g ?? 0), 0));
   const w = billableKg(parcels);
   // Shipping: each parcel at its line's price, to the gram (locked when it shipped), like the Shipping rates page.
-  const { quote } = await shipQuoter(orgId, rates.currency);
+  // strict (real invoices): a missing exchange rate stops the invoice; pages showing running totals still open.
+  const { quote } = await shipQuoter(orgId, rates.currency, { strict: opts.strict });
   const quotes = await Promise.all(os.map((o) => quote(o, rates)));
   const kg = r3(quotes.reduce((a, q) => a + (q?.kg ?? 0), 0));
   const noShipPrice = quotes.filter((q) => !q).length;
@@ -226,7 +228,7 @@ export async function draftInvoice(orgId: string, ym: string, by: string | null)
   if (!rates) return { error: 'This client has no price list yet.' };
   let charges: Awaited<ReturnType<typeof computeCharges>>;
   try {
-    charges = await computeCharges(orgId, rates, start, end);
+    charges = await computeCharges(orgId, rates, start, end, { strict: true });
   } catch (e) {
     return { error: (e as Error).message };
   }

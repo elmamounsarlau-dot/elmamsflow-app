@@ -62,7 +62,7 @@ const ORDER_SEL = `id, number, org_id, service, status, ${SHIP_SEL}`;
 
 /** A charge calculator for one client: prices each order's shipping the same way as the invoice. */
 async function charger(orgId: string, rates: RateCard) {
-  const { quote } = await shipQuoter(orgId, rates.currency);
+  const { quote } = await shipQuoter(orgId, rates.currency, { strict: true });
   return async (o: OrderForCharge) => orderCharge(o, rates, await quote(o, rates));
 }
 

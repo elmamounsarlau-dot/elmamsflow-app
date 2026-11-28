@@ -28,8 +28,10 @@ export const SHIP_SEL = 'country, weight_g, ship_line_id, ship_price, ship_kg, o
 export const FLAT_LABEL = 'Standard rate';
 
 /** One quoter per client (and per invoice / page): settings, margin and sheets are read once. Prices come out in
- *  `currency` (line prices are in USD and are converted with Finance → Settings rates). */
-export async function shipQuoter(orgId: string, currency = 'USD') {
+ *  `currency` (line prices are in USD and are converted with Finance → Settings rates). When that rate is missing,
+ *  `strict` (invoices, prepaid charges) stops with a clear message; otherwise (pages showing running totals) the line
+ *  prices are left out and the flat fallback applies, so the page still opens. */
+export async function shipQuoter(orgId: string, currency = 'USD', opts: { strict?: boolean } = {}) {
   const s = await shipSettings();
   const [margin, lines, fin] = await Promise.all([marginFor(orgId, s), shippingLines(), financeSettings()]);
   const toCur = (usd: number) => {
@@ -37,6 +39,7 @@ export async function shipQuoter(orgId: string, currency = 'USD') {
     if (v === null) throw new Error(`Shipping prices are in USD and can’t be converted to ${currency}: add the exchange rate in Finance → Settings.`);
     return v;
   };
+  const canConvert = convert(1, 'USD', currency, fin) !== null;
   const names = new Map(lines.map((l) => [l.id, l.name]));
   const cache = new Map<string, ReturnType<typeof sheetsFor>>();
   const sheets = (type: Parameters<typeof sheetsFor>[0], cc: string) => {
@@ -50,6 +53,7 @@ export async function shipQuoter(orgId: string, currency = 'USD') {
     const cc = countryCode(o.country ?? '');
     const parcel = orderParcel(o);
     if (!cc || !(parcel.weight_g > 0)) return [];
+    if (!canConvert && !opts.strict) return [];
     const q = quoteAll(await sheets(orderShipType(o.order_items), cc), cc, parcel, s, margin);
     return q.map((x) => ({ line: x.line, label: x.label, carrier: x.carrier, transit: x.transit, kg: x.kg, actual: x.actual, volumetric: x.volumetric, price: toCur(x.price) }));
   };
@@ -79,7 +83,7 @@ export async function priceShipped(orderId: string, flatFor: (orgId: string) => 
   const { data: o } = await admin.from('orders').select(`id, org_id, status, ship_priced_at, ${SHIP_SEL}`).eq('id', orderId).maybeSingle();
   if (!o || !['shipped', 'delivered'].includes(o.status) || o.ship_priced_at) return null;
   const flat = await flatFor(o.org_id);
-  const { quote } = await shipQuoter(o.org_id, flat?.currency ?? 'USD');
+  const { quote } = await shipQuoter(o.org_id, flat?.currency ?? 'USD', { strict: true });
   const q = await quote({ ...(o as unknown as ShipOrder), ship_price: null }, flat);
   if (!q) return null;
   await admin.from('orders').update({ ship_line_id: q.line_id, ship_price: q.price, ship_kg: q.kg, ship_priced_at: new Date().toISOString() })
