@@ -60,9 +60,12 @@ export function orderCharge(o: OrderForCharge, rates: RateCard, ship: ShipQuote 
 
 const ORDER_SEL = `id, number, org_id, service, status, ${SHIP_SEL}`;
 
-/** A charge calculator for one client: prices each order's shipping the same way as the invoice. */
-async function charger(orgId: string, rates: RateCard) {
-  const { quote } = await shipQuoter(orgId, rates.currency, { strict: true });
+/** A charge calculator for one client: prices each order's shipping the same way as the invoice.
+ *  strict (the real charge when an order ships): a missing exchange rate stops it (retried later). Not strict (the
+ *  balance check before an order goes to the warehouse): it must never fail open, so a missing rate falls back to
+ *  the flat rate as an estimate instead of throwing. */
+async function charger(orgId: string, rates: RateCard, strict = false) {
+  const { quote } = await shipQuoter(orgId, rates.currency, { strict });
   return async (o: OrderForCharge) => orderCharge(o, rates, await quote(o, rates));
 }
 
@@ -77,7 +80,7 @@ export async function chargeShipped(orderId: string) {
   if (org?.billing_mode !== 'prepaid') return null;
   const rates = await getRateCard(o.org_id);
   if (!rates) return null;
-  const c = await (await charger(o.org_id, rates))(o as unknown as OrderForCharge);
+  const c = await (await charger(o.org_id, rates, true))(o as unknown as OrderForCharge);
   if (c.amount <= 0) return null;
   const { error } = await admin.from('wallet_entries').insert({
     org_id: o.org_id, kind: 'charge', amount: -c.amount, currency: rates.currency, order_id: o.id,
